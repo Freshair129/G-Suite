@@ -1,0 +1,21 @@
+[package]
+name = "g-ann-studio"
+version = "0.1.0"
+edition = "2021"
+description = "Dota 2 announcer pack editor for G-Maiden"
+
+[[bin]]
+name = "g-ann-studio"
+path = "src/main.rs"
+
+[dependencies]
+tauri      = { version = "2.0", features = [] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio      = { version = "1", features = ["rt-multi-thread", "process", "macros"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs     = "2"
+tauri-plugin-shell  = "2"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }

@@ -1,0 +1,16 @@
+{
+  "name": "g-ann-studio",
+  "version": "0.1.0",
+  "description": "G-AnnStudio: Dota 2 announcer pack editor for G-Maiden",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "pnpm tauri dev",
+    "build": "pnpm -C src build && pnpm tauri build",
+    "build:fe": "pnpm -C src build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
