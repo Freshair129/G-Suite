@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://g-suite.local/schemas/pack-transfer.schema.json",
+  "title": "G-Maiden Pack Transfer Protocol",
+  "description": "Contract between G-AnnStudio (sender) and G-Maiden (receiver) for announcer pack installation. Phase 1: local folder. Phase 2: HTTP + auth. Phase 3: cloud relay.",
+  "x-phases": {
+    "phase-1-local": {
+      "description": "Both apps on same machine. G-AnnStudio writes to a shared folder, then POSTs a notify to localhost:3000.",
+      "transport": "filesystem + HTTP POST",
+      "auth": "none (localhost trust)"
+    },
+    "phase-2-remote": {
+      "description": "G-AnnStudio sends pack over HTTP to G-Maiden on LAN/remote. Requires shared secret.",
+      "transport": "HTTP POST with binary payload",
+      "auth": "HMAC-SHA256 signed request"
+    },
+    "phase-3-cloud": {
+      "description": "G-AnnStudio uploads to cloud relay; G-Maiden pulls. Auth via per-user API key.",
+      "transport": "Cloud storage + webhook",
+      "auth": "API key + signed URL"
+    }
+  },
+  "x-auth-spec": {
+    "description": "Auth design for Phase 2+. Prevents unauthorized pack injection.",
+    "handshake": {
+      "step-1": "G-Maiden generates a pairing token on first run (random 32-byte hex), stores in config",
+      "step-2": "User copies token into G-AnnStudio settings (one-time)",
+      "step-3": "G-AnnStudio signs each request with HMAC-SHA256(token, body)",
+      "step-4": "G-Maiden verifies HMAC before accepting"
+    },
+    "request-headers": {
+      "X-GAnn-Signature": "HMAC-SHA256 hex digest of the request body",
+      "X-GAnn-Timestamp": "Unix epoch seconds (reject if > 5 min drift)",
+      "X-GAnn-Pack-Id": "Unique pack ID for idempotency"
+    },
+    "rejection-reasons": [
+      "missing-signature",
+      "invalid-signature",
+      "timestamp-expired",
+      "duplicate-pack-id",
+      "unknown-event-id"
+    ]
+  },
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": "1.0"
+    },
+    "pack_name": {
+      "type": "string",
+      "description": "Human-readable pack name"
+    },
+    "pack_id": {
+      "type": "string",
+      "description": "Unique pack identifier (used for idempotency)"
+    },
+    "pack_type": {
+      "enum": ["full", "single", "custom"]
+    },
+    "events": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Event IDs included in this pack"
+    },
+    "mappings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "filename": { "type": "string" },
+          "checksum": { "type": "string", "description": "SHA-256 of the audio file" },
+          "duration": { "type": "number" },
+          "volume": { "type": "number", "minimum": 0, "maximum": 2 },
+          "speed": { "type": "number", "minimum": 0.5, "maximum": 2 }
+        },
+        "required": ["filename", "checksum"]
+      }
+    }
+  },
+  "required": ["version", "pack_name", "pack_id", "pack_type", "events", "mappings"]
+}

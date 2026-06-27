@@ -1,16 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, useEffect } from "react";
-import { Upload, Download, Sparkles } from "lucide-react";
+import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runExport } from "../lib/actions";
+import type { AppView } from "../store/useStudioStore";
 
 function shortModel(m: string): string {
   return (m.split("/").pop() || m).split(":")[0].replace(/-gguf$/i, "");
 }
 
 export default function Header() {
-  const { sourcePath, wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel } =
+  const { sourcePath, wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel, view, setView } =
     useStudioStore();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -92,12 +93,51 @@ export default function Header() {
         </div>
       </div>
 
-      {fileName && (
-        <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 bg-panel rounded-full border border-line max-w-[360px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-lime shrink-0" />
-          <span className="text-xs text-ink-muted truncate font-mono">{fileName}</span>
+      <div className="hidden md:flex items-center gap-1">
+        {/* View toggle pills */}
+        <div className="flex bg-panel p-0.5 rounded-full border border-line">
+          <button
+            onClick={() => setView("studio")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
+              view === "studio"
+                ? "bg-white/10 text-white"
+                : "text-ink-faint hover:text-ink"
+            }`}
+          >
+            <AudioWaveform size={13} />
+            Studio
+          </button>
+          <button
+            onClick={() => setView("profile")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
+              view === "profile"
+                ? "bg-white/10 text-white"
+                : "text-ink-faint hover:text-ink"
+            }`}
+          >
+            <Gamepad2 size={13} />
+            Profile
+          </button>
+          <button
+            onClick={() => setView("settings")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
+              view === "settings"
+                ? "bg-white/10 text-white"
+                : "text-ink-faint hover:text-ink"
+            }`}
+          >
+            <Settings size={13} />
+          </button>
         </div>
-      )}
+
+        {/* File name pill — show only in studio view */}
+        {view === "studio" && fileName && (
+          <div className="flex items-center gap-2 px-3.5 py-1.5 bg-panel rounded-full border border-line max-w-[360px] ml-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-lime shrink-0" />
+            <span className="text-xs text-ink-muted truncate font-mono">{fileName}</span>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-3">
         <div className="hidden sm:flex items-center gap-1.5 pl-3 pr-1 py-1 bg-panel rounded-full border border-line text-xs">

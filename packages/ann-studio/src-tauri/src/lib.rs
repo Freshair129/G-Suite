@@ -480,6 +480,652 @@ async fn install_pack(
     })
 }
 
+// ---- Game Profile / G-Maiden integration ---------------------------------
+
+#[derive(Serialize)]
+struct GMaidenStatus {
+    found: bool,
+    path: String,
+}
+
+/// Check whether the G-Maiden repo can be found. Returns its absolute path if
+/// so, empty string otherwise — lets the frontend show "integrate" before doing
+/// the heavier voice-cache scan.
+#[tauri::command]
+fn check_gmaiden(gmaiden_dir: Option<String>) -> GMaidenStatus {
+    match resolve_gmaiden_dir(&gmaiden_dir) {
+        Some(p) => GMaidenStatus {
+            found: true,
+            path: p.to_string_lossy().into_owned(),
+        },
+        None => GMaidenStatus {
+            found: false,
+            path: String::new(),
+        },
+    }
+}
+
+#[derive(Serialize)]
+struct VoiceCacheEntry {
+    event: String,
+    files: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct VoiceCacheScan {
+    voice_cache_path: String,
+    entries: Vec<VoiceCacheEntry>,
+}
+
+/// Walk `G-Maiden/assets/voice-cache/` and return a list of (event → files[])
+/// so the frontend can show which events have audio installed.
+#[tauri::command]
+fn scan_voice_cache(gmaiden_dir: Option<String>) -> Result<VoiceCacheScan, String> {
+    let base = resolve_gmaiden_dir(&gmaiden_dir)
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
+    let vc = base.join("assets/voice-cache");
+    if !vc.exists() {
+        return Ok(VoiceCacheScan {
+            voice_cache_path: vc.to_string_lossy().into_owned(),
+            entries: vec![],
+        });
+    }
+
+    let mut entries = Vec::new();
+    let mut dirs: Vec<_> = std::fs::read_dir(&vc)
+        .map_err(|e| format!("read voice-cache: {e}"))?
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .collect();
+    dirs.sort_by_key(|d| d.file_name());
+
+    for dir in dirs {
+        let event = dir.file_name().to_string_lossy().into_owned();
+        let mut files: Vec<String> = std::fs::read_dir(dir.path())
+            .map_err(|e| format!("read {event}: {e}"))?
+            .flatten()
+            .filter(|f| {
+                f.path()
+                    .extension()
+                    .map(|ext| ext == "wav" || ext == "mp3" || ext == "ogg")
+                    .unwrap_or(false)
+            })
+            .map(|f| f.file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        entries.push(VoiceCacheEntry { event, files });
+    }
+
+    Ok(VoiceCacheScan {
+        voice_cache_path: vc.to_string_lossy().into_owned(),
+        entries,
+    })
+}
+
+// ---- Sound Library (SQLite) & Pack Management ----------------------------
+
+fn app_data_root() -> PathBuf {
+    let base = std::env::var("LOCALAPPDATA")
+        .or_else(|_| std::env::var("APPDATA"))
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".into());
+    PathBuf::from(base).join("G-AnnStudio")
+}
+
+fn db_path() -> PathBuf {
+    app_data_root().join("library.db")
+}
+
+fn sounds_dir() -> PathBuf {
+    app_data_root().join("sounds")
+}
+
+fn open_db() -> Result<rusqlite::Connection, String> {
+    let path = db_path();
+    std::fs::create_dir_all(path.parent().unwrap())
+        .map_err(|e| format!("mkdir db: {e}"))?;
+    let conn =
+        rusqlite::Connection::open(&path).map_err(|e| format!("open db: {e}"))?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS packages (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            game        TEXT NOT NULL DEFAULT '',
+            file_type   TEXT NOT NULL DEFAULT 'wav',
+            quality     TEXT NOT NULL DEFAULT 'medium',
+            clip_count  INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sounds (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            pkg_id      TEXT NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
+            idx         INTEGER NOT NULL,
+            name        TEXT NOT NULL,
+            file_path   TEXT NOT NULL,
+            duration    REAL NOT NULL DEFAULT 0,
+            event       TEXT NOT NULL DEFAULT 'unused'
+        );
+        CREATE TABLE IF NOT EXISTS packs (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            pack_type   TEXT NOT NULL,
+            events      TEXT NOT NULL DEFAULT '[]',
+            mappings    TEXT NOT NULL DEFAULT '{}',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+        PRAGMA foreign_keys = ON;",
+    )
+    .map_err(|e| format!("init tables: {e}"))?;
+    Ok(conn)
+}
+
+// ---- Library commands ---------------------------------------------------
+
+#[derive(Serialize)]
+struct LibPkg {
+    id: String,
+    name: String,
+    game: String,
+    file_type: String,
+    quality: String,
+    clip_count: i64,
+    created_at: String,
+}
+
+#[derive(Serialize, Clone)]
+struct LibSound {
+    id: i64,
+    pkg_id: String,
+    idx: i64,
+    name: String,
+    file_path: String,
+    duration: f64,
+    event: String,
+}
+
+#[derive(Serialize)]
+struct LibraryInfo {
+    root: String,
+    packages: Vec<LibPkg>,
+}
+
+#[tauri::command]
+fn init_library() -> Result<LibraryInfo, String> {
+    let conn = open_db()?;
+    std::fs::create_dir_all(sounds_dir()).map_err(|e| format!("mkdir sounds: {e}"))?;
+    let mut stmt = conn
+        .prepare("SELECT id, name, game, file_type, quality, clip_count, created_at FROM packages ORDER BY created_at DESC")
+        .map_err(|e| format!("query: {e}"))?;
+    let packages: Vec<LibPkg> = stmt
+        .query_map([], |row| {
+            Ok(LibPkg {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                game: row.get(2)?,
+                file_type: row.get(3)?,
+                quality: row.get(4)?,
+                clip_count: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| format!("map: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(LibraryInfo {
+        root: sounds_dir().to_string_lossy().into_owned(),
+        packages,
+    })
+}
+
+#[tauri::command]
+fn query_sounds(pkg_id: String) -> Result<Vec<LibSound>, String> {
+    let conn = open_db()?;
+    let mut stmt = conn
+        .prepare("SELECT id, pkg_id, idx, name, file_path, duration, event FROM sounds WHERE pkg_id = ?1 ORDER BY idx")
+        .map_err(|e| format!("query: {e}"))?;
+    let sounds: Vec<LibSound> = stmt
+        .query_map([&pkg_id], |row| {
+            Ok(LibSound {
+                id: row.get(0)?,
+                pkg_id: row.get(1)?,
+                idx: row.get(2)?,
+                name: row.get(3)?,
+                file_path: row.get(4)?,
+                duration: row.get(5)?,
+                event: row.get(6)?,
+            })
+        })
+        .map_err(|e| format!("map: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(sounds)
+}
+
+#[derive(Deserialize)]
+struct SaveToLibClip {
+    name: String,
+    start: f64,
+    end: f64,
+    event: String,
+}
+
+#[derive(Deserialize)]
+struct SaveToLibOpts {
+    pkg_name: String,
+    game: String,
+    file_type: String,
+    quality: String,
+    padding: f64,
+}
+
+#[derive(Serialize)]
+struct SaveToLibResult {
+    pkg_id: String,
+    saved: usize,
+}
+
+/// Cut each clip from the source WAV (with padding) and insert into SQLite.
+#[tauri::command]
+async fn save_clips_to_library(
+    source_path: String,
+    clips: Vec<SaveToLibClip>,
+    opts: SaveToLibOpts,
+    total_duration: f64,
+) -> Result<SaveToLibResult, String> {
+    let pkg_id = format!(
+        "pkg_{}_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        &sanitize_filename(&opts.pkg_name)
+    );
+    let pkg_dir = sounds_dir().join(&pkg_id);
+    std::fs::create_dir_all(&pkg_dir).map_err(|e| format!("mkdir pkg: {e}"))?;
+
+    // Insert package row before async work
+    {
+        let conn = open_db()?;
+        let now = chrono_now();
+        conn.execute(
+            "INSERT INTO packages (id, name, game, file_type, quality, clip_count, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            rusqlite::params![pkg_id, opts.pkg_name, opts.game, opts.file_type, opts.quality, clips.len() as i64, now],
+        ).map_err(|e| format!("insert pkg: {e}"))?;
+    }
+
+    let ext = match opts.file_type.as_str() {
+        "mp3" => "mp3",
+        "ogg" => "ogg",
+        _ => "wav",
+    };
+
+    let quality_args: Vec<String> = match opts.file_type.as_str() {
+        "mp3" => match opts.quality.as_str() {
+            "low" => vec!["-ab".into(), "128k".into()],
+            "high" => vec!["-ab".into(), "320k".into()],
+            _ => vec!["-ab".into(), "192k".into()],
+        },
+        "ogg" => match opts.quality.as_str() {
+            "low" => vec!["-q:a".into(), "3".into()],
+            "high" => vec!["-q:a".into(), "8".into()],
+            _ => vec!["-q:a".into(), "5".into()],
+        },
+        _ => match opts.quality.as_str() {
+            "low" => vec!["-ar".into(), "22050".into(), "-acodec".into(), "pcm_s16le".into()],
+            "high" => vec!["-ar".into(), "48000".into(), "-acodec".into(), "pcm_s16le".into()],
+            _ => vec!["-ar".into(), "44100".into(), "-acodec".into(), "pcm_s16le".into()],
+        },
+    };
+
+    // Cut clips with ffmpeg (async), collect results
+    let mut cut_results: Vec<(i64, String, String, f64, String)> = Vec::new();
+
+    for (i, clip) in clips.iter().enumerate() {
+        let padded_start = (clip.start - opts.padding).max(0.0);
+        let padded_end = (clip.end + opts.padding).min(total_duration);
+        let dur = padded_end - padded_start;
+        if dur <= 0.0 {
+            continue;
+        }
+
+        let filename = format!("{:03}_{}.{ext}", i + 1, sanitize_filename(&clip.name));
+        let out_path = pkg_dir.join(&filename);
+
+        let mut args = vec![
+            "-y".to_string(),
+            "-i".to_string(),
+            source_path.clone(),
+            "-ss".to_string(),
+            format!("{padded_start:.3}"),
+            "-t".to_string(),
+            format!("{dur:.3}"),
+        ];
+        args.extend(quality_args.iter().cloned());
+        args.push(out_path.to_str().unwrap().to_string());
+
+        let output = Command::new(ffmpeg_bin())
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("ffmpeg clip {i}: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("ffmpeg error clip {}: {stderr}", clip.name));
+        }
+
+        let rel_path = format!("{pkg_id}/{filename}");
+        cut_results.push(((i + 1) as i64, clip.name.clone(), rel_path, dur, clip.event.clone()));
+    }
+
+    // Insert sound rows after all async work is done
+    {
+        let conn = open_db()?;
+        for (idx, name, rel_path, dur, event) in &cut_results {
+            conn.execute(
+                "INSERT INTO sounds (pkg_id, idx, name, file_path, duration, event) VALUES (?1,?2,?3,?4,?5,?6)",
+                rusqlite::params![pkg_id, idx, name, rel_path, dur, event],
+            ).map_err(|e| format!("insert sound: {e}"))?;
+        }
+    }
+
+    Ok(SaveToLibResult { pkg_id, saved: cut_results.len() })
+}
+
+#[tauri::command]
+fn delete_library_pkg(pkg_id: String) -> Result<(), String> {
+    let conn = open_db()?;
+    let pkg_dir = sounds_dir().join(&pkg_id);
+    if pkg_dir.exists() && pkg_dir.starts_with(sounds_dir()) {
+        let _ = std::fs::remove_dir_all(&pkg_dir);
+    }
+    conn.execute("DELETE FROM sounds WHERE pkg_id = ?1", [&pkg_id])
+        .map_err(|e| format!("delete sounds: {e}"))?;
+    conn.execute("DELETE FROM packages WHERE id = ?1", [&pkg_id])
+        .map_err(|e| format!("delete pkg: {e}"))?;
+    Ok(())
+}
+
+fn chrono_now() -> String {
+    let d = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = d.as_secs();
+    format!(
+        "{}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        1970 + secs / 31_536_000,
+        (secs % 31_536_000) / 2_592_000 + 1,
+        (secs % 2_592_000) / 86_400 + 1,
+        (secs % 86_400) / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
+}
+
+// ---- Pack management (SQLite) -------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone)]
+struct SoundMapping {
+    sound_path: String,
+    sound_name: String,
+    volume: f64,
+    speed: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct PackManifest {
+    id: String,
+    name: String,
+    pack_type: String,
+    events: Vec<String>,
+    mappings: std::collections::HashMap<String, SoundMapping>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[tauri::command]
+fn save_pack(manifest: PackManifest) -> Result<String, String> {
+    let conn = open_db()?;
+    let events_json =
+        serde_json::to_string(&manifest.events).map_err(|e| format!("json: {e}"))?;
+    let mappings_json =
+        serde_json::to_string(&manifest.mappings).map_err(|e| format!("json: {e}"))?;
+    conn.execute(
+        "INSERT OR REPLACE INTO packs (id, name, pack_type, events, mappings, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        rusqlite::params![manifest.id, manifest.name, manifest.pack_type, events_json, mappings_json, manifest.created_at, manifest.updated_at],
+    ).map_err(|e| format!("save pack: {e}"))?;
+    Ok(manifest.id)
+}
+
+#[tauri::command]
+fn load_packs() -> Result<Vec<PackManifest>, String> {
+    let conn = open_db()?;
+    let mut stmt = conn
+        .prepare("SELECT id, name, pack_type, events, mappings, created_at, updated_at FROM packs ORDER BY updated_at DESC")
+        .map_err(|e| format!("query: {e}"))?;
+    let packs: Vec<PackManifest> = stmt
+        .query_map([], |row| {
+            let events_str: String = row.get(3)?;
+            let mappings_str: String = row.get(4)?;
+            Ok(PackManifest {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                pack_type: row.get(2)?,
+                events: serde_json::from_str(&events_str).unwrap_or_default(),
+                mappings: serde_json::from_str(&mappings_str).unwrap_or_default(),
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| format!("map: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(packs)
+}
+
+#[tauri::command]
+fn delete_pack(pack_id: String) -> Result<(), String> {
+    let conn = open_db()?;
+    conn.execute("DELETE FROM packs WHERE id = ?1", [&pack_id])
+        .map_err(|e| format!("delete pack: {e}"))?;
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct ExportPackResult {
+    output_dir: String,
+    files: Vec<String>,
+    total: usize,
+}
+
+#[tauri::command]
+async fn export_pack(
+    pack_id: String,
+    target_dir: String,
+) -> Result<ExportPackResult, String> {
+    let manifest = {
+        let conn = open_db()?;
+        let mut stmt = conn
+            .prepare("SELECT name, pack_type, events, mappings FROM packs WHERE id = ?1")
+            .map_err(|e| format!("query: {e}"))?;
+        stmt.query_row([&pack_id], |row| {
+            let events_str: String = row.get(2)?;
+            let mappings_str: String = row.get(3)?;
+            Ok(PackManifest {
+                id: pack_id.clone(),
+                name: row.get(0)?,
+                pack_type: row.get(1)?,
+                events: serde_json::from_str(&events_str).unwrap_or_default(),
+                mappings: serde_json::from_str(&mappings_str).unwrap_or_default(),
+                created_at: String::new(),
+                updated_at: String::new(),
+            })
+        })
+        .map_err(|e| format!("pack not found: {e}"))?
+    };
+
+    let snd_root = sounds_dir();
+    let out = Path::new(&target_dir).join(&manifest.name);
+    std::fs::create_dir_all(&out).map_err(|e| format!("mkdir output: {e}"))?;
+
+    let mut files = Vec::new();
+
+    for (event, mapping) in &manifest.mappings {
+        let src = snd_root.join(&mapping.sound_path);
+        if !src.exists() {
+            continue;
+        }
+        let event_dir = out.join(event);
+        std::fs::create_dir_all(&event_dir)
+            .map_err(|e| format!("mkdir {event}: {e}"))?;
+
+        let fname = src
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let dest = event_dir.join(&fname);
+
+        let needs_filter =
+            (mapping.volume - 1.0).abs() > 0.01 || (mapping.speed - 1.0).abs() > 0.01;
+
+        if needs_filter {
+            let mut af = Vec::new();
+            if (mapping.volume - 1.0).abs() > 0.01 {
+                af.push(format!("volume={:.2}", mapping.volume));
+            }
+            if (mapping.speed - 1.0).abs() > 0.01 {
+                af.push(format!("atempo={:.2}", mapping.speed.clamp(0.5, 2.0)));
+            }
+            let filter_str = af.join(",");
+            let output = Command::new(ffmpeg_bin())
+                .creation_flags(CREATE_NO_WINDOW)
+                .args([
+                    "-y",
+                    "-i",
+                    src.to_str().unwrap(),
+                    "-af",
+                    &filter_str,
+                    "-acodec",
+                    "pcm_s16le",
+                    dest.to_str().unwrap(),
+                ])
+                .output()
+                .await
+                .map_err(|e| format!("ffmpeg: {e}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "ffmpeg error {event}/{fname}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+        } else {
+            std::fs::copy(&src, &dest).map_err(|e| format!("copy {fname}: {e}"))?;
+        }
+        files.push(format!("{event}/{fname}"));
+    }
+
+    let out_manifest = serde_json::json!({
+        "version": "1.0",
+        "pack_name": manifest.name,
+        "pack_type": manifest.pack_type,
+        "events": manifest.events,
+        "mappings": manifest.mappings,
+    });
+    std::fs::write(
+        out.join("manifest.json"),
+        serde_json::to_string_pretty(&out_manifest).unwrap(),
+    )
+    .map_err(|e| format!("write manifest: {e}"))?;
+
+    let total = files.len();
+    Ok(ExportPackResult {
+        output_dir: out.to_string_lossy().into_owned(),
+        files,
+        total,
+    })
+}
+
+// ---- System monitoring --------------------------------------------------
+
+#[derive(Serialize)]
+struct SystemStats {
+    cpu_percent: f32,
+    ram_used_mb: u64,
+    ram_total_mb: u64,
+    ram_percent: f32,
+    gpu_percent: f32,
+    vram_used_mb: u64,
+    vram_total_mb: u64,
+    vram_percent: f32,
+}
+
+#[tauri::command]
+async fn get_system_stats(state: tauri::State<'_, SysInfoState>) -> Result<SystemStats, String> {
+    let (cpu_percent, ram_used_mb, ram_total_mb) = {
+        let mut sys = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+        sys.refresh_all();
+        let cpu = sys.global_cpu_info().cpu_usage();
+        let used = sys.used_memory() / 1_048_576;
+        let total = sys.total_memory() / 1_048_576;
+        (cpu, used, total)
+    };
+    let ram_percent = if ram_total_mb > 0 {
+        (ram_used_mb as f32 / ram_total_mb as f32) * 100.0
+    } else {
+        0.0
+    };
+
+    // GPU via nvidia-smi (best-effort)
+    let (gpu_percent, vram_used_mb, vram_total_mb) = match read_nvidia_smi().await {
+        Ok(g) => g,
+        Err(_) => (0.0, 0, 0),
+    };
+    let vram_percent = if vram_total_mb > 0 {
+        (vram_used_mb as f32 / vram_total_mb as f32) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(SystemStats {
+        cpu_percent,
+        ram_used_mb,
+        ram_total_mb,
+        ram_percent,
+        gpu_percent,
+        vram_used_mb,
+        vram_total_mb,
+        vram_percent,
+    })
+}
+
+async fn read_nvidia_smi() -> Result<(f32, u64, u64), String> {
+    let output = Command::new("nvidia-smi")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args([
+            "--query-gpu=utilization.gpu,memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("nvidia-smi: {e}"))?;
+    if !output.status.success() {
+        return Err("nvidia-smi failed".into());
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let parts: Vec<&str> = text.trim().split(',').map(|s| s.trim()).collect();
+    if parts.len() < 3 {
+        return Err("unexpected nvidia-smi output".into());
+    }
+    let gpu_pct = parts[0].parse::<f32>().unwrap_or(0.0);
+    let vram_used = parts[1].parse::<u64>().unwrap_or(0);
+    let vram_total = parts[2].parse::<u64>().unwrap_or(0);
+    Ok((gpu_pct, vram_used, vram_total))
+}
+
+struct SysInfoState(std::sync::Mutex<sysinfo::System>);
+
 // ---- AI providers (for the chat) ----------------------------------------
 
 /// List locally installed Ollama models (short — only when the daemon is up).
@@ -583,9 +1229,21 @@ pub fn run() {
             transcribe_audio,
             read_audio_bytes,
             install_pack,
+            check_gmaiden,
+            scan_voice_cache,
+            init_library,
+            query_sounds,
+            save_clips_to_library,
+            delete_library_pkg,
+            save_pack,
+            load_packs,
+            delete_pack,
+            export_pack,
             list_ollama_models,
             llm_complete,
+            get_system_stats,
         ])
+        .manage(SysInfoState(std::sync::Mutex::new(sysinfo::System::new_all())))
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");
 }
