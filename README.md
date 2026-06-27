@@ -3,6 +3,8 @@
 Monorepo of developer tools for the **G-Maiden** ecosystem (the real-time Dota 2 AI companion).
 Each tool ships as an independent package but shares contracts and conventions here.
 
+Where this is headed: [`ROADMAP.md`](ROADMAP.md).
+
 ## Packages
 
 | Package | Description | Status |
