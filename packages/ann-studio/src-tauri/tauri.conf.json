@@ -25,7 +25,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob: asset: http://asset.localhost; img-src 'self' blob: asset: http://asset.localhost"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; media-src 'self' blob: asset: http://asset.localhost; img-src 'self' blob: asset: http://asset.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "plugins": {

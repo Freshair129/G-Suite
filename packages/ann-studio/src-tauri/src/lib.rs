@@ -10,12 +10,6 @@ fn ffmpeg_bin() -> String {
     resolve_bin("ffmpeg", "FFMPEG_PATH")
 }
 
-/// Resolve the ffprobe binary. Order: `FFPROBE_PATH` env → `ffmpeg-static` →
-/// `PATH`.
-fn ffprobe_bin() -> String {
-    resolve_bin("ffprobe", "FFPROBE_PATH")
-}
-
 fn resolve_bin(name: &str, env_key: &str) -> String {
     // 1. Explicit override.
     if let Ok(p) = std::env::var(env_key) {
@@ -122,7 +116,7 @@ async fn extract_audio(input_path: String) -> Result<AudioInfo, String> {
         return Err(format!("ffmpeg error: {stderr}"));
     }
 
-    let duration = probe_duration(wav_path.to_str().unwrap()).await?;
+    let duration = wav_duration(wav_path.to_str().unwrap())?;
 
     Ok(AudioInfo {
         path: wav_path.to_string_lossy().into_owned(),
@@ -131,24 +125,40 @@ async fn extract_audio(input_path: String) -> Result<AudioInfo, String> {
     })
 }
 
-async fn probe_duration(path: &str) -> Result<f64, String> {
-    let output = Command::new(ffprobe_bin())
-        .creation_flags(CREATE_NO_WINDOW)
-        .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            path,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("ffprobe failed: {e}"))?;
+/// Duration of a PCM WAV, read straight from its header — no ffprobe needed
+/// (`ffmpeg-static` ships ffmpeg.exe only, not ffprobe). Walks RIFF chunks for
+/// `fmt ` (rate/channels/bits) and `data` (byte length).
+fn wav_duration(path: &str) -> Result<f64, String> {
+    let b = std::fs::read(path).map_err(|e| format!("read wav: {e}"))?;
+    if b.len() < 44 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
+        return Err("not a WAV file".into());
+    }
+    let le16 = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
+    let le32 = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| "could not parse duration".into())
+    let (mut rate, mut channels, mut bits, mut data_len) = (0u32, 0u16, 0u16, 0u64);
+    let mut pos = 12usize;
+    while pos + 8 <= b.len() {
+        let id = &b[pos..pos + 4];
+        let size = le32(pos + 4) as usize;
+        let body = pos + 8;
+        if id == b"fmt " && body + 16 <= b.len() {
+            channels = le16(body + 2);
+            rate = le32(body + 4);
+            bits = le16(body + 14);
+        } else if id == b"data" {
+            data_len = size as u64;
+        }
+        pos = body + size + (size & 1); // chunks are word-aligned
+    }
+    let bytes_per_sec = rate as u64 * channels as u64 * (bits as u64 / 8);
+    if bytes_per_sec == 0 {
+        return Err("invalid WAV header".into());
+    }
+    if data_len == 0 {
+        data_len = b.len().saturating_sub(44) as u64;
+    }
+    Ok(data_len as f64 / bytes_per_sec as f64)
 }
 
 #[tauri::command]
@@ -335,6 +345,15 @@ async fn transcribe_audio(
     Ok(value)
 }
 
+/// Return raw file bytes to the webview as an ArrayBuffer. The waveform loads
+/// audio via this (loadBlob) instead of the asset protocol, which sidesteps
+/// CSP/CORS issues with wavesurfer's fetch.
+#[tauri::command]
+fn read_audio_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -345,6 +364,7 @@ pub fn run() {
             cut_clip,
             export_all,
             transcribe_audio,
+            read_audio_bytes,
         ])
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");
