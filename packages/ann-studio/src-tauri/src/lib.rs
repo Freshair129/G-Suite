@@ -1047,6 +1047,66 @@ async fn export_pack(
     })
 }
 
+// ---- Quick install library → G-Maiden voice-cache ----------------------
+
+#[derive(Serialize)]
+struct QuickInstallResult {
+    installed: usize,
+    voice_cache: String,
+    per_event: std::collections::BTreeMap<String, usize>,
+}
+
+#[tauri::command]
+fn install_lib_to_gmaiden(
+    pkg_id: String,
+    mappings: std::collections::HashMap<String, String>,
+    gmaiden_dir: Option<String>,
+) -> Result<QuickInstallResult, String> {
+    let base = resolve_gmaiden_dir(&gmaiden_dir)
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือวาง repo ข้าง G-Suite")?;
+    let vc = base.join("assets/voice-cache");
+    let snd_root = sounds_dir();
+
+    let conn = open_db()?;
+    let mut stmt = conn
+        .prepare("SELECT idx, file_path, name FROM sounds WHERE pkg_id = ?1 ORDER BY idx")
+        .map_err(|e| format!("query: {e}"))?;
+    let sounds: Vec<(i64, String, String)> = stmt
+        .query_map([&pkg_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(|e| format!("map: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut installed = 0usize;
+
+    for (idx, file_path, _name) in &sounds {
+        let key = format!("{:03}", idx);
+        let event = match mappings.get(&key) {
+            Some(ev) if !ev.is_empty() && ev != "unused" => ev.clone(),
+            _ => continue,
+        };
+        let src = snd_root.join(file_path);
+        if !src.exists() {
+            continue;
+        }
+        let dir = vc.join(&event);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+        let n = per_event.entry(event.clone()).or_insert(0);
+        *n += 1;
+        let fname = format!("kom_{:02}.wav", *n);
+        let dest = dir.join(&fname);
+        std::fs::copy(&src, &dest).map_err(|e| format!("copy: {e}"))?;
+        installed += 1;
+    }
+
+    Ok(QuickInstallResult {
+        installed,
+        voice_cache: vc.to_string_lossy().into_owned(),
+        per_event,
+    })
+}
+
 // ---- System monitoring --------------------------------------------------
 
 #[derive(Serialize)]
@@ -1242,6 +1302,7 @@ pub fn run() {
             list_ollama_models,
             llm_complete,
             get_system_stats,
+            install_lib_to_gmaiden,
         ])
         .manage(SysInfoState(std::sync::Mutex::new(sysinfo::System::new_all())))
         .run(tauri::generate_context!())

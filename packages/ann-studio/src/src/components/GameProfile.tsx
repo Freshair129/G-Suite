@@ -20,7 +20,58 @@ import {
   ChevronDown,
   ChevronRight,
   Headphones,
+  Zap,
 } from "lucide-react";
+
+// Hardcoded clip→event mapping for the "kom" announcer pack.
+// Key = 3-digit idx (matching sound.idx), value = G-Maiden event id.
+const KOM_MAPPING: Record<string, string> = {
+  "001": "triple_kill",
+  "002": "killing_spree",
+  "003": "dominating",
+  "004": "mega_kill",
+  "005": "kill",
+  "006": "unstoppable",
+  "007": "beyond_godlike",
+  "008": "kill",
+  "009": "death",
+  "010": "danger",
+  "011": "kill",
+  "012": "kill",
+  "013": "kill",
+  "014": "match_start",
+  "015": "match_start",
+  "016": "advice",
+  "017": "danger",
+  "018": "danger",
+  "019": "first_blood",
+  "020": "kill",
+  "021": "kill",
+  "022": "kill",
+  "023": "respawn",
+  "024": "advice",
+  "025": "first_blood",
+  "026": "death",
+  "027": "danger",
+  "028": "kill",
+  "029": "rampage",
+  "030": "kill",
+  "031": "death",
+  "032": "double_kill",
+  "033": "respawn",
+  "034": "death",
+  "035": "kill",
+  "036": "kill",
+  "037": "match_start",
+  "038": "match_start",
+  "039": "match_start",
+  "040": "hpLow",
+  "041": "advice",
+  "042": "danger",
+  "043": "wicked_sick",
+  "044": "manaLow",
+  "045": "godlike",
+};
 
 const TYPE_ICONS: Record<string, typeof Layers> = {
   full: Layers,
@@ -49,9 +100,11 @@ export default function GameProfile() {
     gmaidenPath,
     setGMaiden,
   } = useStudioStore();
+  const { libraryPackages } = useStudioStore();
   const [showCreator, setShowCreator] = useState(false);
   const [loading, setLoading] = useState(false);
   const [integrating, setIntegrating] = useState(false);
+  const [quickInstalling, setQuickInstalling] = useState(false);
 
   useEffect(() => {
     loadPacks();
@@ -129,6 +182,36 @@ export default function GameProfile() {
     }
   }
 
+  async function handleQuickInstall() {
+    if (!gmaidenConnected) {
+      alert("กรุณา Integrate G-Maiden ก่อน");
+      return;
+    }
+    const pkg = libraryPackages[0];
+    if (!pkg) {
+      alert("ยังไม่มี Package ใน Library — ใช้ Save to Lib ใน Studio ก่อน");
+      return;
+    }
+    setQuickInstalling(true);
+    try {
+      const result: { installed: number; voice_cache: string; per_event: Record<string, number> } =
+        await invoke("install_lib_to_gmaiden", {
+          pkgId: pkg.id,
+          mappings: KOM_MAPPING,
+          gmaidenDir: null,
+        });
+      const eventSummary = Object.entries(result.per_event)
+        .map(([ev, n]) => `${ev}: ${n}`)
+        .join("\n");
+      alert(`ติดตั้งสำเร็จ! ${result.installed} ไฟล์ → ${result.voice_cache}\n\n${eventSummary}`);
+      handleIntegrate();
+    } catch (e) {
+      alert(`ติดตั้งไม่สำเร็จ: ${e}`);
+    } finally {
+      setQuickInstalling(false);
+    }
+  }
+
   const activePack = packs.find((p) => p.id === activePackId);
 
   if (activePack) {
@@ -176,6 +259,21 @@ export default function GameProfile() {
               ? "G-Maiden Connected"
               : "Integrate G-Maiden"}
           </button>
+
+          {gmaidenConnected && libraryPackages.length > 0 && (
+            <button
+              onClick={handleQuickInstall}
+              disabled={quickInstalling}
+              className="flex items-center gap-2 px-4 h-9 rounded-full bg-orange-500/20 border border-orange-500/40 text-orange-400 text-xs font-medium hover:bg-orange-500/30 transition disabled:opacity-50"
+            >
+              {quickInstalling ? (
+                <RefreshCw size={14} className="animate-spin" />
+              ) : (
+                <Zap size={14} />
+              )}
+              {quickInstalling ? "กำลังติดตั้ง…" : "Quick Install"}
+            </button>
+          )}
 
           <button
             onClick={() => setShowCreator(true)}
