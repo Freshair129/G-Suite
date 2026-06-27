@@ -11,6 +11,11 @@ gen/
 # Rust
 target/
 
+# Python sidecar
+.venv/
+__pycache__/
+*.pyc
+
 # Editor / OS
 .vscode/
 .idea/

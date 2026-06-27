@@ -1,0 +1,5 @@
+# G-AnnStudio speech sidecar. faster-whisper uses CTranslate2 (no PyTorch),
+# so the footprint is small and CPU int8 works without a GPU.
+# Unpinned: Python 3.13 needs recent av/ctranslate2 wheels (older pins build
+# PyAV from source and fail without ffmpeg dev headers).
+faster-whisper==1.2.1

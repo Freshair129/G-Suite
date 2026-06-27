@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 const EXE: &str = if cfg!(windows) { ".exe" } else { "" };
@@ -254,6 +254,87 @@ fn sanitize_filename(name: &str) -> String {
         .collect()
 }
 
+/// Locate the speech sidecar directory: `SIDECAR_DIR` env → `<exe>/sidecar`
+/// (bundled) → the compile-time crate's `sidecar/` (dev).
+fn sidecar_dir() -> PathBuf {
+    if let Ok(d) = std::env::var("SIDECAR_DIR") {
+        let p = PathBuf::from(d);
+        if p.exists() {
+            return p;
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("sidecar");
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sidecar")
+}
+
+/// Resolve the sidecar Python: `PYTHON_PATH` env → the sidecar venv → `python`.
+fn python_bin(sidecar: &Path) -> String {
+    if let Ok(p) = std::env::var("PYTHON_PATH") {
+        if !p.is_empty() && Path::new(&p).exists() {
+            return p;
+        }
+    }
+    let venv = if cfg!(windows) {
+        sidecar.join(".venv/Scripts/python.exe")
+    } else {
+        sidecar.join(".venv/bin/python")
+    };
+    if venv.exists() {
+        return venv.to_string_lossy().into_owned();
+    }
+    "python".to_string()
+}
+
+/// Transcribe a WAV via the faster-whisper sidecar and return its raw JSON
+/// (`{language, duration, segments:[{start,end,text,words}]}`). The frontend
+/// turns segments into regions.
+#[tauri::command]
+async fn transcribe_audio(
+    wav_path: String,
+    model: Option<String>,
+    lang: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let sidecar = sidecar_dir();
+    let script = sidecar.join("transcribe.py");
+    if !script.exists() {
+        return Err(format!("sidecar script not found at {}", script.display()));
+    }
+    let py = python_bin(&sidecar);
+    let model = model.unwrap_or_else(|| "medium".into());
+    let lang = lang.unwrap_or_else(|| "th".into());
+
+    let output = Command::new(&py)
+        .creation_flags(CREATE_NO_WINDOW)
+        .args([
+            script.to_str().unwrap(),
+            &wav_path,
+            "--model",
+            &model,
+            "--lang",
+            &lang,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("failed to spawn python ({py}): {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        format!("bad sidecar output: {e}\nstderr:\n{stderr}")
+    })?;
+    if let Some(err) = value.get("error") {
+        return Err(format!("sidecar error: {err}"));
+    }
+    Ok(value)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -263,6 +344,7 @@ pub fn run() {
             extract_audio,
             cut_clip,
             export_all,
+            transcribe_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");
