@@ -23,6 +23,36 @@ def eprint(*a):
     print(*a, file=sys.stderr, flush=True)
 
 
+def register_cuda_dlls():
+    """On Windows, add the pip-installed NVIDIA wheel bin dirs (cublas, cudnn,
+    cuda_nvrtc) to the DLL search path so ctranslate2 finds cublas64_12.dll /
+    cudnn64_9.dll without a system-wide CUDA Toolkit install."""
+    if not sys.platform.startswith("win"):
+        return
+    import os
+    import glob
+
+    roots = []
+    try:
+        import nvidia
+        roots.append(os.path.dirname(nvidia.__file__))
+    except Exception:  # noqa: BLE001 — wheels may be absent (CPU-only box)
+        roots.append(os.path.join(sys.prefix, "Lib", "site-packages", "nvidia"))
+    for root in roots:
+        for bindir in glob.glob(os.path.join(root, "*", "bin")):
+            if not os.path.isdir(bindir):
+                continue
+            # add_dll_directory covers Python-driven loads; prepending PATH is
+            # what ctranslate2's native runtime actually honours when it
+            # LoadLibrary's cublas/cudnn/cudart at first inference.
+            try:
+                os.add_dll_directory(bindir)
+            except OSError as e:
+                eprint(f"[sidecar] add_dll_directory failed: {e}")
+            os.environ["PATH"] = bindir + os.pathsep + os.environ.get("PATH", "")
+            eprint(f"[sidecar] cuda lib dir + {bindir}")
+
+
 def main() -> int:
     # Windows console/redirect defaults to cp1252, which can't encode Thai —
     # force UTF-8 so the JSON (ensure_ascii=False) round-trips to the Rust side.
@@ -31,6 +61,8 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8")
         except (AttributeError, ValueError):
             pass
+
+    register_cuda_dlls()
 
     ap = argparse.ArgumentParser()
     ap.add_argument("wav")
@@ -45,14 +77,14 @@ def main() -> int:
         print(json.dumps({"error": f"faster-whisper not installed: {e}"}))
         return 1
 
-    # Pick device/compute. CUDA needs the CUDA runtime libs (cublas/cudnn) on
-    # PATH; init can succeed yet transcription fail at the first GEMM, so we
-    # default `auto` to CPU int8 (reliable, fast enough for short clips) and
-    # only touch CUDA when explicitly requested via --device cuda.
-    if args.device == "cuda":
-        attempts = [("cuda", "float16"), ("cpu", "int8")]
-    else:
+    # Pick device/compute. The NVIDIA CUDA libs are provided by pip wheels and
+    # registered above, so `auto` prefers GPU (float16) and falls back to CPU
+    # int8 if init or the first GEMM fails (e.g. no GPU / missing libs). Force
+    # `cpu` to skip CUDA entirely.
+    if args.device == "cpu":
         attempts = [("cpu", "int8")]
+    else:  # auto | cuda
+        attempts = [("cuda", "float16"), ("cpu", "int8")]
 
     model = None
     info = None

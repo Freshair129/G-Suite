@@ -1,0 +1,12 @@
+# Optional GPU acceleration for the speech sidecar (NVIDIA CUDA 12, cuDNN 9).
+# Install on top of requirements.txt to transcribe on the GPU with --device cuda
+# (or auto, which prefers GPU). ~1.7 GB of wheels — skip on CPU-only machines.
+#
+#   .venv\Scripts\python -m pip install -r requirements-gpu.txt
+#
+# transcribe.py registers these wheels' bin dirs (DLL search path + PATH) at
+# startup, so no system-wide CUDA Toolkit is needed. Must match ctranslate2's
+# ABI: CUDA 12 + cuDNN 9.
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cudnn-cu12==9.23.2.1
+nvidia-cuda-runtime-cu12==12.9.79
