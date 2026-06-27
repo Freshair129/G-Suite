@@ -1,14 +1,51 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useState } from "react";
-import { Upload, Download, Cpu } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Upload, Download, Sparkles } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runExport } from "../lib/actions";
 
+function shortModel(m: string): string {
+  return (m.split("/").pop() || m).split(":")[0].replace(/-gguf$/i, "");
+}
+
 export default function Header() {
-  const { sourcePath, wavPath, clips, setSource, model } = useStudioStore();
+  const { sourcePath, wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel } =
+    useStudioStore();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+
+  useEffect(() => {
+    invoke<string[]>("list_ollama_models")
+      .then((models) => {
+        setOllamaModels(models);
+        // default to the best small Thai-capable model available
+        if (!llmModel && models.length) {
+          const PREF = ["chinda", "qwen3", "qwen", "llama3", "llama", "gemma"];
+          let pref = models[0];
+          for (const p of PREF) {
+            const hit = models.find((m) => m.toLowerCase().includes(p));
+            if (hit) {
+              pref = hit;
+              break;
+            }
+          }
+          setLlmModel(pref);
+        }
+      })
+      .catch(() => setOllamaModels([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const providerValue = provider === "claude" ? "claude" : `ollama:${llmModel}`;
+  function onProviderChange(v: string) {
+    if (v === "claude") setProvider("claude");
+    else {
+      setProvider("ollama");
+      setLlmModel(v.replace(/^ollama:/, ""));
+    }
+  }
 
   async function handleImport() {
     const file = await open({
@@ -63,9 +100,22 @@ export default function Header() {
       )}
 
       <div className="flex items-center gap-3">
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-panel rounded-full border border-line text-xs">
-          <Cpu size={14} className="text-lime" />
-          <span className="text-ink-muted">Whisper · {model}</span>
+        <div className="hidden sm:flex items-center gap-1.5 pl-3 pr-1 py-1 bg-panel rounded-full border border-line text-xs">
+          <Sparkles size={14} className="text-lime shrink-0" />
+          <select
+            value={providerValue}
+            onChange={(e) => onProviderChange(e.target.value)}
+            className="bg-transparent text-ink-muted text-xs outline-none cursor-pointer pr-1 max-w-[160px]"
+            title="เลือก AI provider สำหรับ chat"
+          >
+            <option value="claude">Claude · plan</option>
+            {ollamaModels.map((m) => (
+              <option key={m} value={`ollama:${m}`}>
+                Local · {shortModel(m)}
+              </option>
+            ))}
+            {ollamaModels.length === 0 && <option value="ollama:">Local · (no model)</option>}
+          </select>
         </div>
 
         <button

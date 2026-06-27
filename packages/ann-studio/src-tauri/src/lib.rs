@@ -354,6 +354,97 @@ fn read_audio_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+// ---- AI providers (for the chat) ----------------------------------------
+
+/// List locally installed Ollama models (short — only when the daemon is up).
+#[tauri::command]
+async fn list_ollama_models() -> Result<Vec<String>, String> {
+    let resp = reqwest::Client::new()
+        .get("http://localhost:11434/api/tags")
+        .send()
+        .await
+        .map_err(|e| format!("ollama not reachable: {e}"))?;
+    let v: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(v["models"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| m["name"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// One-shot completion from the chosen provider. Returns the model's raw text
+/// (the chat expects a JSON action object — see the system prompt).
+#[tauri::command]
+async fn llm_complete(
+    provider: String,
+    model: Option<String>,
+    system: String,
+    prompt: String,
+) -> Result<String, String> {
+    match provider.as_str() {
+        "ollama" => ollama_chat(model.unwrap_or_else(|| "llama3".into()), system, prompt).await,
+        "claude" => claude_cli(system, prompt).await,
+        other => Err(format!("unknown provider: {other}")),
+    }
+}
+
+async fn ollama_chat(model: String, system: String, prompt: String) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt}
+        ],
+        "stream": false,
+        "format": "json",
+        "options": { "temperature": 0.2 }
+    });
+    let resp = reqwest::Client::new()
+        .post("http://localhost:11434/api/chat")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("ollama: {e}"))?;
+    let v: serde_json::Value = resp.json().await.map_err(|e| format!("ollama json: {e}"))?;
+    v["message"]["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "ollama: empty response".into())
+}
+
+async fn claude_cli(system: String, prompt: String) -> Result<String, String> {
+    // Drive the installed `claude` CLI in print mode — uses the user's signed-in
+    // Claude plan, no API key. Routed through cmd so the npm shim resolves.
+    let output = Command::new("cmd")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args([
+            "/c",
+            "claude",
+            "-p",
+            &prompt,
+            "--append-system-prompt",
+            &system,
+            "--output-format",
+            "json",
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("claude spawn: {e}"))?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("claude: {err}"));
+    }
+    let v: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("claude output not JSON: {e}"))?;
+    v["result"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "claude: no result field".into())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -365,6 +456,8 @@ pub fn run() {
             export_all,
             transcribe_audio,
             read_audio_bytes,
+            list_ollama_models,
+            llm_complete,
         ])
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");

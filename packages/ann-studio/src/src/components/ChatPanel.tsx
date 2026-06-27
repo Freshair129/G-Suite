@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Send, Sparkles, Bot } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runAutoSplit, runExport } from "../lib/actions";
+import { chatLlm } from "../lib/llm";
 
 interface Msg {
   role: "user" | "ai";
@@ -89,6 +90,8 @@ export default function ChatPanel() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
+  const provider = useStudioStore((s) => s.provider);
+
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
@@ -96,7 +99,18 @@ export default function ChatPanel() {
     setMessages((m) => [...m, { role: "user", text }]);
     setBusy(true);
     try {
-      const reply = await handleCommand(text);
+      // Primary: the chosen LLM (Ollama / Claude) with function calling.
+      // Fallback: the offline rule-based parser if the provider is unreachable.
+      let reply: string;
+      try {
+        reply = await chatLlm(text);
+      } catch (e) {
+        const note =
+          provider === "ollama"
+            ? "⚠️ ต่อ Ollama ไม่ได้ (เช็คว่ารันอยู่) — ใช้ตัวแปลคำสั่งสำรอง\n"
+            : "⚠️ เรียก Claude ไม่ได้ — ใช้ตัวแปลคำสั่งสำรอง\n";
+        reply = note + (await handleCommand(text));
+      }
       setMessages((m) => [...m, { role: "ai", text: reply }]);
     } catch (e) {
       setMessages((m) => [...m, { role: "ai", text: `เกิดข้อผิดพลาด: ${e}` }]);

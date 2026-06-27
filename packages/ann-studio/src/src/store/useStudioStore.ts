@@ -17,6 +17,8 @@ interface StudioState {
   selectedClipId: string | null;
   model: string;
   transcribing: boolean;
+  provider: "ollama" | "claude";
+  llmModel: string;
 
   setSource: (source: string, wav: string, duration: number) => void;
   addClip: (clip: Clip) => void;
@@ -26,6 +28,8 @@ interface StudioState {
   setClips: (clips: Clip[]) => void;
   setModel: (model: string) => void;
   setTranscribing: (v: boolean) => void;
+  setProvider: (p: "ollama" | "claude") => void;
+  setLlmModel: (m: string) => void;
 }
 
 const COLORS = [
@@ -51,6 +55,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   selectedClipId: null,
   model: "medium",
   transcribing: false,
+  provider: "ollama",
+  llmModel: "",
 
   setSource: (source, wav, duration) =>
     set({ sourcePath: source, wavPath: wav, duration, clips: [], selectedClipId: null }),
@@ -79,4 +85,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   setModel: (model) => set({ model }),
 
   setTranscribing: (transcribing) => set({ transcribing }),
+
+  setProvider: (provider) => set({ provider }),
+
+  setLlmModel: (llmModel) => set({ llmModel }),
 }));
