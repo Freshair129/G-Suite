@@ -14,18 +14,11 @@ body,
 
 body {
   margin: 0;
-  background: #0a0c10;
-  color: #e8edf3;
+  background: #0d0d0d;
+  color: #ffffff;
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
-}
-
-/* Subtle ambient gradient behind the app */
-#root {
-  background:
-    radial-gradient(900px 500px at 18% -10%, rgba(52, 211, 153, 0.06), transparent 60%),
-    radial-gradient(800px 500px at 100% 0%, rgba(40, 152, 224, 0.05), transparent 55%);
 }
 
 ::-webkit-scrollbar {
@@ -36,14 +29,33 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.2);
   background-clip: padding-box;
+}
+
+/* range input (volume) */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e0ff00;
+  box-shadow: 0 0 8px -1px rgba(224, 255, 0, 0.6);
 }
 
 /* ---- wavesurfer region polish ---- */
@@ -53,18 +65,19 @@ body {
 }
 ::part(region-handle) {
   width: 5px !important;
-  background: rgba(52, 211, 153, 0.5) !important;
+  background: rgba(224, 255, 0, 0.5) !important;
 }
 ::part(region-content) {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 10px;
-  color: #d8fbe9;
+  color: #f4ffb0;
   padding: 1px 5px;
-  background: rgba(8, 12, 14, 0.72);
+  background: rgba(13, 13, 13, 0.78);
   border-radius: 4px;
   margin-top: 3px;
 }
 
-input {
+input,
+textarea {
   user-select: text;
 }

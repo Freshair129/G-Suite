@@ -10,7 +10,7 @@ export default function EventPicker({ value, onChange }: Props) {
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full h-7 rounded-md bg-base/60 border border-line px-1.5 text-[11px] text-ink-muted outline-none focus:border-mint-400 hover:border-white/15 transition-colors"
+      className="w-full h-7 rounded-lg bg-base/60 border border-line px-2 text-[11px] text-ink-muted outline-none focus:border-lime hover:border-white/20 transition"
     >
       {EVENT_CATEGORIES.map((cat) => (
         <optgroup key={cat} label={cat}>

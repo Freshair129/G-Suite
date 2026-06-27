@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { useStudioStore } from "../store/useStudioStore";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
-import { IconImport, IconExport, IconWave } from "./icons";
+import { Upload, Download, Cpu } from "lucide-react";
+import { useStudioStore } from "../store/useStudioStore";
+import { runExport } from "../lib/actions";
 
 export default function Header() {
-  const { sourcePath, wavPath, clips, setSource } = useStudioStore();
+  const { sourcePath, wavPath, clips, setSource, model } = useStudioStore();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -31,25 +32,10 @@ export default function Header() {
   }
 
   async function handleExport() {
-    if (!wavPath || clips.length === 0) return;
-    const dir = await save({ title: "บันทึก announcer pack", defaultPath: "announcer-pack" });
-    if (!dir) return;
     setExporting(true);
     try {
-      const result: { manifest_path: string } = await invoke("export_all", {
-        sourcePath: wavPath,
-        clips: clips.map((c) => ({
-          id: c.id,
-          name: c.name,
-          start: c.start,
-          end: c.end,
-          event: c.event,
-        })),
-        outputDir: dir,
-      });
-      alert(`ส่งออกสำเร็จ — ${clips.length} clips\n${result.manifest_path}`);
-    } catch (e) {
-      alert(`ส่งออกไม่สำเร็จ: ${e}`);
+      const msg = await runExport();
+      alert(msg);
     } finally {
       setExporting(false);
     }
@@ -58,43 +44,48 @@ export default function Header() {
   const fileName = sourcePath?.split(/[\\/]/).pop();
 
   return (
-    <header className="flex items-center gap-4 px-5 h-14 shrink-0 border-b border-line bg-surface/60 backdrop-blur">
-      <div className="flex items-center gap-2.5">
-        <div className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-mint-400 to-ice-500 text-base shadow-glow">
-          <IconWave size={18} />
+    <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-base">
+      <div className="flex items-center gap-3">
+        <div className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-tr from-lime to-grass text-black font-extrabold text-lg">
+          G
         </div>
         <div className="leading-tight">
-          <div className="text-sm font-semibold tracking-tight">G-AnnStudio</div>
-          <div className="text-[10px] text-ink-faint -mt-0.5">Announcer Pack Editor</div>
+          <h1 className="text-lg font-bold tracking-tight">G-AnnStudio</h1>
+          <p className="text-[11px] text-ink-faint -mt-0.5">Announcer Pack Editor</p>
         </div>
       </div>
 
       {fileName && (
-        <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-surface-raised border border-line max-w-[280px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-mint-400 shrink-0" />
+        <div className="hidden md:flex items-center gap-2 px-3.5 py-1.5 bg-panel rounded-full border border-line max-w-[360px]">
+          <span className="w-1.5 h-1.5 rounded-full bg-lime shrink-0" />
           <span className="text-xs text-ink-muted truncate font-mono">{fileName}</span>
         </div>
       )}
 
-      <div className="flex-1" />
+      <div className="flex items-center gap-3">
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-panel rounded-full border border-line text-xs">
+          <Cpu size={14} className="text-lime" />
+          <span className="text-ink-muted">Whisper · {model}</span>
+        </div>
 
-      <button
-        onClick={handleImport}
-        disabled={importing}
-        className="flex items-center gap-2 px-3.5 h-9 rounded-lg bg-surface-raised hover:bg-surface-hover border border-line text-sm font-medium transition-colors disabled:opacity-50"
-      >
-        <IconImport size={16} className="text-mint-400" />
-        {importing ? "กำลังโหลด…" : "นำเข้าไฟล์"}
-      </button>
+        <button
+          onClick={handleImport}
+          disabled={importing}
+          className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
+        >
+          <Upload size={15} className="text-lime" />
+          {importing ? "กำลังโหลด…" : "นำเข้าไฟล์"}
+        </button>
 
-      <button
-        onClick={handleExport}
-        disabled={exporting || clips.length === 0}
-        className="flex items-center gap-2 px-3.5 h-9 rounded-lg bg-mint-500 hover:bg-mint-400 text-base font-semibold text-sm transition-colors disabled:opacity-40 disabled:hover:bg-mint-500"
-      >
-        <IconExport size={16} />
-        {exporting ? "กำลังส่งออก…" : "ส่งออก"}
-      </button>
+        <button
+          onClick={handleExport}
+          disabled={exporting || !wavPath || clips.length === 0}
+          className="flex items-center gap-2 px-5 h-9 rounded-full bg-white text-black text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40 disabled:hover:bg-white"
+        >
+          <Download size={15} />
+          {exporting ? "กำลังส่งออก…" : "ส่งออก"}
+        </button>
+      </div>
     </header>
   );
 }

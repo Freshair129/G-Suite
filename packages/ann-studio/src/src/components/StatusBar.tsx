@@ -1,14 +1,14 @@
 import { useStudioStore } from "../store/useStudioStore";
 
 export default function StatusBar() {
-  const { sourcePath, duration, clips } = useStudioStore();
+  const { sourcePath, duration, clips, transcribing } = useStudioStore();
   const covered = clips.reduce((sum, c) => sum + (c.end - c.start), 0);
   const pct = duration > 0 ? Math.min(100, (covered / duration) * 100) : 0;
 
   return (
-    <footer className="flex items-center gap-4 px-5 h-7 shrink-0 border-t border-line bg-surface/60 text-[11px] text-ink-faint font-mono">
-      <span className={sourcePath ? "text-mint-400" : ""}>
-        {sourcePath ? "● พร้อมใช้งาน" : "○ ยังไม่มีไฟล์"}
+    <footer className="flex items-center gap-4 px-6 h-7 shrink-0 border-t border-line bg-base text-[11px] text-ink-faint font-mono">
+      <span className={transcribing ? "text-lime animate-pulse" : sourcePath ? "text-lime" : ""}>
+        {transcribing ? "● กำลังถอดเสียง" : sourcePath ? "● พร้อมใช้งาน" : "○ ยังไม่มีไฟล์"}
       </span>
       {duration > 0 && (
         <>

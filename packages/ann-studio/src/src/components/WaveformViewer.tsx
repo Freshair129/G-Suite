@@ -2,25 +2,21 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
 import { invoke } from "@tauri-apps/api/core";
-import { useStudioStore, genId, type Clip } from "../store/useStudioStore";
 import {
-  IconPlay,
-  IconPause,
-  IconZoomIn,
-  IconZoomOut,
-  IconWand,
-  IconWave,
-  IconImport,
-} from "./icons";
-
-interface TranscriptSegment {
-  start: number;
-  end: number;
-  text: string;
-}
-interface Transcript {
-  segments: TranscriptSegment[];
-}
+  Play,
+  Pause,
+  ZoomIn,
+  ZoomOut,
+  Sparkles,
+  AudioLines,
+  Upload,
+  Volume2,
+  VolumeX,
+  Minus,
+  Plus,
+} from "lucide-react";
+import { useStudioStore, genId } from "../store/useStudioStore";
+import { runAutoSplit } from "../lib/actions";
 
 function hexToRgba(hex: string, a: number): string {
   const h = hex.replace("#", "");
@@ -42,13 +38,23 @@ export default function WaveformViewer() {
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const syncingRef = useRef(false);
 
-  const { wavPath, duration, clips, selectedClipId, addClip, updateClip, selectClip, setClips } =
-    useStudioStore();
+  const {
+    wavPath,
+    duration,
+    clips,
+    selectedClipId,
+    addClip,
+    updateClip,
+    selectClip,
+    model,
+    setModel,
+    transcribing,
+  } = useStudioStore();
 
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
-  const [model, setModel] = useState("medium");
-  const [transcribing, setTranscribing] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current || !wavPath) return;
@@ -59,9 +65,9 @@ export default function WaveformViewer() {
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
-      waveColor: "#5b6b7d",
-      progressColor: "#34d399",
-      cursorColor: "#6ee7b7",
+      waveColor: "#5a5a4a",
+      progressColor: "#e0ff00",
+      cursorColor: "#ffffff",
       cursorWidth: 2,
       height: 200,
       barWidth: 2,
@@ -71,8 +77,6 @@ export default function WaveformViewer() {
     });
     wsRef.current = ws;
 
-    // Load audio bytes through Rust (loadBlob) rather than the asset protocol —
-    // avoids wavesurfer's fetch tripping over CSP/CORS in the webview.
     let cancelled = false;
     invoke<ArrayBuffer>("read_audio_bytes", { path: wavPath })
       .then((buf) => {
@@ -81,7 +85,7 @@ export default function WaveformViewer() {
       .catch((e) => console.error("read_audio_bytes failed:", e));
     ws.on("error", (e) => console.error("wavesurfer error:", e));
 
-    regions.enableDragSelection({ color: hexToRgba("#34d399", 0.22) });
+    regions.enableDragSelection({ color: hexToRgba("#e0ff00", 0.18) });
 
     regions.on("region-created", (region: Region) => {
       if (syncingRef.current) return;
@@ -110,6 +114,7 @@ export default function WaveformViewer() {
     ws.on("pause", () => setPlaying(false));
     ws.on("finish", () => setPlaying(false));
     ws.on("timeupdate", (t: number) => setTime(t));
+    ws.on("ready", () => ws.setVolume(muted ? 0 : volume));
 
     return () => {
       cancelled = true;
@@ -129,7 +134,6 @@ export default function WaveformViewer() {
     syncingRef.current = true;
     const existing = regions.getRegions();
     const storeIds = new Set(clips.map((c) => c.id));
-
     for (const r of existing) {
       if (!storeIds.has((r as any).id)) r.remove();
     }
@@ -137,8 +141,8 @@ export default function WaveformViewer() {
       const found = existing.find((r: any) => r.id === clip.id);
       const selected = clip.id === selectedClipId;
       const color = selected
-        ? hexToRgba("#34d399", 0.34)
-        : hexToRgba(clip.color || "#58afe7", 0.2);
+        ? hexToRgba("#e0ff00", 0.32)
+        : hexToRgba(clip.color || "#22c55e", 0.18);
       if (!found) {
         const r = regions.addRegion({
           start: clip.start,
@@ -156,6 +160,26 @@ export default function WaveformViewer() {
     syncingRef.current = false;
   }, [clips, selectedClipId]);
 
+  const applyVolume = useCallback((v: number, m: boolean) => {
+    wsRef.current?.setVolume(m ? 0 : v);
+  }, []);
+  const changeVolume = useCallback(
+    (v: number) => {
+      const nv = Math.max(0, Math.min(1, v));
+      setVolume(nv);
+      setMuted(false);
+      applyVolume(nv, false);
+    },
+    [applyVolume],
+  );
+  const toggleMute = useCallback(() => {
+    setMuted((m) => {
+      const nm = !m;
+      applyVolume(volume, nm);
+      return nm;
+    });
+  }, [volume, applyVolume]);
+
   const playPause = useCallback(() => wsRef.current?.playPause(), []);
   const zoom = useCallback((dir: 1 | -1) => {
     const ws = wsRef.current;
@@ -165,40 +189,21 @@ export default function WaveformViewer() {
   }, []);
 
   async function handleAutoSplit() {
-    if (!wavPath) return;
     if (
       clips.length > 0 &&
       !confirm(`มี ${clips.length} clips อยู่แล้ว — ถอดเสียงใหม่จะแทนที่ทั้งหมด ดำเนินการต่อ?`)
     )
       return;
-    setTranscribing(true);
-    try {
-      const t: Transcript = await invoke("transcribe_audio", { wavPath, model, lang: "th" });
-      const next: Clip[] = t.segments
-        .filter((s) => s.end - s.start > 0.1)
-        .map((s) => ({
-          id: genId(),
-          name: s.text || "(ไม่มีข้อความ)",
-          start: s.start,
-          end: s.end,
-          event: "custom",
-          color: "",
-        }));
-      setClips(next);
-      if (next.length === 0) alert("ถอดเสียงเสร็จแต่ไม่พบช่วงพูด");
-    } catch (e) {
-      alert(`ถอดเสียงไม่สำเร็จ: ${e}`);
-    } finally {
-      setTranscribing(false);
-    }
+    const msg = await runAutoSplit(model);
+    if (msg.includes("ไม่สำเร็จ") || msg.includes("ไม่พบ")) alert(msg);
   }
 
   if (!wavPath) {
     return (
       <div className="flex-1 grid place-items-center">
-        <div className="flex flex-col items-center gap-4 text-center px-8 py-12 rounded-2xl border border-dashed border-line bg-surface/40 max-w-md">
-          <div className="grid place-items-center w-16 h-16 rounded-2xl bg-surface-raised text-mint-400">
-            <IconWave size={30} />
+        <div className="flex flex-col items-center gap-4 text-center px-8 py-12 rounded-3xl border border-dashed border-line bg-panel/40 max-w-md">
+          <div className="grid place-items-center w-16 h-16 rounded-2xl bg-panel text-lime">
+            <AudioLines size={30} />
           </div>
           <div>
             <div className="text-base font-semibold">ยังไม่มีไฟล์เสียง</div>
@@ -207,7 +212,7 @@ export default function WaveformViewer() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-ink-faint mt-1">
-            <IconImport size={14} />
+            <Upload size={14} />
             <span>กดปุ่ม “นำเข้าไฟล์” ด้านบนขวา</span>
           </div>
         </div>
@@ -216,27 +221,27 @@ export default function WaveformViewer() {
   }
 
   return (
-    <div className="flex-1 flex flex-col rounded-2xl border border-line bg-surface shadow-panel overflow-hidden">
+    <div className="flex-1 flex flex-col rounded-3xl border border-line bg-panel/60 overflow-hidden">
       {/* card header */}
-      <div className="flex items-center justify-between px-4 h-11 border-b border-line">
+      <div className="flex items-center justify-between px-4 h-12 border-b border-line">
         <div className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-          <IconWave size={15} className="text-mint-400" />
+          <AudioLines size={15} className="text-lime" />
           Waveform
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => zoom(-1)}
-            className="grid place-items-center w-8 h-8 rounded-md text-ink-muted hover:text-ink hover:bg-surface-hover transition-colors"
+            className="grid place-items-center w-8 h-8 rounded-lg text-ink-muted hover:text-ink hover:bg-panel-hover transition"
             title="ซูมออก"
           >
-            <IconZoomOut size={16} />
+            <ZoomOut size={16} />
           </button>
           <button
             onClick={() => zoom(1)}
-            className="grid place-items-center w-8 h-8 rounded-md text-ink-muted hover:text-ink hover:bg-surface-hover transition-colors"
+            className="grid place-items-center w-8 h-8 rounded-lg text-ink-muted hover:text-ink hover:bg-panel-hover transition"
             title="ซูมเข้า"
           >
-            <IconZoomIn size={16} />
+            <ZoomIn size={16} />
           </button>
         </div>
       </div>
@@ -247,31 +252,64 @@ export default function WaveformViewer() {
       </div>
 
       {/* transport */}
-      <div className="flex items-center gap-3 px-4 h-16 border-t border-line bg-surface-raised/40">
+      <div className="flex items-center gap-3 px-4 h-16 border-t border-line bg-base/40">
         <button
           onClick={playPause}
-          className="grid place-items-center w-11 h-11 rounded-full bg-mint-500 hover:bg-mint-400 text-base transition-colors shadow-glow shrink-0"
+          className="grid place-items-center w-11 h-11 rounded-full bg-lime text-black hover:bg-lime-dim transition shadow-glow shrink-0"
           title="เล่น / หยุด"
         >
-          {playing ? <IconPause size={18} /> : <IconPlay size={18} className="ml-0.5" />}
+          {playing ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
         </button>
 
-        <div className="font-mono text-sm tabular-nums">
+        <div className="font-mono text-sm tabular-nums shrink-0">
           <span className="text-ink">{fmt(time)}</span>
           <span className="text-ink-faint"> / {fmt(duration)}</span>
         </div>
 
-        <div className="w-px h-8 bg-line mx-1" />
-
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="hidden sm:block text-xs text-ink-faint">
-            ลากบน waveform เพื่อตัด clip
+        {/* volume */}
+        <div className="flex items-center gap-1.5 ml-2 shrink-0">
+          <button
+            onClick={toggleMute}
+            className="grid place-items-center w-8 h-8 rounded-lg text-ink-muted hover:text-ink hover:bg-panel-hover transition"
+            title={muted ? "เปิดเสียง" : "ปิดเสียง"}
+          >
+            {muted || volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+          <button
+            onClick={() => changeVolume(volume - 0.1)}
+            className="grid place-items-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-panel-hover transition"
+            title="ลดเสียง"
+          >
+            <Minus size={14} />
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={muted ? 0 : volume}
+            onChange={(e) => changeVolume(parseFloat(e.target.value))}
+            className="w-20"
+            title={`เสียง ${Math.round((muted ? 0 : volume) * 100)}%`}
+          />
+          <button
+            onClick={() => changeVolume(volume + 0.1)}
+            className="grid place-items-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-panel-hover transition"
+            title="เพิ่มเสียง"
+          >
+            <Plus size={14} />
+          </button>
+          <span className="w-9 text-right font-mono text-[11px] text-ink-faint tabular-nums">
+            {Math.round((muted ? 0 : volume) * 100)}%
           </span>
+        </div>
+
+        <div className="flex items-center gap-2 ml-auto shrink-0">
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
             disabled={transcribing}
-            className="h-9 rounded-lg bg-surface border border-line px-2 text-xs text-ink-muted outline-none focus:border-mint-400"
+            className="h-9 rounded-full bg-panel border border-line px-3 text-xs text-ink-muted outline-none focus:border-lime"
             title="โมเดล Whisper — large-v3 แม่นสุดสำหรับภาษาไทย"
           >
             <option value="small">small · เร็ว</option>
@@ -281,10 +319,10 @@ export default function WaveformViewer() {
           <button
             onClick={handleAutoSplit}
             disabled={transcribing}
-            className="flex items-center gap-2 px-3.5 h-9 rounded-lg bg-gradient-to-r from-mint-500 to-ice-500 text-base font-semibold text-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 h-9 rounded-full bg-gradient-to-r from-lime to-grass text-black font-semibold text-sm transition hover:opacity-90 disabled:opacity-50"
             title="ถอดเสียงด้วย AI แล้วแบ่ง clip ตามประโยคอัตโนมัติ"
           >
-            <IconWand size={16} />
+            <Sparkles size={16} />
             {transcribing ? "กำลังถอดเสียง…" : "แยกอัตโนมัติ"}
           </button>
         </div>

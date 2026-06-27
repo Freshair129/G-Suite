@@ -15,6 +15,8 @@ interface StudioState {
   duration: number;
   clips: Clip[];
   selectedClipId: string | null;
+  model: string;
+  transcribing: boolean;
 
   setSource: (source: string, wav: string, duration: number) => void;
   addClip: (clip: Clip) => void;
@@ -22,6 +24,8 @@ interface StudioState {
   removeClip: (id: string) => void;
   selectClip: (id: string | null) => void;
   setClips: (clips: Clip[]) => void;
+  setModel: (model: string) => void;
+  setTranscribing: (v: boolean) => void;
 }
 
 const COLORS = [
@@ -45,6 +49,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   duration: 0,
   clips: [],
   selectedClipId: null,
+  model: "medium",
+  transcribing: false,
 
   setSource: (source, wav, duration) =>
     set({ sourcePath: source, wavPath: wav, duration, clips: [], selectedClipId: null }),
@@ -69,4 +75,8 @@ export const useStudioStore = create<StudioState>((set) => ({
   selectClip: (id) => set({ selectedClipId: id }),
 
   setClips: (clips) => set({ clips }),
+
+  setModel: (model) => set({ model }),
+
+  setTranscribing: (transcribing) => set({ transcribing }),
 }));
