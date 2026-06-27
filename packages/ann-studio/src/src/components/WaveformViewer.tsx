@@ -96,7 +96,7 @@ export default function WaveformViewer() {
         name: `clip ${id.slice(-4)}`,
         start: region.start,
         end: region.end,
-        event: "custom",
+        event: "unused",
         color: "",
       });
     });

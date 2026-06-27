@@ -354,6 +354,132 @@ fn read_audio_bytes(path: String) -> Result<tauri::ipc::Response, String> {
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+// ---- install a pack into G-Maiden ---------------------------------------
+
+#[derive(Deserialize)]
+struct InstallClip {
+    name: String,
+    start: f64,
+    end: f64,
+    event: String,
+}
+
+#[derive(Serialize)]
+struct InstallReport {
+    installed: usize,
+    skipped: usize,
+    voice_cache: String,
+    per_event: std::collections::BTreeMap<String, usize>,
+    endpoint: Option<String>,
+}
+
+/// Locate the G-Maiden repo: arg → `GMAIDEN_DIR` env → sibling of the G-Suite repo.
+fn resolve_gmaiden_dir(arg: &Option<String>) -> Option<PathBuf> {
+    if let Some(d) = arg {
+        let p = PathBuf::from(d);
+        if !d.is_empty() && p.exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(d) = std::env::var("GMAIDEN_DIR") {
+        let p = PathBuf::from(d);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    // <manifest>/../../.. = G-Suite ; its sibling G-Maiden
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let gsuite = manifest.parent()?.parent()?.parent()?;
+    let sib = gsuite.parent()?.join("G-Maiden");
+    if sib.exists() {
+        return Some(sib);
+    }
+    None
+}
+
+/// Cut every event-mapped clip to WAV into G-Maiden's `assets/voice-cache/{event}/`
+/// and (optionally) POST a notify to G-Maiden's install endpoint so it reloads.
+#[tauri::command]
+async fn install_pack(
+    source_path: String,
+    clips: Vec<InstallClip>,
+    pack_name: String,
+    gmaiden_dir: Option<String>,
+    endpoint: Option<String>,
+) -> Result<InstallReport, String> {
+    let base = resolve_gmaiden_dir(&gmaiden_dir)
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
+    let vc = base.join("assets/voice-cache");
+
+    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut installed = 0usize;
+    let mut skipped = 0usize;
+
+    for clip in &clips {
+        if clip.event.is_empty() || clip.event == "unused" {
+            skipped += 1;
+            continue;
+        }
+        let dir = vc.join(&clip.event);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+        let n = per_event.entry(clip.event.clone()).or_insert(0);
+        *n += 1;
+        let fname = format!("{}_{:02}.wav", sanitize_filename(&pack_name), *n);
+        let out_path = dir.join(&fname);
+        let duration = clip.end - clip.start;
+
+        let output = Command::new(ffmpeg_bin())
+            .creation_flags(CREATE_NO_WINDOW)
+            .args([
+                "-y",
+                "-i",
+                &source_path,
+                "-ss",
+                &format!("{:.3}", clip.start),
+                "-t",
+                &format!("{duration:.3}"),
+                "-acodec",
+                "pcm_s16le",
+                out_path.to_str().unwrap(),
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("ffmpeg: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "ffmpeg cut failed for {}: {}",
+                clip.name,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        installed += 1;
+    }
+
+    // Notify G-Maiden's install endpoint (best-effort — works once Phase 3 lands).
+    let mut endpoint_result = None;
+    if let Some(ep) = endpoint {
+        if !ep.is_empty() {
+            let body = serde_json::json!({
+                "pack": pack_name,
+                "installed": installed,
+                "voice_cache": vc.to_string_lossy(),
+            });
+            match reqwest::Client::new().post(&ep).json(&body).send().await {
+                Ok(r) => endpoint_result = Some(format!("{ep} → {}", r.status())),
+                Err(e) => endpoint_result = Some(format!("{ep} (POST ไม่ติด: {e})")),
+            }
+        }
+    }
+
+    Ok(InstallReport {
+        installed,
+        skipped,
+        voice_cache: vc.to_string_lossy().into_owned(),
+        per_event,
+        endpoint: endpoint_result,
+    })
+}
+
 // ---- AI providers (for the chat) ----------------------------------------
 
 /// List locally installed Ollama models (short — only when the daemon is up).
@@ -456,6 +582,7 @@ pub fn run() {
             export_all,
             transcribe_audio,
             read_audio_bytes,
+            install_pack,
             list_ollama_models,
             llm_complete,
         ])

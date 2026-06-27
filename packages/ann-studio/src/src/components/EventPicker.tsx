@@ -1,4 +1,4 @@
-import { DOTA_EVENTS, EVENT_CATEGORIES } from "../data/dota-events";
+import { GMAIDEN_EVENTS, EVENT_CATEGORIES } from "../data/gmaiden-events";
 
 interface Props {
   value: string;
@@ -14,7 +14,7 @@ export default function EventPicker({ value, onChange }: Props) {
     >
       {EVENT_CATEGORIES.map((cat) => (
         <optgroup key={cat} label={cat}>
-          {DOTA_EVENTS.filter((e) => e.category === cat).map((e) => (
+          {GMAIDEN_EVENTS.filter((e) => e.category === cat).map((e) => (
             <option key={e.id} value={e.id}>
               {e.label}
             </option>

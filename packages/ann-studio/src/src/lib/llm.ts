@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore } from "../store/useStudioStore";
-import { runAutoSplit, runExport } from "./actions";
+import { runAutoSplit, runExport, sendToGMaiden } from "./actions";
+import { eventContractForPrompt, GMAIDEN_EVENTS } from "../data/gmaiden-events";
 
 /**
  * The chat is function-calling: the LLM replies with a single JSON object
@@ -10,6 +11,8 @@ import { runAutoSplit, runExport } from "./actions";
 
 const ACTIONS = `
 - auto_split            ถอดเสียงด้วย AI แล้วแบ่ง clip ใหม่ทั้งหมด
+- auto_map              ให้ AI จับคู่ทุก clip กับ event ของ G-Maiden อัตโนมัติ
+- send_gmaiden          ส่ง pack ไป G-Maiden (ติดตั้งเสียงตาม event)
 - export                ส่งออก WAV + manifest
 - clear                 ลบ clip ทั้งหมด
 - delete_clip {index}   ลบ clip ตามลำดับ (index เริ่มที่ 1)
@@ -75,6 +78,10 @@ async function execute(action: string, args: Record<string, any> = {}): Promise<
   switch (action) {
     case "auto_split":
       return runAutoSplit();
+    case "auto_map":
+      return autoMapEvents();
+    case "send_gmaiden":
+      return sendToGMaiden();
     case "export":
       return runExport();
     case "clear": {
@@ -111,6 +118,52 @@ async function execute(action: string, args: Record<string, any> = {}): Promise<
     default:
       return "";
   }
+}
+
+/**
+ * Ask the LLM to map each clip's transcribed text to the best G-Maiden event
+ * (from the shared contract). Applies the assignments to the store.
+ */
+export async function autoMapEvents(): Promise<string> {
+  const s = useStudioStore.getState();
+  const ordered = s.clips.slice().sort((a, b) => a.start - b.start);
+  if (!ordered.length) return "ยังไม่มี clip ให้ map";
+
+  const valid = new Set(GMAIDEN_EVENTS.map((e) => e.id));
+  const clipList = ordered.map((c, i) => `${i + 1}. ${c.name}`).join("\n");
+  const system = `คุณคือผู้ช่วย map เสียงพากย์ announcer เกม Dota 2 ให้ตรงกับ event ของ G-Maiden
+จับคู่ข้อความของแต่ละ clip กับ event id ที่เหมาะที่สุดจากรายการนี้ (ใช้ id ตรงตามนี้เท่านั้น):
+${eventContractForPrompt()}
+ถ้า clip ไหนไม่เข้ากับ event ใดเลย ให้ใช้ "unused"
+ตอบเป็น JSON อย่างเดียว: {"map":[{"index":1,"event":"<id>"},...]} ครบทุก clip ห้ามมีข้อความอื่น`;
+  const prompt = `clips:\n${clipList}`;
+
+  const raw = await invoke<string>("llm_complete", {
+    provider: s.provider,
+    model: s.provider === "ollama" ? s.llmModel || undefined : undefined,
+    system,
+    prompt,
+  });
+
+  const a = raw.indexOf("{");
+  const b = raw.lastIndexOf("}");
+  if (a === -1 || b === -1) return "AI ตอบไม่เป็น JSON — ลองใหม่หรือเปลี่ยน provider";
+  let parsed: { map?: Array<{ index: number; event: string }> };
+  try {
+    parsed = JSON.parse(raw.slice(a, b + 1));
+  } catch {
+    return "อ่านผลจาก AI ไม่ได้ — ลองใหม่";
+  }
+
+  let applied = 0;
+  for (const m of parsed.map || []) {
+    const clip = ordered[m.index - 1];
+    if (clip && valid.has(m.event)) {
+      useStudioStore.getState().updateClip(clip.id, { event: m.event });
+      applied++;
+    }
+  }
+  return `map event ให้ ${applied}/${ordered.length} clips แล้ว 🎯`;
 }
 
 /** Send a user message through the LLM and run whatever action it picks. */

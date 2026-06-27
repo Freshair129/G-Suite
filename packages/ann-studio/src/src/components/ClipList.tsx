@@ -1,10 +1,35 @@
+import { useState } from "react";
 import { useStudioStore } from "../store/useStudioStore";
 import EventPicker from "./EventPicker";
-import { Trash2 } from "lucide-react";
+import { Trash2, Wand2, Send } from "lucide-react";
+import { autoMapEvents } from "../lib/llm";
+import { sendToGMaiden } from "../lib/actions";
 
 export default function ClipList() {
   const { clips, selectedClipId, selectClip, updateClip, removeClip, setClips } = useStudioStore();
   const ordered = clips.slice().sort((a, b) => a.start - b.start);
+  const [busy, setBusy] = useState<"map" | "send" | null>(null);
+
+  async function doMap() {
+    setBusy("map");
+    try {
+      alert(await autoMapEvents());
+    } catch (e) {
+      alert(`AI map ไม่สำเร็จ: ${e}`);
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function doSend() {
+    setBusy("send");
+    try {
+      alert(await sendToGMaiden());
+    } catch (e) {
+      alert(`ส่งไม่สำเร็จ: ${e}`);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -19,6 +44,29 @@ export default function ClipList() {
           </button>
         )}
       </div>
+
+      {clips.length > 0 && (
+        <div className="flex gap-2 px-3 pb-2 shrink-0">
+          <button
+            onClick={doMap}
+            disabled={busy !== null}
+            className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-full bg-panel border border-line text-xs font-medium hover:border-lime/50 transition disabled:opacity-50"
+            title="ให้ AI จับคู่ทุก clip กับ event ของ G-Maiden"
+          >
+            <Wand2 size={14} className="text-lime" />
+            {busy === "map" ? "กำลัง map…" : "AI map events"}
+          </button>
+          <button
+            onClick={doSend}
+            disabled={busy !== null}
+            className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-full bg-gradient-to-r from-lime to-grass text-black text-xs font-semibold hover:opacity-90 transition disabled:opacity-50"
+            title="ติดตั้ง pack ลง G-Maiden ตาม event"
+          >
+            <Send size={13} />
+            {busy === "send" ? "กำลังส่ง…" : "ส่ง G-Maiden"}
+          </button>
+        </div>
+      )}
 
       {clips.length === 0 ? (
         <div className="flex-1 grid place-items-center p-6">
