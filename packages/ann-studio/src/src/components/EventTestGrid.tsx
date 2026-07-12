@@ -92,6 +92,7 @@ export default function EventTestGrid() {
 
   const [fired, setFired] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [animate, setAnimate] = useState(true);
   const firedTimer = useRef<number | null>(null);
   const urlCache = useRef<{ path: string; url: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -199,11 +200,20 @@ export default function EventTestGrid() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-ink-faint">{clips.length} clip แมปแล้ว</span>
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={animate}
+                onChange={(e) => setAnimate(e.target.checked)}
+                className="accent-lime"
+              />
+              banner เคลื่อนไหว
+            </label>
             <button
               onClick={async () => {
                 setInstalling(true);
                 try {
-                  alert(await installGmaidenPack());
+                  alert(await installGmaidenPack("ann-pack", "", animate));
                 } finally {
                   setInstalling(false);
                 }

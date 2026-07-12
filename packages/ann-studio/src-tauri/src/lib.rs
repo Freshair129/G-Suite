@@ -748,6 +748,80 @@ async fn install_gmaiden_pack(
     })
 }
 
+/// Bake a sequence of alpha PNG frames (base64, no `data:` prefix) into a single
+/// **animated WebP** and return it base64-encoded. The clip plays once and rests
+/// on the final frame (`-loop 1`), giving the auto tone banner an entrance
+/// animation without an author image. Lossless to keep the banner text crisp.
+#[tauri::command]
+async fn bake_animated_webp(frames: Vec<String>, fps: Option<u32>) -> Result<String, String> {
+    use base64::Engine;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+
+    if frames.is_empty() {
+        return Err("no frames to bake".into());
+    }
+    let fps = fps.unwrap_or(24).clamp(1, 60);
+
+    // unique temp dir (pid + monotonic counter — no wall-clock needed)
+    let uid = format!("{}_{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
+    let dir = std::env::temp_dir().join(format!("gann_bake_{uid}"));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir temp: {e}"))?;
+
+    let engine = base64::engine::general_purpose::STANDARD;
+    for (i, f) in frames.iter().enumerate() {
+        match engine.decode(f.trim()) {
+            Ok(bytes) => {
+                if let Err(e) = std::fs::write(dir.join(format!("f_{i:03}.png")), bytes) {
+                    let _ = std::fs::remove_dir_all(&dir);
+                    return Err(format!("write frame {i}: {e}"));
+                }
+            }
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&dir);
+                return Err(format!("frame {i} base64: {e}"));
+            }
+        }
+    }
+
+    let out = dir.join("out.webp");
+    let pattern = dir.join("f_%03d.png");
+    let result = Command::new(ffmpeg_bin())
+        .creation_flags(CREATE_NO_WINDOW)
+        .args([
+            "-y",
+            "-framerate",
+            &fps.to_string(),
+            "-start_number",
+            "0",
+            "-i",
+            &pattern.to_string_lossy(),
+            "-c:v",
+            "libwebp_anim",
+            "-lossless",
+            "1",
+            "-loop",
+            "1",
+            &out.to_string_lossy(),
+        ])
+        .output()
+        .await;
+
+    let encoded = match result {
+        Ok(output) if output.status.success() => match std::fs::read(&out) {
+            Ok(bytes) => Ok(engine.encode(bytes)),
+            Err(e) => Err(format!("read webp: {e}")),
+        },
+        Ok(output) => Err(format!(
+            "ffmpeg webp bake failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )),
+        Err(e) => Err(format!("ffmpeg spawn: {e}")),
+    };
+    let _ = std::fs::remove_dir_all(&dir);
+    encoded
+}
+
 /// Check whether the G-Maiden repo can be found. Returns its absolute path if
 /// so, empty string otherwise — lets the frontend show "integrate" before doing
 /// the heavier voice-cache scan.
@@ -1560,6 +1634,7 @@ pub fn run() {
             read_audio_bytes,
             install_pack,
             install_gmaiden_pack,
+            bake_animated_webp,
             check_gmaiden,
             scan_voice_cache,
             init_library,

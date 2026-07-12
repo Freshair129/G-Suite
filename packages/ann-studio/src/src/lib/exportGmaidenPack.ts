@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore } from "../store/useStudioStore";
 import { toneBannerPngDataUrl } from "./toneBanner";
+import { bakeToneWebp } from "./bakeBanner";
 
 interface PackInstallReport {
   pack_id: string;
@@ -14,23 +15,33 @@ interface PackInstallReport {
   banners: number;
 }
 
-export async function installGmaidenPack(packName = "ann-pack", author = ""): Promise<string> {
+export async function installGmaidenPack(
+  packName = "ann-pack",
+  author = "",
+  animate = true
+): Promise<string> {
   const s = useStudioStore.getState();
   if (!s.wavPath) return "ยังไม่มีไฟล์เสียง — นำเข้าไฟล์ก่อนนะครับ";
   const mapped = s.clips.filter((c) => c.event && c.event !== "unused");
   if (!mapped.length) return "ยังไม่มี clip ที่ map event — กด “AI map” ก่อนนะครับ";
 
-  // one banner per mapped event: the author's override image if set, otherwise
-  // the auto-generated tone banner (PNG, alpha). Animated overrides (webp/gif/
-  // apng) pass straight through — G-Maiden's overlay renders them as-is.
+  // one banner per mapped event, in priority order:
+  //   1. the author's override image (animated webp/gif pass straight through)
+  //   2. a baked animated-WebP entrance of the tone banner (when `animate`)
+  //   3. the static PNG tone banner (also the fallback if a bake fails)
   const overrides = s.bannerOverrides;
   const events = [...new Set(mapped.map((c) => c.event))];
-  const banners = events.map((ev) => {
-    const ov = overrides[ev];
-    return ov
-      ? { event: ev, b64: ov.b64, ext: ov.ext }
-      : { event: ev, b64: toneBannerPngDataUrl(ev, 2).split(",")[1], ext: "png" };
-  });
+  const banners = await Promise.all(
+    events.map(async (ev) => {
+      const ov = overrides[ev];
+      if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
+      if (animate) {
+        const webp = await bakeToneWebp(ev);
+        if (webp) return { event: ev, b64: webp, ext: "webp" };
+      }
+      return { event: ev, b64: toneBannerPngDataUrl(ev, 2).split(",")[1], ext: "png" };
+    })
+  );
 
   const packId = `pack_${Date.now().toString(36)}`;
   try {
