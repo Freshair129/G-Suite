@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 export interface Clip {
   id: string;
@@ -7,9 +8,22 @@ export interface Clip {
   end: number;
   event: string;
   color: string;
+  // --- tuning (focused set; applied via ffmpeg on export). Optional so older
+  //     clips / persisted projects still load. EQ/compressor params go here next.
+  gain?: number; // dB, default 0
+  fadeIn?: number; // seconds, default 0
+  fadeOut?: number; // seconds, default 0
+  normalize?: boolean; // default false
+  speed?: number; // playback rate, default 1 (0.5–2.0)
+  gainL?: number; // per-channel dB (stereo balance), default 0
+  gainR?: number; // per-channel dB, default 0
+  // LANDR-style mastering knobs — visual/mock for now (eqLow/eqMid/eqHigh,
+  // presence, deEsserAmt/deEsserFreq, compression/character/saturation, stereo),
+  // wired to ffmpeg in the (ข) pass. Loudness maps to `gain` above.
+  master?: Record<string, number>;
 }
 
-export type AppView = "studio" | "profile" | "settings";
+export type AppView = "studio" | "profile" | "settings" | "test" | "source";
 
 export interface VoiceCacheMap {
   [event: string]: string[];
@@ -97,6 +111,9 @@ interface StudioState {
   wavPath: string | null;
   duration: number;
   clips: Clip[];
+  // undo/redo history for `clips` (the authoring surface)
+  pastClips: Clip[][];
+  futureClips: Clip[][];
   selectedClipId: string | null;
   model: string;
   transcribing: boolean;
@@ -129,6 +146,21 @@ interface StudioState {
   removeClip: (id: string) => void;
   selectClip: (id: string | null) => void;
   setClips: (clips: Clip[]) => void;
+  undoClips: () => void;
+  redoClips: () => void;
+  /** snapshot current clips into history once (call at drag start) */
+  pushHistory: () => void;
+  /** update a clip WITHOUT touching history (live drag; pair with pushHistory) */
+  updateClipSilent: (id: string, patch: Partial<Clip>) => void;
+  /** split a clip at `atTime` into two adjacent clips (the split tool) */
+  splitClip: (id: string, atTime: number) => void;
+  /** move a clip to a new index (drag-to-reorder) */
+  moveClip: (id: string, toIndex: number) => void;
+
+  // transient playhead for the waveform needle (not persisted)
+  playheadId: string | null;
+  playheadT: number;
+  setPlayhead: (id: string | null, t: number) => void;
   setModel: (model: string) => void;
   setTranscribing: (v: boolean) => void;
   setProvider: (p: "ollama" | "claude") => void;
@@ -172,113 +204,218 @@ export function packId() {
   return `pack_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export const useStudioStore = create<StudioState>((set) => ({
-  sourcePath: null,
-  wavPath: null,
-  duration: 0,
-  clips: [],
-  selectedClipId: null,
-  model: "medium",
-  transcribing: false,
-  provider: "ollama",
-  llmModel: "",
+const HISTORY_MAX = 50;
 
-  view: "studio",
-  gmaidenConnected: false,
-  gmaidenPath: "",
-  voiceCache: {},
+export const useStudioStore = create<StudioState>()(
+  persist(
+    (set) => ({
+      sourcePath: null,
+      wavPath: null,
+      duration: 0,
+      clips: [],
+      pastClips: [],
+      futureClips: [],
+      playheadId: null,
+      playheadT: 0,
+      selectedClipId: null,
+      model: "medium",
+      transcribing: false,
+      provider: "ollama",
+      llmModel: "",
 
-  libraryRoot: "",
-  libraryTree: [],
-  libraryPackages: [],
-  packs: [],
-  activePackId: null,
+      view: "studio",
+      gmaidenConnected: false,
+      gmaidenPath: "",
+      voiceCache: {},
 
-  editorTool: "select",
-  trackItems: [],
-  trackCount: 3,
-  selectedItemId: null,
-  timelineZoom: 60,
-  playheadPos: 0,
-  masterVolume: 1,
+      libraryRoot: "",
+      libraryTree: [],
+      libraryPackages: [],
+      packs: [],
+      activePackId: null,
 
-  setSource: (source, wav, duration) =>
-    set({ sourcePath: source, wavPath: wav, duration, clips: [], selectedClipId: null }),
+      editorTool: "select",
+      trackItems: [],
+      trackCount: 3,
+      selectedItemId: null,
+      timelineZoom: 60,
+      playheadPos: 0,
+      masterVolume: 1,
 
-  addClip: (clip) =>
-    set((s) => ({
-      clips: [...s.clips, { ...clip, color: clip.color || nextColor() }],
-      selectedClipId: clip.id,
-    })),
+      setSource: (source, wav, duration) =>
+        set({
+          sourcePath: source,
+          wavPath: wav,
+          duration,
+          clips: [],
+          pastClips: [],
+          futureClips: [],
+          selectedClipId: null,
+        }),
 
-  updateClip: (id, patch) =>
-    set((s) => ({
-      clips: s.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-    })),
+      addClip: (clip) =>
+        set((s) => ({
+          pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+          futureClips: [],
+          clips: [...s.clips, { ...clip, color: clip.color || nextColor() }],
+          selectedClipId: clip.id,
+        })),
 
-  removeClip: (id) =>
-    set((s) => ({
-      clips: s.clips.filter((c) => c.id !== id),
-      selectedClipId: s.selectedClipId === id ? null : s.selectedClipId,
-    })),
+      updateClip: (id, patch) =>
+        set((s) => ({
+          pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+          futureClips: [],
+          clips: s.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        })),
 
-  selectClip: (id) => set({ selectedClipId: id }),
+      removeClip: (id) =>
+        set((s) => ({
+          pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+          futureClips: [],
+          clips: s.clips.filter((c) => c.id !== id),
+          selectedClipId: s.selectedClipId === id ? null : s.selectedClipId,
+        })),
 
-  setClips: (clips) => set({ clips }),
+      selectClip: (id) => set({ selectedClipId: id }),
 
-  setModel: (model) => set({ model }),
+      setClips: (clips) =>
+        set((s) => ({
+          pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+          futureClips: [],
+          clips,
+        })),
 
-  setTranscribing: (transcribing) => set({ transcribing }),
+      undoClips: () =>
+        set((s) =>
+          s.pastClips.length
+            ? {
+                clips: s.pastClips[s.pastClips.length - 1],
+                pastClips: s.pastClips.slice(0, -1),
+                futureClips: [s.clips, ...s.futureClips].slice(0, HISTORY_MAX),
+              }
+            : s
+        ),
 
-  setProvider: (provider) => set({ provider }),
+      redoClips: () =>
+        set((s) =>
+          s.futureClips.length
+            ? {
+                clips: s.futureClips[0],
+                futureClips: s.futureClips.slice(1),
+                pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+              }
+            : s
+        ),
 
-  setLlmModel: (llmModel) => set({ llmModel }),
+      pushHistory: () =>
+        set((s) => ({
+          pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+          futureClips: [],
+        })),
 
-  setView: (view) => set({ view }),
+      updateClipSilent: (id, patch) =>
+        set((s) => ({
+          clips: s.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        })),
 
-  setGMaiden: (gmaidenConnected, gmaidenPath, voiceCache) =>
-    set({ gmaidenConnected, gmaidenPath, voiceCache }),
+      splitClip: (id, atTime) =>
+        set((s) => {
+          const idx = s.clips.findIndex((c) => c.id === id);
+          if (idx < 0) return s;
+          const c = s.clips[idx];
+          if (atTime <= c.start + 0.03 || atTime >= c.end - 0.03) return s;
+          const left: Clip = { ...c, end: atTime };
+          const right: Clip = { ...c, id: genId(), start: atTime, color: nextColor() };
+          return {
+            pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+            futureClips: [],
+            clips: [...s.clips.slice(0, idx), left, right, ...s.clips.slice(idx + 1)],
+            selectedClipId: right.id,
+          };
+        }),
 
-  setLibrary: (libraryRoot, libraryTree) => set({ libraryRoot, libraryTree }),
+      moveClip: (id, toIndex) =>
+        set((s) => {
+          const from = s.clips.findIndex((c) => c.id === id);
+          if (from < 0 || toIndex < 0 || toIndex >= s.clips.length || from === toIndex) return s;
+          const arr = s.clips.slice();
+          const [moved] = arr.splice(from, 1);
+          arr.splice(toIndex, 0, moved);
+          return {
+            pastClips: [...s.pastClips, s.clips].slice(-HISTORY_MAX),
+            futureClips: [],
+            clips: arr,
+          };
+        }),
 
-  setLibraryPackages: (libraryPackages) => set({ libraryPackages }),
+      setPlayhead: (playheadId, playheadT) => set({ playheadId, playheadT }),
 
-  setPacks: (packs) => set({ packs }),
+      setModel: (model) => set({ model }),
 
-  setActivePack: (activePackId) => set({ activePackId }),
+      setTranscribing: (transcribing) => set({ transcribing }),
 
-  updatePack: (pack) =>
-    set((s) => ({
-      packs: s.packs.map((p) => (p.id === pack.id ? pack : p)),
-    })),
+      setProvider: (provider) => set({ provider }),
 
-  // editor
-  setEditorTool: (editorTool) => set({ editorTool }),
+      setLlmModel: (llmModel) => set({ llmModel }),
 
-  addTrackItem: (item) =>
-    set((s) => ({
-      trackItems: [...s.trackItems, { ...item, color: item.color || nextColor() }],
-      selectedItemId: item.id,
-    })),
+      setView: (view) => set({ view }),
 
-  updateTrackItem: (id, patch) =>
-    set((s) => ({
-      trackItems: s.trackItems.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-    })),
+      setGMaiden: (gmaidenConnected, gmaidenPath, voiceCache) =>
+        set({ gmaidenConnected, gmaidenPath, voiceCache }),
 
-  removeTrackItem: (id) =>
-    set((s) => ({
-      trackItems: s.trackItems.filter((t) => t.id !== id),
-      selectedItemId: s.selectedItemId === id ? null : s.selectedItemId,
-    })),
+      setLibrary: (libraryRoot, libraryTree) => set({ libraryRoot, libraryTree }),
 
-  selectItem: (id) => set({ selectedItemId: id }),
+      setLibraryPackages: (libraryPackages) => set({ libraryPackages }),
 
-  setTimelineZoom: (timelineZoom) => set({ timelineZoom }),
+      setPacks: (packs) => set({ packs }),
 
-  setPlayheadPos: (playheadPos) => set({ playheadPos }),
+      setActivePack: (activePackId) => set({ activePackId }),
 
-  setTrackCount: (trackCount) => set({ trackCount }),
+      updatePack: (pack) =>
+        set((s) => ({
+          packs: s.packs.map((p) => (p.id === pack.id ? pack : p)),
+        })),
 
-  setMasterVolume: (masterVolume) => set({ masterVolume }),
-}));
+      // editor
+      setEditorTool: (editorTool) => set({ editorTool }),
+
+      addTrackItem: (item) =>
+        set((s) => ({
+          trackItems: [...s.trackItems, { ...item, color: item.color || nextColor() }],
+          selectedItemId: item.id,
+        })),
+
+      updateTrackItem: (id, patch) =>
+        set((s) => ({
+          trackItems: s.trackItems.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+        })),
+
+      removeTrackItem: (id) =>
+        set((s) => ({
+          trackItems: s.trackItems.filter((t) => t.id !== id),
+          selectedItemId: s.selectedItemId === id ? null : s.selectedItemId,
+        })),
+
+      selectItem: (id) => set({ selectedItemId: id }),
+
+      setTimelineZoom: (timelineZoom) => set({ timelineZoom }),
+
+      setPlayheadPos: (playheadPos) => set({ playheadPos }),
+
+      setTrackCount: (trackCount) => set({ trackCount }),
+
+      setMasterVolume: (masterVolume) => set({ masterVolume }),
+    }),
+    {
+      name: "gann-project",
+      version: 1,
+      // persist only the project itself (source + clips) — not UI/library state
+      partialize: (s) => ({
+        sourcePath: s.sourcePath,
+        wavPath: s.wavPath,
+        duration: s.duration,
+        clips: s.clips,
+      }),
+    }
+  )
+);

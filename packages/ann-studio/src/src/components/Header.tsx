@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, useEffect } from "react";
-import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings } from "lucide-react";
+import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings, Play, Save, FolderOpen } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runExport } from "../lib/actions";
+import { saveProject, openProject } from "../lib/project";
 import type { AppView } from "../store/useStudioStore";
 
 function shortModel(m: string): string {
@@ -11,7 +12,7 @@ function shortModel(m: string): string {
 }
 
 export default function Header() {
-  const { sourcePath, wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel, view, setView } =
+  const { wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel, view, setView } =
     useStudioStore();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -79,8 +80,6 @@ export default function Header() {
     }
   }
 
-  const fileName = sourcePath?.split(/[\\/]/).pop();
-
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-base">
       <div className="flex items-center gap-3">
@@ -119,6 +118,17 @@ export default function Header() {
             Profile
           </button>
           <button
+            onClick={() => setView("test")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
+              view === "test"
+                ? "bg-white/10 text-white"
+                : "text-ink-faint hover:text-ink"
+            }`}
+          >
+            <Play size={13} />
+            ทดสอบ
+          </button>
+          <button
             onClick={() => setView("settings")}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
               view === "settings"
@@ -130,13 +140,6 @@ export default function Header() {
           </button>
         </div>
 
-        {/* File name pill — show only in studio view */}
-        {view === "studio" && fileName && (
-          <div className="flex items-center gap-2 px-3.5 py-1.5 bg-panel rounded-full border border-line max-w-[360px] ml-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-lime shrink-0" />
-            <span className="text-xs text-ink-muted truncate font-mono">{fileName}</span>
-          </div>
-        )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -157,6 +160,22 @@ export default function Header() {
             {ollamaModels.length === 0 && <option value="ollama:">Local · (no model)</option>}
           </select>
         </div>
+
+        <button
+          onClick={async () => alert(await openProject())}
+          className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
+        >
+          <FolderOpen size={15} className="text-lime" />
+          เปิด
+        </button>
+
+        <button
+          onClick={async () => alert(await saveProject())}
+          className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
+        >
+          <Save size={15} className="text-lime" />
+          บันทึก
+        </button>
 
         <button
           onClick={handleImport}

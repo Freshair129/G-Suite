@@ -10,6 +10,7 @@ import {
   type EditorTool, type TrackItem,
 } from "../store/useStudioStore";
 import Knob from "./Knob";
+import { runAutoSplit } from "../lib/actions";
 
 const TRACK_H = 56;
 const HEADER_W = 140;
@@ -48,9 +49,11 @@ export default function AudioEditor() {
     addTrackItem, updateTrackItem, removeTrackItem,
     selectItem, setTimelineZoom, setPlayheadPos, setTrackCount,
     libraryRoot, masterVolume, setMasterVolume,
+    sourcePath, wavPath, duration, clips, transcribing,
   } = useStudioStore();
 
   const [playing, setPlaying] = useState(false);
+  const [splitMsg, setSplitMsg] = useState("");
   const [dragOverTrack, setDragOverTrack] = useState<number | null>(null);
   const [effectsTab, setEffectsTab] = useState<"mix" | "eq" | "comp">("mix");
   const [waveformData, setWaveformData] = useState<Float32Array | null>(null);
@@ -256,15 +259,37 @@ export default function AudioEditor() {
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(224,255,0,0.02)_0%,transparent_70%)]" />
             <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
           </div>
-          <div className="relative z-10 flex flex-col items-center gap-4 text-center">
+          <div className="relative z-10 flex flex-col items-center gap-4 text-center max-w-md px-6">
             <div className="grid place-items-center w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-md text-lime"><AudioLines size={30} /></div>
-            <div>
-              <div className="text-base font-semibold">Audio Editor</div>
-              <div className="text-sm text-ink-muted mt-1">ลากเสียงจาก Sound Library มาวางบน Track</div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-ink-faint mt-1">
-              <Upload size={14} /><span>หรือนำเข้าไฟล์ แล้วกดแยกอัตโนมัติ → Save to Lib</span>
-            </div>
+            {wavPath ? (
+              <>
+                <div>
+                  <div className="text-base font-semibold truncate max-w-xs">{sourcePath?.split(/[\\/]/).pop()}</div>
+                  <div className="text-sm text-ink-muted mt-1">{fmtShort(duration)} · {clips.length} clips</div>
+                </div>
+                <button
+                  onClick={async () => { setSplitMsg(""); setSplitMsg(await runAutoSplit()); }}
+                  disabled={transcribing}
+                  className="px-6 h-11 rounded-full bg-lime text-black text-sm font-bold hover:bg-lime/90 transition disabled:opacity-50"
+                >
+                  {transcribing ? "กำลังถอดเสียง…" : clips.length ? "แยกอัตโนมัติอีกครั้ง" : "แยกอัตโนมัติ (ถอดเสียง → clips)"}
+                </button>
+                {clips.length > 0 && (
+                  <div className="text-xs text-ink-faint">แยกได้ {clips.length} clips ✅ — map event ที่ panel “Clips” (ขวา) แล้วไปแท็บ “ทดสอบ”</div>
+                )}
+                {splitMsg && <div className="text-xs text-ink-muted whitespace-pre-line">{splitMsg}</div>}
+              </>
+            ) : (
+              <>
+                <div>
+                  <div className="text-base font-semibold">Audio Editor</div>
+                  <div className="text-sm text-ink-muted mt-1">นำเข้าไฟล์เสียง/วิดีโอ แล้วแยกอัตโนมัติ</div>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-ink-faint mt-1">
+                  <Upload size={14} /><span>กด “นำเข้าไฟล์” มุมขวาบน</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
         {renderTimeline()}

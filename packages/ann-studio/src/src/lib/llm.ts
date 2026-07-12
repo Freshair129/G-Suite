@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore } from "../store/useStudioStore";
 import { runAutoSplit, runExport, sendToGMaiden } from "./actions";
+import { installGmaidenPack } from "./exportGmaidenPack";
 import { eventContractForPrompt, GMAIDEN_EVENTS } from "../data/gmaiden-events";
+import { analyzeClip, featuresYaml } from "./features";
 
 /**
  * The chat is function-calling: the LLM replies with a single JSON object
@@ -19,17 +21,32 @@ const ACTIONS = `
 - rename_clip {index,name}  เปลี่ยนชื่อ clip
 - set_event {index,event}   ตั้งหมวด Dota event ให้ clip (เช่น triple_kill, unstoppable, match_start)
 - set_model {model}     เปลี่ยนโมเดล Whisper (small | medium | large-v3)
+- tune {index,gain?,fadeIn?,fadeOut?,normalize?,speed?,eqLow?,eqMid?,eqHigh?,presence?,compression?,character?,saturation?,deEsserAmt?,deEsserFreq?}
+                        ปรับแต่งเสียงของ clip (index เริ่มที่ 1 ตามลำดับที่แสดง) — gain(dB)/fadeIn/fadeOut/normalize/speed เป็นค่าหลัก, ที่เหลือคือ master -100..100
+- split {index,atTime}  ตัด clip ที่วินาที atTime ออกเป็นสองท่อน
+- reorder {index,toIndex}  ย้าย clip ไปตำแหน่งที่ toIndex (เริ่มที่ 1)
+- select {index}        เลือก clip (index เริ่มที่ 1)
+- install_gmaiden       ติดตั้ง pack แบบใหม่ลง G-Maiden (มี banner ต่อ event)
 - none                  ตอบคำถาม/คุยเฉยๆ ไม่ทำ action
 `.trim();
 
-function buildSystem(): string {
+function buildSystem(featuresBlock = ""): string {
+  const featuresSection = featuresBlock
+    ? `\n\nฟีเจอร์เสียงของ clip ที่เลือก (สกัดจากสัญญาณจริง — ใช้ตัวเลขนี้ตัดสินการจูน):\n${featuresBlock}\n\nแนวทางตัดสิน (ใช้ action tune):\n- lufs_integrated ต่ำกว่าเป้า (เสียงพูด ~-16, YouTube -14, audiobook -18~-20) → เพิ่ม gain หรือ normalize=true\n- clipping_events>0 หรือ peak_db > -1 → ลด gain\n- sibilance_score > 0.4 → เพิ่ม deEsserAmt\n- hum_detected=true → ลด eqLow แรง (ยังไม่มี HPF ตรง)\n- band_high_pct ต่ำ/เสียงทึบ → เพิ่ม eqHigh หรือ presence · band_low_pct สูง/บวม → ลด eqLow\n- crest_db สูง/ไดนามิกกว้าง → เพิ่ม compression\n- silence_ratio สูง → พิจารณา trim`
+    : "";
   const s = useStudioStore.getState();
+  // NOTE: the UI numbers clips by ARRAY order (s.clips) — new actions
+  // (tune/split/reorder/select/delete via index) use that. This preview list
+  // keeps the existing start-sorted display for continuity.
   const ordered = s.clips.slice().sort((a, b) => a.start - b.start);
   const clipLines = ordered.length
     ? ordered
         .map((c, i) => `${i + 1}. "${c.name}" [${c.start.toFixed(1)}-${c.end.toFixed(1)}s] event=${c.event}`)
         .join("\n")
     : "(ยังไม่มี clip)";
+
+  const selIdx = s.selectedClipId ? s.clips.findIndex((c) => c.id === s.selectedClipId) : -1;
+  const selected = selIdx >= 0 ? `${selIdx + 1}` : "ไม่มี";
 
   return `คุณคือผู้ช่วยใน G-AnnStudio โปรแกรมตัดเสียงทำ announcer pack เกม Dota 2
 ตอบเป็นภาษาไทยสั้นๆ เป็นกันเอง
@@ -43,9 +60,13 @@ ${ACTIONS}
 สถานะปัจจุบัน:
 - ไฟล์เสียง: ${s.wavPath ? "โหลดแล้ว" : "ยังไม่มี"} (ความยาว ${s.duration.toFixed(1)}s)
 - โมเดล Whisper: ${s.model}
+- G-Maiden: ${s.gmaidenConnected ? "เชื่อมแล้ว" : "ยังไม่เชื่อม"}
 - จำนวน clip: ${ordered.length}
+- clip ที่เลือกอยู่: ${selected}
 clips:
 ${clipLines}
+
+หมายเหตุ: แต่ละ clip มีค่าปรับแต่งเสียง: gain(dB), fadeIn, fadeOut, normalize, speed และ master{eqLow,eqMid,eqHigh,presence,deEsserAmt,deEsserFreq,compression,character,saturation} แต่ละตัว -100..100${featuresSection}
 
 กฎ: ตอบ JSON เท่านั้น ห้ามมีข้อความอื่นนอก JSON. ถ้าไม่แน่ใจให้ใช้ action "none" แล้วถามกลับใน reply.`;
 }
@@ -67,6 +88,16 @@ function parseAction(raw: string): LlmAction | null {
   }
 }
 
+// Actions that change/destroy data (or push outside the app) require a
+// window.confirm before running. Non-destructive edits run silently.
+const DESTRUCTIVE = new Set(["clear", "delete_clip", "send_gmaiden", "install_gmaiden", "export", "split"]);
+
+// Keys of `tune` args that live under clip.master (each -100..100).
+const MASTER_KEYS = [
+  "eqLow", "eqMid", "eqHigh", "presence", "compression",
+  "character", "saturation", "deEsserAmt", "deEsserFreq",
+];
+
 async function execute(action: string, args: Record<string, any> = {}): Promise<string> {
   const s = useStudioStore.getState();
   const ordered = s.clips.slice().sort((a, b) => a.start - b.start);
@@ -74,6 +105,16 @@ async function execute(action: string, args: Record<string, any> = {}): Promise<
     const n = parseInt(i, 10) - 1;
     return n >= 0 && n < ordered.length ? ordered[n] : null;
   };
+  // Like idxClip but over the ARRAY order (s.clips) — the UI's clip numbering.
+  const idxClipArr = (i: any) => {
+    const n = parseInt(i, 10) - 1;
+    return n >= 0 && n < s.clips.length ? s.clips[n] : null;
+  };
+
+  if (DESTRUCTIVE.has(action)) {
+    const ok = window.confirm(`ยืนยัน: ${action} ${JSON.stringify(args)}`);
+    if (!ok) return "ยกเลิกแล้ว";
+  }
 
   switch (action) {
     case "auto_split":
@@ -114,6 +155,55 @@ async function execute(action: string, args: Record<string, any> = {}): Promise<
       s.setModel(m);
       return `เปลี่ยนโมเดลเป็น ${m} แล้ว`;
     }
+    case "tune": {
+      const c = idxClipArr(args.index);
+      if (!c) return `ไม่มี clip หมายเลข ${args.index}`;
+      const patch: Record<string, any> = {};
+      const changed: string[] = [];
+      // top-level tuning fields
+      if (args.gain != null) { patch.gain = Number(args.gain); changed.push(`gain=${patch.gain}dB`); }
+      if (args.fadeIn != null) { patch.fadeIn = Number(args.fadeIn); changed.push(`fadeIn=${patch.fadeIn}s`); }
+      if (args.fadeOut != null) { patch.fadeOut = Number(args.fadeOut); changed.push(`fadeOut=${patch.fadeOut}s`); }
+      if (args.normalize != null) { patch.normalize = Boolean(args.normalize); changed.push(`normalize=${patch.normalize}`); }
+      if (args.speed != null) { patch.speed = Number(args.speed); changed.push(`speed=${patch.speed}x`); }
+      // master (mastering) knobs
+      const masterPatch: Record<string, number> = {};
+      for (const k of MASTER_KEYS) {
+        if (args[k] != null) { masterPatch[k] = Number(args[k]); changed.push(`${k}=${masterPatch[k]}`); }
+      }
+      if (Object.keys(masterPatch).length) {
+        patch.master = { ...(c.master ?? {}), ...masterPatch };
+      }
+      if (!changed.length) return `ไม่มีค่าให้ปรับสำหรับ clip ${args.index}`;
+      s.updateClip(c.id, patch);
+      return `ปรับ clip ${args.index} (“${c.name}”): ${changed.join(", ")}`;
+    }
+    case "split": {
+      const c = idxClipArr(args.index);
+      if (!c) return `ไม่มี clip หมายเลข ${args.index}`;
+      const t = Number(args.atTime);
+      if (!Number.isFinite(t) || t <= c.start || t >= c.end)
+        return `atTime ต้องอยู่ระหว่าง ${c.start.toFixed(1)}-${c.end.toFixed(1)}s`;
+      s.splitClip(c.id, t);
+      return `ตัด clip ${args.index} ที่ ${t.toFixed(1)}s แล้ว`;
+    }
+    case "reorder": {
+      const c = idxClipArr(args.index);
+      if (!c) return `ไม่มี clip หมายเลข ${args.index}`;
+      const to = parseInt(args.toIndex, 10);
+      if (!Number.isFinite(to) || to < 1 || to > s.clips.length)
+        return `toIndex ต้องอยู่ระหว่าง 1-${s.clips.length}`;
+      s.moveClip(c.id, to - 1);
+      return `ย้าย clip ${args.index} ไปตำแหน่ง ${to} แล้ว`;
+    }
+    case "select": {
+      const c = idxClipArr(args.index);
+      if (!c) return `ไม่มี clip หมายเลข ${args.index}`;
+      s.selectClip(c.id);
+      return `เลือก clip ${args.index} (“${c.name}”) แล้ว`;
+    }
+    case "install_gmaiden":
+      return installGmaidenPack();
     case "none":
     default:
       return "";
@@ -168,11 +258,20 @@ ${eventContractForPrompt()}
 
 /** Send a user message through the LLM and run whatever action it picks. */
 export async function chatLlm(userText: string): Promise<string> {
-  const { provider, llmModel } = useStudioStore.getState();
+  const s = useStudioStore.getState();
+  const { provider, llmModel } = s;
+  // extract audio features for the selected clip — the agent decides from numbers
+  let featuresBlock = "";
+  const sel = s.clips.find((c) => c.id === s.selectedClipId);
+  if (sel && s.wavPath) {
+    try {
+      featuresBlock = featuresYaml(await analyzeClip(s.wavPath, sel));
+    } catch { /* features are best-effort */ }
+  }
   const raw = await invoke<string>("llm_complete", {
     provider,
     model: provider === "ollama" ? llmModel || undefined : undefined,
-    system: buildSystem(),
+    system: buildSystem(featuresBlock),
     prompt: userText,
   });
   const parsed = parseAction(raw);

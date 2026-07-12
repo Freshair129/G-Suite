@@ -357,11 +357,109 @@ fn read_audio_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 // ---- install a pack into G-Maiden ---------------------------------------
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InstallClip {
     name: String,
     start: f64,
     end: f64,
     event: String,
+    // tuning (focused set) — applied as an ffmpeg -af chain on cut. Defaulted so
+    // callers that don't tune (install_pack / sendToGMaiden) still deserialize.
+    #[serde(default)]
+    gain: f64, // dB
+    #[serde(default)]
+    fade_in: f64, // seconds
+    #[serde(default)]
+    fade_out: f64, // seconds
+    #[serde(default)]
+    normalize: bool,
+    #[serde(default)]
+    speed: f64, // playback rate; 0/absent => 1.0
+    #[serde(default)]
+    gain_l: f64, // per-channel dB (stereo balance)
+    #[serde(default)]
+    gain_r: f64,
+    // LANDR-style mastering knobs, keyed camelCase (eqLow/eqMid/eqHigh, presence,
+    // deEsserAmt/deEsserFreq, compression/character/saturation), each -100..100.
+    #[serde(default)]
+    master: std::collections::HashMap<String, f64>,
+}
+
+/// Build the ffmpeg `-af` filter chain for a clip's tuning, or None if untuned.
+/// Order: de-ess → EQ → dynamics → normalize → gain → fades (a sane master chain).
+fn clip_audio_filter(c: &InstallClip, dur: f64) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    let m = |k: &str| c.master.get(k).copied().unwrap_or(0.0);
+    let db = |v: f64, max: f64| (v / 100.0) * max; // knob(-100..100) -> ±max dB
+
+    // de-esser (additive; ignore negative)
+    let de = m("deEsserAmt");
+    if de > 1.0 {
+        let f = (m("deEsserFreq") / 100.0).clamp(0.0, 1.0);
+        parts.push(format!(
+            "deesser=i={:.3}:f={:.3}",
+            (de / 100.0).clamp(0.0, 1.0),
+            if f > 0.0 { f } else { 0.5 }
+        ));
+    }
+    // EQ (peaking/shelf)
+    if m("eqLow").abs() > 0.5 {
+        parts.push(format!("bass=g={:.2}", db(m("eqLow"), 12.0)));
+    }
+    if m("eqMid").abs() > 0.5 {
+        parts.push(format!("equalizer=f=1000:width_type=o:width=1:g={:.2}", db(m("eqMid"), 12.0)));
+    }
+    if m("eqHigh").abs() > 0.5 {
+        parts.push(format!("treble=g={:.2}", db(m("eqHigh"), 12.0)));
+    }
+    if m("presence").abs() > 0.5 {
+        parts.push(format!("equalizer=f=4000:width_type=o:width=1.2:g={:.2}", db(m("presence"), 8.0)));
+    }
+    // dynamics
+    let comp = m("compression");
+    if comp > 1.0 {
+        let ratio = 1.0 + (comp / 100.0) * 7.0; // 1..8
+        parts.push(format!("acompressor=threshold=-18dB:ratio={:.2}:attack=20:release=200", ratio));
+    }
+    let ch = m("character");
+    if ch > 1.0 {
+        parts.push(format!("acontrast=contrast={:.0}", (ch).clamp(0.0, 100.0)));
+    }
+    let sat = m("saturation");
+    if sat > 1.0 {
+        let thr = (1.0 - (sat / 100.0) * 0.7).clamp(0.2, 1.0);
+        parts.push(format!("asoftclip=type=atan:threshold={:.3}", thr));
+    }
+    // normalize / gain / fades
+    if c.normalize {
+        parts.push("dynaudnorm".to_string());
+    }
+    if c.gain.abs() > 0.01 {
+        parts.push(format!("volume={:.2}dB", c.gain));
+    }
+    if c.fade_in > 0.001 {
+        parts.push(format!("afade=t=in:st=0:d={:.3}", c.fade_in.min(dur)));
+    }
+    if c.fade_out > 0.001 {
+        let d = c.fade_out.min(dur);
+        parts.push(format!("afade=t=out:st={:.3}:d={:.3}", (dur - d).max(0.0), d));
+    }
+    // playback speed last, so fades/EQ apply on the original then scale together
+    let sp = if c.speed <= 0.0 { 1.0 } else { c.speed };
+    if (sp - 1.0).abs() > 0.01 {
+        parts.push(format!("atempo={:.3}", sp.clamp(0.5, 2.0)));
+    }
+    // per-channel L/R gains → stereo (only when set); upmix mono with pan
+    if c.gain_l.abs() > 0.01 || c.gain_r.abs() > 0.01 {
+        let ll = 10f64.powf(c.gain_l / 20.0);
+        let rr = 10f64.powf(c.gain_r / 20.0);
+        parts.push(format!("pan=stereo|c0={ll:.4}*c0|c1={rr:.4}*c0"));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(","))
+    }
 }
 
 #[derive(Serialize)]
@@ -486,6 +584,168 @@ async fn install_pack(
 struct GMaidenStatus {
     found: bool,
     path: String,
+}
+
+#[derive(Deserialize)]
+struct BannerAsset {
+    event: String,
+    /// base64 payload (no `data:` prefix)
+    b64: String,
+    ext: String,
+}
+
+#[derive(Serialize)]
+struct PackInstallReport {
+    pack_id: String,
+    pack_dir: String,
+    events: usize,
+    clips: usize,
+    banners: usize,
+}
+
+/// Build a G-Maiden **manifest-based** pack (clips/ + banners/ + manifest.json in
+/// G-Maiden's camelCase schema) under `<gmaiden>/assets/voice-cache/packs/<id>/`.
+/// Unlike [`install_pack`] (flat, audio-only), this carries a per-event banner so
+/// the in-game overlay shows the pack's own image. Manifest text/thai are left
+/// empty on purpose — the tone banner image is already self-labelled, so the
+/// overlay renders image-only with no duplicate caption.
+#[tauri::command]
+async fn install_gmaiden_pack(
+    pack_id: String,
+    pack_name: String,
+    author: String,
+    source_path: String,
+    clips: Vec<InstallClip>,
+    banners: Vec<BannerAsset>,
+    gmaiden_dir: Option<String>,
+    endpoint: Option<String>,
+) -> Result<PackInstallReport, String> {
+    use base64::Engine;
+    use serde_json::{json, Map, Value};
+
+    let base = resolve_gmaiden_dir(&gmaiden_dir)
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
+    let id = sanitize_filename(&pack_id);
+    let pack_dir = base.join("assets/voice-cache/packs").join(&id);
+    let clips_dir = pack_dir.join("clips");
+    let banners_dir = pack_dir.join("banners");
+    std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
+    std::fs::create_dir_all(&banners_dir).map_err(|e| format!("mkdir banners: {e}"))?;
+
+    // cut each mapped clip to clips/<event>_NN.wav, build manifest mappings
+    let mut mappings: Map<String, Value> = Map::new();
+    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut clip_total = 0usize;
+    for clip in &clips {
+        if clip.event.is_empty() || clip.event == "unused" {
+            continue;
+        }
+        let n = per_event.entry(clip.event.clone()).or_insert(0);
+        *n += 1;
+        let fname = format!("{}_{:02}.wav", sanitize_filename(&clip.event), *n);
+        let out_path = clips_dir.join(&fname);
+        let dur = clip.end - clip.start;
+        let mut args: Vec<String> = vec![
+            "-y".into(),
+            "-i".into(),
+            source_path.clone(),
+            "-ss".into(),
+            format!("{:.3}", clip.start),
+            "-t".into(),
+            format!("{dur:.3}"),
+        ];
+        if let Some(af) = clip_audio_filter(clip, dur) {
+            args.push("-af".into());
+            args.push(af);
+        }
+        args.push("-acodec".into());
+        args.push("pcm_s16le".into());
+        args.push(out_path.to_string_lossy().into_owned());
+        let output = Command::new(ffmpeg_bin())
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("ffmpeg cut failed for {}: {e}", clip.event))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("ffmpeg error for {}: {stderr}", clip.event));
+        }
+        let entry = mappings.entry(clip.event.clone()).or_insert_with(|| {
+            json!({ "text": "", "thai": "", "banner": "", "bannerAsset": "", "clips": [] })
+        });
+        entry["clips"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(format!("clips/{fname}")));
+        clip_total += 1;
+    }
+
+    if mappings.is_empty() {
+        return Err("ไม่มี event ที่ map (clip) — map ก่อนส่งออกนะครับ".into());
+    }
+
+    // write a banner only for events that actually have clips; set bannerAsset
+    let mut banner_total = 0usize;
+    let mut cover = String::new();
+    for b in &banners {
+        if !mappings.contains_key(&b.event) {
+            continue;
+        }
+        let ext = match b.ext.as_str() {
+            "png" | "webp" | "webm" | "gif" | "apng" => b.ext.as_str(),
+            _ => "png",
+        };
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(b.b64.trim())
+            .map_err(|e| format!("banner base64 ({}): {e}", b.event))?;
+        let fname = format!("{}.{}", sanitize_filename(&b.event), ext);
+        std::fs::write(banners_dir.join(&fname), &data)
+            .map_err(|e| format!("write banner {}: {e}", b.event))?;
+        let rel = format!("banners/{fname}");
+        if let Some(m) = mappings.get_mut(&b.event) {
+            m["bannerAsset"] = json!(rel);
+        }
+        if cover.is_empty() {
+            cover = rel.clone();
+        }
+        banner_total += 1;
+    }
+
+    let manifest = json!({
+        "id": id,
+        "name": pack_name,
+        "version": "0.1.0",
+        "locale": "th",
+        "author": author,
+        "description": "",
+        "coverImage": cover,
+        "mappings": Value::Object(mappings.clone()),
+    });
+    std::fs::write(
+        pack_dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .map_err(|e| format!("write manifest: {e}"))?;
+
+    // tell G-Maiden to activate the pack (same file-write path as the UI action)
+    if let Some(ep) = &endpoint {
+        if !ep.is_empty() {
+            let _ = reqwest::Client::new()
+                .post(ep)
+                .json(&json!({ "packId": id }))
+                .send()
+                .await;
+        }
+    }
+
+    Ok(PackInstallReport {
+        pack_id: id,
+        pack_dir: pack_dir.to_string_lossy().into_owned(),
+        events: mappings.len(),
+        clips: clip_total,
+        banners: banner_total,
+    })
 }
 
 /// Check whether the G-Maiden repo can be found. Returns its absolute path if
@@ -1277,6 +1537,16 @@ async fn claude_cli(system: String, prompt: String) -> Result<String, String> {
         .ok_or_else(|| "claude: no result field".into())
 }
 
+#[tauri::command]
+fn save_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1289,6 +1559,7 @@ pub fn run() {
             transcribe_audio,
             read_audio_bytes,
             install_pack,
+            install_gmaiden_pack,
             check_gmaiden,
             scan_voice_cache,
             init_library,
@@ -1303,6 +1574,8 @@ pub fn run() {
             llm_complete,
             get_system_stats,
             install_lib_to_gmaiden,
+            save_text_file,
+            read_text_file,
         ])
         .manage(SysInfoState(std::sync::Mutex::new(sysinfo::System::new_all())))
         .run(tauri::generate_context!())

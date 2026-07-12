@@ -1,0 +1,7 @@
+# Dev-test source media (third-party announcer showcase videos) — do NOT publish.
+# These are copyrighted rips used only for local pipeline testing.
+inbound/
+
+# Voice-cache / build outputs
+voice-cache/
+src-tauri/sidecar/.venv/

@@ -1,8 +1,25 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Sparkles, Bot } from "lucide-react";
+import { Send, Sparkles, Bot, Cpu, ChevronUp, Check } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore } from "../store/useStudioStore";
 import { runAutoSplit, runExport } from "../lib/actions";
 import { chatLlm } from "../lib/llm";
+
+function shortModel(m: string): string {
+  return (m.split("/").pop() || m).split(":")[0].replace(/-gguf$/i, "");
+}
+
+function ModelRow({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between px-3 py-1.5 text-[12px] text-ink hover:bg-white/5 transition"
+    >
+      <span className="truncate">{label}</span>
+      {active && <Check size={13} className="text-lime shrink-0" />}
+    </button>
+  );
+}
 
 interface Msg {
   role: "user" | "ai";
@@ -91,6 +108,17 @@ export default function ChatPanel() {
   }, [messages, busy]);
 
   const provider = useStudioStore((s) => s.provider);
+  const llmModel = useStudioStore((s) => s.llmModel);
+  const setProvider = useStudioStore((s) => s.setProvider);
+  const setLlmModel = useStudioStore((s) => s.setLlmModel);
+  const [models, setModels] = useState<string[]>([]);
+  const [modelOpen, setModelOpen] = useState(false);
+
+  useEffect(() => {
+    invoke<string[]>("list_ollama_models").then(setModels).catch(() => setModels([]));
+  }, []);
+
+  const currentModel = provider === "claude" ? "Claude · plan" : `Local · ${shortModel(llmModel) || "(no model)"}`;
 
   async function send() {
     const text = input.trim();
@@ -162,7 +190,7 @@ export default function ChatPanel() {
         ))}
       </div>
 
-      <div className="p-3 border-t border-line">
+      <div className="p-3 border-t border-line space-y-2">
         <div className="flex items-center gap-2 bg-panel border border-line rounded-2xl px-3 py-2 focus-within:border-lime/60 transition">
           <input
             value={input}
@@ -179,6 +207,44 @@ export default function ChatPanel() {
           >
             <Send size={15} />
           </button>
+        </div>
+
+        {/* Antigravity-style model picker */}
+        <div className="relative">
+          <button
+            onClick={() => setModelOpen((o) => !o)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-panel border border-line text-[11px] text-ink-muted hover:text-ink hover:border-lime/40 transition"
+          >
+            <Cpu size={12} className="text-lime" />
+            {currentModel}
+            <ChevronUp size={12} className={`transition ${modelOpen ? "" : "rotate-180"}`} />
+          </button>
+          {modelOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setModelOpen(false)} />
+              <div className="absolute bottom-full mb-1 left-0 w-60 max-h-72 overflow-y-auto bg-panel border border-line rounded-xl shadow-2xl z-20 py-1">
+                <div className="px-3 pt-1.5 pb-0.5 text-[10px] uppercase tracking-wide text-ink-faint">Cloud</div>
+                <ModelRow
+                  label="Claude · plan"
+                  active={provider === "claude"}
+                  onClick={() => { setProvider("claude"); setModelOpen(false); }}
+                />
+                <div className="px-3 pt-2 pb-0.5 text-[10px] uppercase tracking-wide text-ink-faint">Local · Ollama</div>
+                {models.length ? (
+                  models.map((m) => (
+                    <ModelRow
+                      key={m}
+                      label={`Local · ${shortModel(m)}`}
+                      active={provider === "ollama" && llmModel === m}
+                      onClick={() => { setProvider("ollama"); setLlmModel(m); setModelOpen(false); }}
+                    />
+                  ))
+                ) : (
+                  <div className="px-3 py-1.5 text-[11px] text-ink-faint">ไม่พบโมเดล (รัน Ollama?)</div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
