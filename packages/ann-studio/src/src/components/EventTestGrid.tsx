@@ -1,16 +1,43 @@
 // Event-test grid (W3 slice) — the "Na Khom preview" screen: a grid of every
 // G-Maiden event; click one to FIRE it exactly like in-game — the tone banner
-// pops on the stage and the mapped clip plays. Uses toneBanner.ts for the visual
-// and the existing read_audio_bytes → Audio pattern for sound.
+// (or the author's override image) pops on the stage and the mapped clip plays.
+// Uses toneBanner.ts for the auto visual and the existing read_audio_bytes →
+// Audio pattern for sound. Each card also carries the banner-override rail:
+// replace the auto banner with your own image (png / webp / gif / apng — animated
+// formats pass straight through to G-Maiden's overlay).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { drawToneBanner, eventTone, TONES, BANNER_W, BANNER_H } from "../lib/toneBanner";
 import { installGmaidenPack } from "../lib/exportGmaidenPack";
-import { useStudioStore, type Clip } from "../store/useStudioStore";
+import { useStudioStore, type Clip, type BannerOverride } from "../store/useStudioStore";
 
 const EVENTS = GMAIDEN_EVENTS.filter((e) => e.id !== "unused");
+
+const MIME_EXT: Record<string, BannerOverride["ext"]> = {
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/** Read a picked image File into a BannerOverride (or null if unsupported).
+ *  APNG is normalized to image/png — it's a valid PNG container that Chromium
+ *  animates under image/png, which is the MIME G-Maiden's overlay serves. */
+async function fileToOverride(file: File): Promise<BannerOverride | null> {
+  const raw = file.type || "image/png";
+  const mime = raw === "image/apng" ? "image/png" : raw;
+  const ext = MIME_EXT[mime];
+  if (!ext) return null;
+  const b64 = await new Promise<string>((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(file);
+  });
+  if (!b64) return null;
+  return { b64, ext, mime };
+}
 
 /** A single tone banner drawn on a transparent canvas, CSS-scaled to `width`. */
 function BannerCanvas({ event, width }: { event: string; width: number }) {
@@ -32,9 +59,36 @@ function BannerCanvas({ event, width }: { event: string; width: number }) {
   return <canvas ref={ref} className="block" />;
 }
 
+/** Shows the author override image when set, otherwise the auto tone banner. */
+function BannerView({
+  event,
+  width,
+  override,
+}: {
+  event: string;
+  width: number;
+  override?: BannerOverride;
+}) {
+  if (override) {
+    return (
+      <img
+        src={`data:${override.mime};base64,${override.b64}`}
+        alt={event}
+        width={width}
+        height={(width * BANNER_H) / BANNER_W}
+        className="block object-contain"
+        style={{ width, height: (width * BANNER_H) / BANNER_W }}
+      />
+    );
+  }
+  return <BannerCanvas event={event} width={width} />;
+}
+
 export default function EventTestGrid() {
   const clips = useStudioStore((s) => s.clips);
   const wavPath = useStudioStore((s) => s.wavPath);
+  const bannerOverrides = useStudioStore((s) => s.bannerOverrides);
+  const setBannerOverride = useStudioStore((s) => s.setBannerOverride);
 
   const [fired, setFired] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -42,11 +96,36 @@ export default function EventTestGrid() {
   const urlCache = useRef<{ path: string; url: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // one shared hidden file input; `pendingEvent` is the card awaiting an image
+  const fileInput = useRef<HTMLInputElement>(null);
+  const pendingEvent = useRef<string | null>(null);
+
   const byEvent = useMemo(() => {
     const m: Record<string, Clip[]> = {};
     for (const c of clips) (m[c.event] ??= []).push(c);
     return m;
   }, [clips]);
+
+  const overrideCount = Object.keys(bannerOverrides).length;
+
+  function pickOverride(event: string) {
+    pendingEvent.current = event;
+    fileInput.current?.click();
+  }
+
+  async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const event = pendingEvent.current;
+    e.target.value = ""; // allow re-picking the same file
+    pendingEvent.current = null;
+    if (!file || !event) return;
+    const ov = await fileToOverride(file);
+    if (!ov) {
+      alert("รองรับเฉพาะ PNG / WebP / GIF / APNG นะครับ");
+      return;
+    }
+    setBannerOverride(event, ov);
+  }
 
   async function ensureUrl(): Promise<string | null> {
     if (!wavPath) return null;
@@ -101,7 +180,7 @@ export default function EventTestGrid() {
       <div className="sticky top-0 z-10 h-[164px] grid place-items-center bg-base border-b border-line">
         {fired ? (
           <div key={fired} style={{ animation: "gannPop .22s ease-out" }}>
-            <BannerCanvas event={fired} width={420} />
+            <BannerView event={fired} width={420} override={bannerOverrides[fired]} />
           </div>
         ) : (
           <p className="text-ink-faint text-sm">
@@ -112,7 +191,12 @@ export default function EventTestGrid() {
 
       <div className="p-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold text-ink">ทดสอบ Event · {EVENTS.length} รายการ</h2>
+          <div className="flex items-baseline gap-3">
+            <h2 className="text-sm font-bold text-ink">ทดสอบ Event · {EVENTS.length} รายการ</h2>
+            {overrideCount > 0 && (
+              <span className="text-xs text-lime">{overrideCount} banner ภาพเอง</span>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-ink-faint">{clips.length} clip แมปแล้ว</span>
             <button
@@ -136,26 +220,60 @@ export default function EventTestGrid() {
           {EVENTS.map((ev) => {
             const n = byEvent[ev.id]?.length ?? 0;
             const t = TONES[eventTone(ev.id)];
+            const ov = bannerOverrides[ev.id];
             return (
-              <button
+              <div
                 key={ev.id}
-                onClick={() => fire(ev.id)}
-                className="group relative rounded-xl overflow-hidden border border-line hover:border-white/25 transition"
-                title={ev.trigger}
+                className="rounded-xl overflow-hidden border border-line hover:border-white/25 transition"
               >
-                <BannerCanvas event={ev.id} width={280} />
-                <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-black/55">
-                  {n > 0 ? (
-                    <span style={{ color: t.accent }}>{n} clip</span>
-                  ) : (
-                    <span className="text-ink-faint">ยังไม่มีเสียง</span>
+                <button
+                  onClick={() => fire(ev.id)}
+                  className="group relative block w-full"
+                  title={ev.trigger}
+                >
+                  <BannerView event={ev.id} width={280} override={ov} />
+                  <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-black/55">
+                    {n > 0 ? (
+                      <span style={{ color: t.accent }}>{n} clip</span>
+                    ) : (
+                      <span className="text-ink-faint">ยังไม่มีเสียง</span>
+                    )}
+                  </span>
+                  {ov && (
+                    <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-black/55 text-lime">
+                      ภาพเอง · {ov.ext}
+                    </span>
                   )}
-                </span>
-              </button>
+                </button>
+                <div className="flex items-center justify-between px-2 h-8 bg-panel/40 border-t border-line">
+                  <button
+                    onClick={() => pickOverride(ev.id)}
+                    className="text-[11px] text-ink-muted hover:text-ink transition"
+                  >
+                    {ov ? "เปลี่ยนภาพ" : "แทนภาพเอง"}
+                  </button>
+                  {ov && (
+                    <button
+                      onClick={() => setBannerOverride(ev.id, null)}
+                      className="text-[11px] text-ink-faint hover:text-danger transition"
+                    >
+                      ล้าง
+                    </button>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
       </div>
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/png,image/webp,image/gif,image/apng"
+        className="hidden"
+        onChange={onFilePicked}
+      />
 
       <style>{`@keyframes gannPop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}`}</style>
     </div>

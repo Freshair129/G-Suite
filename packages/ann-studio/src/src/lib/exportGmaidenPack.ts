@@ -20,13 +20,17 @@ export async function installGmaidenPack(packName = "ann-pack", author = ""): Pr
   const mapped = s.clips.filter((c) => c.event && c.event !== "unused");
   if (!mapped.length) return "ยังไม่มี clip ที่ map event — กด “AI map” ก่อนนะครับ";
 
-  // one tone banner (PNG, alpha) per mapped event
+  // one banner per mapped event: the author's override image if set, otherwise
+  // the auto-generated tone banner (PNG, alpha). Animated overrides (webp/gif/
+  // apng) pass straight through — G-Maiden's overlay renders them as-is.
+  const overrides = s.bannerOverrides;
   const events = [...new Set(mapped.map((c) => c.event))];
-  const banners = events.map((ev) => ({
-    event: ev,
-    b64: toneBannerPngDataUrl(ev, 2).split(",")[1],
-    ext: "png",
-  }));
+  const banners = events.map((ev) => {
+    const ov = overrides[ev];
+    return ov
+      ? { event: ev, b64: ov.b64, ext: ov.ext }
+      : { event: ev, b64: toneBannerPngDataUrl(ev, 2).split(",")[1], ext: "png" };
+  });
 
   const packId = `pack_${Date.now().toString(36)}`;
   try {

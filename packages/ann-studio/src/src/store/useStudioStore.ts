@@ -25,6 +25,18 @@ export interface Clip {
 
 export type AppView = "studio" | "profile" | "settings" | "test" | "source";
 
+/** Author-supplied banner image that replaces the auto tone-banner for one event.
+ *  `b64` has NO `data:` prefix (ready for the Rust install command); `mime` is
+ *  kept only so the UI can build a preview data URL. Animated formats (webp/gif/
+ *  apng) pass straight through to G-Maiden's overlay. */
+export interface BannerOverride {
+  b64: string;
+  // APNG is normalized to png — it is a valid PNG container and G-Maiden's
+  // overlay (WebView2/Chromium) animates it under image/png.
+  ext: "png" | "webp" | "gif";
+  mime: string;
+}
+
 export interface VoiceCacheMap {
   [event: string]: string[];
 }
@@ -125,6 +137,9 @@ interface StudioState {
   gmaidenPath: string;
   voiceCache: VoiceCacheMap;
 
+  /** event id → author banner override (unset = use the auto tone banner) */
+  bannerOverrides: Record<string, BannerOverride>;
+
   libraryRoot: string;
   libraryTree: LibraryNode[];
   libraryPackages: LibPkg[];
@@ -167,6 +182,8 @@ interface StudioState {
   setLlmModel: (m: string) => void;
   setView: (v: AppView) => void;
   setGMaiden: (connected: boolean, path: string, cache: VoiceCacheMap) => void;
+  /** set (ov) or clear (null) the banner override for one event */
+  setBannerOverride: (event: string, ov: BannerOverride | null) => void;
   setLibrary: (root: string, tree: LibraryNode[]) => void;
   setLibraryPackages: (pkgs: LibPkg[]) => void;
   setPacks: (packs: Pack[]) => void;
@@ -227,6 +244,7 @@ export const useStudioStore = create<StudioState>()(
       gmaidenConnected: false,
       gmaidenPath: "",
       voiceCache: {},
+      bannerOverrides: {},
 
       libraryRoot: "",
       libraryTree: [],
@@ -363,6 +381,14 @@ export const useStudioStore = create<StudioState>()(
       setGMaiden: (gmaidenConnected, gmaidenPath, voiceCache) =>
         set({ gmaidenConnected, gmaidenPath, voiceCache }),
 
+      setBannerOverride: (event, ov) =>
+        set((s) => {
+          const next = { ...s.bannerOverrides };
+          if (ov) next[event] = ov;
+          else delete next[event];
+          return { bannerOverrides: next };
+        }),
+
       setLibrary: (libraryRoot, libraryTree) => set({ libraryRoot, libraryTree }),
 
       setLibraryPackages: (libraryPackages) => set({ libraryPackages }),
@@ -415,6 +441,7 @@ export const useStudioStore = create<StudioState>()(
         wavPath: s.wavPath,
         duration: s.duration,
         clips: s.clips,
+        bannerOverrides: s.bannerOverrides,
       }),
     }
   )
