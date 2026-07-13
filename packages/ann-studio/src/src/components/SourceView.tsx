@@ -5,7 +5,7 @@
 import { useRef, useState } from "react";
 import { Trash2, Wand2, Download, Send, ZoomIn, GripVertical } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
-import { runAutoSplit, runExport } from "../lib/actions";
+import { runAnalyzeVideo, runExport, sourceIsVideo } from "../lib/actions";
 import { installGmaidenPack } from "../lib/exportGmaidenPack";
 import EventPicker from "./EventPicker";
 import ClipWaveform from "./ClipWaveform";
@@ -78,10 +78,11 @@ export default function SourceView() {
           {fmt(duration)} · {clips.length} clips · map {mapped}/{clips.length}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => withBusy(runAutoSplit)} disabled={transcribing || busy}
+          <button onClick={() => withBusy(runAnalyzeVideo)} disabled={transcribing || busy}
+            title={sourceIsVideo() ? "วิเคราะห์วิดีโอ: ตัดคลิป + ถอดเสียง + อ่านปุ่ม event อัตโนมัติ" : "ถอดเสียงแล้วแยกเป็นคลิป"}
             className="flex items-center gap-2 px-4 h-9 rounded-full bg-lime text-black text-sm font-bold hover:bg-lime/90 transition disabled:opacity-50">
             <Wand2 size={15} />
-            {transcribing ? "กำลังถอดเสียง…" : clips.length ? "แยกอีกครั้ง" : "แยกอัตโนมัติ"}
+            {transcribing ? "กำลังประมวลผล…" : clips.length ? "แยกอีกครั้ง" : sourceIsVideo() ? "วิเคราะห์วิดีโอ" : "แยกอัตโนมัติ"}
           </button>
           <div className="w-px h-6 bg-line mx-0.5" />
           <button onClick={() => withBusy(runExport)} disabled={busy || !clips.length}

@@ -1,6 +1,67 @@
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useStudioStore, genId, type Clip } from "../store/useStudioStore";
+import { matchAnnouncerLabel } from "./honEventMap";
+
+const VIDEO_EXT = /\.(mp4|mkv|mov|webm|avi|m4v)$/i;
+
+/** True when the imported source is a video (the vision pipeline can run). */
+export function sourceIsVideo(): boolean {
+  return VIDEO_EXT.test(useStudioStore.getState().sourcePath ?? "");
+}
+
+interface AnalyzedClip {
+  start: number;
+  end: number;
+  text: string;
+  label: string;
+}
+
+/**
+ * Vision auto-split for a showcase VIDEO: chain W1 (boundaries) → whisper (text)
+ * → W4 (button label) via the Rust `analyze_video` command, then build clips
+ * with the event pre-resolved from the HoN label. Falls back to plain whisper
+ * auto-split when there are no vision windows.
+ */
+export async function runAnalyzeVideo(model?: string): Promise<string> {
+  const s = useStudioStore.getState();
+  if (!s.sourcePath || !s.wavPath) return "ยังไม่มีไฟล์ — นำเข้าวิดีโอก่อนนะครับ";
+  if (!VIDEO_EXT.test(s.sourcePath)) return runAutoSplit(model);
+  if (s.transcribing) return "กำลังประมวลผลอยู่…";
+  s.setTranscribing(true);
+  try {
+    const analyzed = await invoke<AnalyzedClip[]>("analyze_video", {
+      videoPath: s.sourcePath,
+      wavPath: s.wavPath,
+      model: model || s.model,
+      lang: "th",
+    });
+    if (!analyzed.length) {
+      // no caption windows found by vision — fall back to whisper split
+      useStudioStore.getState().setTranscribing(false);
+      return runAutoSplit(model);
+    }
+    let labelled = 0;
+    const next: Clip[] = analyzed.map((a) => {
+      const event = a.label ? matchAnnouncerLabel(a.label) : null;
+      if (event) labelled++;
+      return {
+        id: genId(),
+        name: a.text || a.label || "(ไม่มีข้อความ)",
+        start: a.start,
+        end: a.end,
+        event: event ?? "unused",
+        color: "",
+      };
+    });
+    useStudioStore.getState().setClips(next);
+    return `วิเคราะห์วิดีโอได้ ${next.length} clips 🎬 (map จากปุ่มอัตโนมัติ ${labelled}/${next.length})`;
+  } catch (e) {
+    return `วิเคราะห์วิดีโอไม่สำเร็จ: ${e}`;
+  } finally {
+    useStudioStore.getState().setTranscribing(false);
+  }
+}
 
 interface TranscriptSegment {
   start: number;

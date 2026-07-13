@@ -345,6 +345,121 @@ async fn transcribe_audio(
     Ok(value)
 }
 
+/// Spawn a sidecar script with `py` and return its raw process output.
+async fn spawn_sidecar(
+    py: &str,
+    script: PathBuf,
+    args: Vec<String>,
+) -> Result<std::process::Output, String> {
+    let mut a = vec![script.to_string_lossy().into_owned()];
+    a.extend(args);
+    Command::new(py)
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(&a)
+        .output()
+        .await
+        .map_err(|e| format!("spawn {}: {e}", script.display()))
+}
+
+/// One analyzed line from the vision pipeline: a clip window with its spoken
+/// text (whisper) and the raw HoN button label (W4). `label` may be empty; the
+/// frontend resolves it to a G-Maiden event via honEventMap (single source).
+#[derive(Serialize)]
+struct AnalyzedClip {
+    start: f64,
+    end: f64,
+    text: String,
+    label: String,
+}
+
+/// Full vision pipeline for an announcer-showcase VIDEO: chain the three
+/// sidecars — detect_boundaries.py (W1, line windows) → transcribe.py (whisper
+/// text) → detect_buttons.py (W4, active button label) — and fuse them into
+/// pre-labelled clips. Returns an empty vec if W1 finds no caption windows (the
+/// caller then falls back to plain whisper auto-split). detect_buttons failing
+/// (e.g. rapidocr not installed) degrades to empty labels, not an error.
+#[tauri::command]
+async fn analyze_video(
+    video_path: String,
+    wav_path: String,
+    model: Option<String>,
+    lang: Option<String>,
+) -> Result<Vec<AnalyzedClip>, String> {
+    let sidecar = sidecar_dir();
+    let py = python_bin(&sidecar);
+    let model = model.unwrap_or_else(|| "medium".into());
+    let lang = lang.unwrap_or_else(|| "th".into());
+
+    // 1. W1 — vision line boundaries from the video
+    let b = spawn_sidecar(&py, sidecar.join("detect_boundaries.py"), vec![video_path.clone()]).await?;
+    let b_json: serde_json::Value = serde_json::from_str(String::from_utf8_lossy(&b.stdout).trim())
+        .map_err(|e| format!("detect_boundaries: {e}\n{}", String::from_utf8_lossy(&b.stderr)))?;
+    let lines = b_json["lines"].as_array().cloned().unwrap_or_default();
+    if lines.is_empty() {
+        return Ok(vec![]);
+    }
+    let windows: Vec<(f64, f64)> = lines
+        .iter()
+        .map(|l| (l["startMs"].as_f64().unwrap_or(0.0) / 1000.0, l["endMs"].as_f64().unwrap_or(0.0) / 1000.0))
+        .collect();
+
+    // 2. whisper — transcript segments from the wav
+    let t = spawn_sidecar(
+        &py,
+        sidecar.join("transcribe.py"),
+        vec![wav_path, "--model".into(), model, "--lang".into(), lang],
+    )
+    .await?;
+    let t_json: serde_json::Value = serde_json::from_str(String::from_utf8_lossy(&t.stdout).trim())
+        .map_err(|e| format!("transcribe: {e}\n{}", String::from_utf8_lossy(&t.stderr)))?;
+    let segments = t_json["segments"].as_array().cloned().unwrap_or_default();
+
+    // 3. W4 — active button label per window (best-effort; empty on failure)
+    let windows_ms: Vec<[f64; 2]> = lines
+        .iter()
+        .map(|l| [l["startMs"].as_f64().unwrap_or(0.0), l["endMs"].as_f64().unwrap_or(0.0)])
+        .collect();
+    let labels: Vec<String> = match spawn_sidecar(
+        &py,
+        sidecar.join("detect_buttons.py"),
+        vec![video_path, "--windows".into(), serde_json::to_string(&windows_ms).unwrap()],
+    )
+    .await
+    {
+        Ok(o) => serde_json::from_str::<serde_json::Value>(String::from_utf8_lossy(&o.stdout).trim())
+            .ok()
+            .and_then(|v| v["labels"].as_array().cloned())
+            .map(|arr| arr.iter().map(|x| x["label"].as_str().unwrap_or("").to_string()).collect())
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+
+    // 4. fuse: a window's text = whisper segments whose midpoint lands inside it
+    let clips = windows
+        .iter()
+        .enumerate()
+        .map(|(i, &(s, e))| {
+            let text = segments
+                .iter()
+                .filter_map(|seg| {
+                    let ss = seg["start"].as_f64()?;
+                    let se = seg["end"].as_f64()?;
+                    let mid = (ss + se) / 2.0;
+                    if mid >= s - 0.15 && mid <= e + 0.15 {
+                        Some(seg["text"].as_str().unwrap_or("").trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .filter(|t| !t.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            AnalyzedClip { start: s, end: e, text, label: labels.get(i).cloned().unwrap_or_default() }
+        })
+        .collect();
+    Ok(clips)
+}
+
 /// Return raw file bytes to the webview as an ArrayBuffer. The waveform loads
 /// audio via this (loadBlob) instead of the asset protocol, which sidesteps
 /// CSP/CORS issues with wavesurfer's fetch.
@@ -1694,6 +1809,7 @@ pub fn run() {
             cut_clip,
             export_all,
             transcribe_audio,
+            analyze_video,
             read_audio_bytes,
             install_pack,
             install_gmaiden_pack,
