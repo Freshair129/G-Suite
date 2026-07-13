@@ -63,7 +63,7 @@ export default function SaveToLibDialog({ onClose }: Props) {
       <div className="w-[420px] bg-panel border border-line rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <h3 className="text-sm font-bold">Save to Library</h3>
+          <h3 className="text-sm font-bold">บันทึกเข้าคลัง — เจ้าของเสียง</h3>
           <button
             onClick={onClose}
             className="grid place-items-center w-7 h-7 rounded-lg hover:bg-panel-hover transition"
@@ -76,15 +76,16 @@ export default function SaveToLibDialog({ onClose }: Props) {
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-[11px] text-ink-faint mb-1.5">
-              ชื่อ Package
+              ชื่อเจ้าของเสียง (voice owner)
             </label>
             <input
               value={pkgName}
               onChange={(e) => setPkgName(e.target.value)}
-              placeholder="เช่น Thai_Caster_Pack_01"
+              placeholder="เช่น น้าค่อม, เสียงผมอัดเอง, VRZO"
               className="w-full h-9 px-3 rounded-lg bg-base border border-line text-sm text-ink outline-none focus:border-lime/50 transition"
               autoFocus
             />
+            <p className="text-[10px] text-ink-faint mt-1">แยกคลังตามเจ้าของเสียง — เลือก mapping event ทีหลังได้</p>
           </div>
 
           <div>

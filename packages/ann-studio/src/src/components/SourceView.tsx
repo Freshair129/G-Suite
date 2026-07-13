@@ -3,13 +3,14 @@
 // Mastering deck below (resizable). Zoom scales every waveform.
 
 import { useRef, useState } from "react";
-import { Trash2, Wand2, Download, Send, ZoomIn, GripVertical } from "lucide-react";
+import { Trash2, Wand2, Download, Send, ZoomIn, GripVertical, Save } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runAnalyzeVideo, runExport, sourceIsVideo } from "../lib/actions";
 import { installGmaidenPack } from "../lib/exportGmaidenPack";
 import EventPicker from "./EventPicker";
 import ClipWaveform from "./ClipWaveform";
 import MasteringPanel from "./MasteringPanel";
+import SaveToLibDialog from "./SaveToLibDialog";
 import { eventTone, TONES } from "../lib/toneBanner";
 
 function accentFor(event: string): string {
@@ -32,6 +33,7 @@ export default function SourceView() {
 
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showSave, setShowSave] = useState(false);
   const [tool, setTool] = useState<"select" | "split">("select");
   const [zoom, setZoom] = useState(1);
   const [deckH, setDeckH] = useState(224);
@@ -85,6 +87,10 @@ export default function SourceView() {
             {transcribing ? "กำลังประมวลผล…" : clips.length ? "แยกอีกครั้ง" : sourceIsVideo() ? "วิเคราะห์วิดีโอ" : "แยกอัตโนมัติ"}
           </button>
           <div className="w-px h-6 bg-line mx-0.5" />
+          <button onClick={() => setShowSave(true)} disabled={busy || !clips.length}
+            className="flex items-center gap-2 px-3 h-9 rounded-full bg-panel border border-line text-sm text-ink hover:border-white/25 transition disabled:opacity-40" title="บันทึกเสียงชุดนี้เข้าคลัง แยกตามเจ้าของเสียง">
+            <Save size={15} /> Save to Library
+          </button>
           <button onClick={() => withBusy(runExport)} disabled={busy || !clips.length}
             className="flex items-center gap-2 px-3 h-9 rounded-full bg-panel border border-line text-sm text-ink hover:border-white/25 transition disabled:opacity-40" title="ส่งออกเป็นไฟล์ pack">
             <Download size={15} /> Export
@@ -184,6 +190,8 @@ export default function SourceView() {
       </div>
 
       <MasteringPanel tool={tool} setTool={setTool} height={deckH} />
+
+      {showSave && <SaveToLibDialog onClose={() => setShowSave(false)} />}
     </div>
   );
 }

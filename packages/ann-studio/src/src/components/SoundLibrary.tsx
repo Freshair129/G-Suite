@@ -99,8 +99,8 @@ export default function SoundLibrary() {
             <div className="px-3 py-6 text-center">
               <Package size={24} className="mx-auto text-ink-faint mb-2" />
               <p className="text-[11px] text-ink-faint leading-relaxed">
-                ยังไม่มี Package<br />
-                ใช้ <span className="text-lime">Save to Lib</span> หลังแยกเสียง
+                ยังไม่มีเจ้าของเสียง<br />
+                กด <span className="text-lime">Save to Library</span> หลังแยกเสียง
               </p>
             </div>
           ) : (

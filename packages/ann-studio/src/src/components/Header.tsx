@@ -57,6 +57,13 @@ export default function Header() {
       ],
     });
     if (!file) return;
+    // guard: importing replaces the current clips — don't let unsaved voices mix
+    if (clips.length > 0) {
+      const ok = window.confirm(
+        `มีเสียง ${clips.length} clip ที่ยังไม่ได้บันทึกเข้าคลัง — นำเข้าไฟล์ใหม่จะล้างทิ้ง\n\nกด “ยกเลิก” เพื่อไปกด “Save to Library” ก่อน แล้วค่อยนำเข้าใหม่`
+      );
+      if (!ok) return;
+    }
     setImporting(true);
     try {
       const result: { path: string; duration: number } = await invoke("extract_audio", {
