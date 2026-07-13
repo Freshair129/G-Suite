@@ -73,10 +73,10 @@ export default function SoundLibrary() {
       const sounds = pkgSounds[pkg.id] ?? (await invoke<LibSound[]>("query_sounds", { pkgId: pkg.id }));
       const next: Clip[] = sounds.map((s) => ({
         id: genId(),
-        name: s.name,
+        name: s.name_th || s.name_en,
         start: 0,
         end: s.duration,
-        event: s.event || "unused",
+        event: s.events?.[0] || "unused",
         color: "",
         filePath: s.file_path,
         fileDur: s.duration,
@@ -235,7 +235,7 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData("application/x-library-sound", sound.file_path);
     e.dataTransfer.setData("application/x-library-sound-json", JSON.stringify(sound));
-    e.dataTransfer.setData("text/plain", sound.name);
+    e.dataTransfer.setData("text/plain", sound.name_th || sound.name_en);
     e.dataTransfer.effectAllowed = "copy";
   }
 
@@ -269,11 +269,14 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
       onDragStart={handleDragStart}
       className="group flex items-center gap-1 px-2 py-1 text-xs hover:bg-panel-hover transition cursor-grab active:cursor-grabbing"
       style={{ paddingLeft: "28px" }}
-      title={`${sound.name} (${sound.duration.toFixed(1)}s)`}
+      title={`${sound.name_th || sound.name_en} (${sound.duration.toFixed(1)}s)`}
     >
       <GripVertical size={10} className="text-ink-faint/40 shrink-0 opacity-0 group-hover:opacity-100 transition" />
       <FileAudio size={12} className="text-lime/70 shrink-0" />
-      <span className="truncate flex-1 text-ink-muted">{sound.name}</span>
+      <span className="truncate flex-1 text-ink-muted" title={sound.name_en}>
+        {sound.name_th || sound.name_en}
+        {sound.name_en && <span className="text-ink-faint/70 ml-1">· {sound.name_en}</span>}
+      </span>
       <span className="text-[9px] font-mono text-ink-faint shrink-0">{sound.duration.toFixed(1)}s</span>
       <button
         onClick={handlePlay}

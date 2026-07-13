@@ -8,7 +8,7 @@ interface Props {
 }
 
 export default function SaveToLibDialog({ onClose }: Props) {
-  const { clips, wavPath, duration, setLibraryPackages } = useStudioStore();
+  const { clips, wavPath, sourcePath, duration, setLibraryPackages } = useStudioStore();
   const [pkgName, setPkgName] = useState("");
   const [game, setGame] = useState("Dota 2");
   const [fileType, setFileType] = useState("wav");
@@ -27,10 +27,11 @@ export default function SaveToLibDialog({ onClose }: Props) {
     setSaving(true);
     try {
       const clipData = clips.map((c) => ({
-        name: c.name,
+        nameTh: c.name,
+        nameEn: "", // filled by the AI-name step (next); empty → filename uses the event
         start: c.start,
         end: c.end,
-        event: c.event || "unused",
+        events: c.event && c.event !== "unused" ? [c.event] : [],
       }));
       const result: { pkg_id: string; saved: number } = await invoke(
         "save_clips_to_library",
@@ -43,6 +44,7 @@ export default function SaveToLibDialog({ onClose }: Props) {
             file_type: fileType,
             quality,
             padding: 2.0,
+            origin: sourcePath ?? "",
           },
           totalDuration: duration,
         }

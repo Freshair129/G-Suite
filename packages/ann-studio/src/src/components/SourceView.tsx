@@ -53,10 +53,10 @@ export default function SourceView() {
       const snd = JSON.parse(raw) as LibSound;
       addClip({
         id: genId(),
-        name: snd.name,
+        name: snd.name_th || snd.name_en,
         start: 0,
         end: snd.duration,
-        event: snd.event || "unused",
+        event: snd.events?.[0] || "unused",
         color: "",
         filePath: snd.file_path,
         fileDur: snd.duration,

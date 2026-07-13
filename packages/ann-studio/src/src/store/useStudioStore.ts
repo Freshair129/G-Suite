@@ -69,10 +69,12 @@ export interface LibSound {
   id: number;
   pkg_id: string;
   idx: number;
-  name: string;
+  name_th: string;
+  name_en: string;
   file_path: string;
+  source_path: string;
   duration: number;
-  event: string;
+  events: string[];
 }
 
 // ---- Editor (timeline) types ----

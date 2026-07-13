@@ -514,7 +514,7 @@ export default function EventTestGrid() {
                   {libList.map((snd, i) => (
                     <div key={snd.id} className="flex items-center gap-1.5 text-[10px] text-ink-muted">
                       <span className="text-lime/70 shrink-0">♪</span>
-                      <span className="truncate flex-1" title={snd.name}>{snd.name}</span>
+                      <span className="truncate flex-1" title={snd.name_en}>{snd.name_th || snd.name_en}</span>
                       <span className="text-ink-faint shrink-0">{snd.duration.toFixed(1)}s</span>
                       <button
                         onClick={() => removeFromPackBuilder(ev.id, i)}
@@ -548,7 +548,7 @@ export default function EventTestGrid() {
                             className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] text-left hover:bg-panel-hover transition"
                           >
                             <span className="text-lime/70 shrink-0">{snd.owner}</span>
-                            <span className="truncate flex-1 text-ink-muted">{snd.name}</span>
+                            <span className="truncate flex-1 text-ink-muted">{snd.name_th || snd.name_en}</span>
                             <span className="text-ink-faint shrink-0">{snd.duration.toFixed(1)}s</span>
                           </button>
                         ))

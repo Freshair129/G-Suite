@@ -130,7 +130,7 @@ export async function installLibraryPack(
       const ov = overrides[ev];
       if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
       const snd = firstOf(ev);
-      const cap = voiceCaption ? snd?.name : undefined;
+      const cap = voiceCaption ? snd?.name_th || snd?.name_en : undefined;
       if (reactive && snd) {
         const env = await clipEnvelope(absOf(snd), 0, snd.duration, snd.duration).catch(() => []);
         const webp = await bakeReactiveWebp(ev, env, snd.duration, cap);

@@ -1343,10 +1343,12 @@ fn open_db() -> Result<rusqlite::Connection, String> {
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             pkg_id      TEXT NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
             idx         INTEGER NOT NULL,
-            name        TEXT NOT NULL,
+            name_th     TEXT NOT NULL DEFAULT '',
+            name_en     TEXT NOT NULL DEFAULT '',
             file_path   TEXT NOT NULL,
+            source_path TEXT NOT NULL DEFAULT '',
             duration    REAL NOT NULL DEFAULT 0,
-            event       TEXT NOT NULL DEFAULT 'unused'
+            events      TEXT NOT NULL DEFAULT '[]'
         );
         CREATE TABLE IF NOT EXISTS packs (
             id          TEXT PRIMARY KEY,
@@ -1357,10 +1359,67 @@ fn open_db() -> Result<rusqlite::Connection, String> {
             created_at  TEXT NOT NULL,
             updated_at  TEXT NOT NULL
         );
+        -- reverse index: which packs/events use a sound (rebuilt on pack save/
+        -- delete). Lets backlink / impact-radar queries be indexed lookups, not
+        -- a full scan of packs.mappings on every render.
+        CREATE TABLE IF NOT EXISTS sound_usage (
+            sound_id  INTEGER NOT NULL,
+            pack_id   TEXT NOT NULL,
+            event     TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_packages_name ON packages(name);
+        CREATE INDEX IF NOT EXISTS idx_usage_sound ON sound_usage(sound_id);
+        CREATE INDEX IF NOT EXISTS idx_usage_pack ON sound_usage(pack_id);
         PRAGMA foreign_keys = ON;",
     )
     .map_err(|e| format!("init tables: {e}"))?;
+    migrate_sounds(&conn)?;
     Ok(conn)
+}
+
+/// Evolve an old `sounds` table (single `name` + `event`) to the new schema
+/// (name_th/name_en/source_path/events). Additive + idempotent — runs on every
+/// open_db; a fresh DB already has the new columns so it's a no-op.
+fn migrate_sounds(conn: &rusqlite::Connection) -> Result<(), String> {
+    let cols: std::collections::HashSet<String> = conn
+        .prepare("PRAGMA table_info(sounds)")
+        .and_then(|mut s| {
+            s.query_map([], |r| r.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|e| format!("table_info: {e}"))?
+        .into_iter()
+        .collect();
+
+    if cols.contains("name") && !cols.contains("name_th") {
+        conn.execute_batch("ALTER TABLE sounds RENAME COLUMN name TO name_th;")
+            .map_err(|e| format!("rename name: {e}"))?;
+    }
+    for (c, def) in [("name_en", "''"), ("source_path", "''"), ("events", "'[]'")] {
+        if !cols.contains(c) {
+            conn.execute_batch(&format!(
+                "ALTER TABLE sounds ADD COLUMN {c} TEXT NOT NULL DEFAULT {def};"
+            ))
+            .map_err(|e| format!("add {c}: {e}"))?;
+        }
+    }
+    // one-time: fold the legacy single `event` into the `events` array
+    if cols.contains("event") {
+        let rows: Vec<(i64, String)> = conn
+            .prepare(
+                "SELECT id, event FROM sounds WHERE (events IS NULL OR events='' OR events='[]') AND event IS NOT NULL AND event<>''",
+            )
+            .and_then(|mut s| {
+                s.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(|e| format!("read legacy events: {e}"))?;
+        for (id, ev) in rows {
+            let arr = serde_json::to_string(&vec![ev]).unwrap_or_else(|_| "[]".into());
+            let _ = conn.execute("UPDATE sounds SET events=?1 WHERE id=?2", rusqlite::params![arr, id]);
+        }
+    }
+    Ok(())
 }
 
 // ---- Library commands ---------------------------------------------------
@@ -1381,10 +1440,12 @@ struct LibSound {
     id: i64,
     pkg_id: String,
     idx: i64,
-    name: String,
+    name_th: String,
+    name_en: String,
     file_path: String,
+    source_path: String,
     duration: f64,
-    event: String,
+    events: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -1425,18 +1486,21 @@ fn init_library() -> Result<LibraryInfo, String> {
 fn query_sounds(pkg_id: String) -> Result<Vec<LibSound>, String> {
     let conn = open_db()?;
     let mut stmt = conn
-        .prepare("SELECT id, pkg_id, idx, name, file_path, duration, event FROM sounds WHERE pkg_id = ?1 ORDER BY idx")
+        .prepare("SELECT id, pkg_id, idx, name_th, name_en, file_path, source_path, duration, events FROM sounds WHERE pkg_id = ?1 ORDER BY idx")
         .map_err(|e| format!("query: {e}"))?;
     let sounds: Vec<LibSound> = stmt
         .query_map([&pkg_id], |row| {
+            let events_json: String = row.get(8)?;
             Ok(LibSound {
                 id: row.get(0)?,
                 pkg_id: row.get(1)?,
                 idx: row.get(2)?,
-                name: row.get(3)?,
-                file_path: row.get(4)?,
-                duration: row.get(5)?,
-                event: row.get(6)?,
+                name_th: row.get(3)?,
+                name_en: row.get(4)?,
+                file_path: row.get(5)?,
+                source_path: row.get(6)?,
+                duration: row.get(7)?,
+                events: serde_json::from_str(&events_json).unwrap_or_default(),
             })
         })
         .map_err(|e| format!("map: {e}"))?
@@ -1446,11 +1510,31 @@ fn query_sounds(pkg_id: String) -> Result<Vec<LibSound>, String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SaveToLibClip {
-    name: String,
+    name_th: String,
+    #[serde(default)]
+    name_en: String,
     start: f64,
     end: f64,
-    event: String,
+    #[serde(default)]
+    events: Vec<String>,
+}
+
+/// ASCII slug for filenames: lowercase, non-[a-z0-9] runs → single '-', trimmed.
+fn slug_ascii(s: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for ch in s.to_ascii_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            dash = false;
+        } else if !dash && !out.is_empty() {
+            out.push('-');
+            dash = true;
+        }
+    }
+    out.trim_end_matches('-').to_string()
 }
 
 #[derive(Deserialize)]
@@ -1460,6 +1544,10 @@ struct SaveToLibOpts {
     file_type: String,
     quality: String,
     padding: f64,
+    // the ORIGINAL imported file (video/audio) — stored as each sound's
+    // source_path for traceability; cutting still uses the `source_path` arg (wav).
+    #[serde(default)]
+    origin: String,
 }
 
 #[derive(Serialize)]
@@ -1522,7 +1610,8 @@ async fn save_clips_to_library(
     };
 
     // Cut clips with ffmpeg (async), collect results
-    let mut cut_results: Vec<(i64, String, String, f64, String)> = Vec::new();
+    // (idx, name_th, name_en, rel_path, dur, events_json)
+    let mut cut_results: Vec<(i64, String, String, String, f64, String)> = Vec::new();
 
     for (i, clip) in clips.iter().enumerate() {
         let padded_start = (clip.start - opts.padding).max(0.0);
@@ -1532,7 +1621,16 @@ async fn save_clips_to_library(
             continue;
         }
 
-        let filename = format!("{:03}_{}.{ext}", i + 1, sanitize_filename(&clip.name));
+        // filename = <idx>_<eng-name>.ext (ASCII); fall back to the first event
+        let base = {
+            let s = slug_ascii(&clip.name_en);
+            if s.is_empty() {
+                clip.events.first().cloned().unwrap_or_else(|| "clip".into())
+            } else {
+                s
+            }
+        };
+        let filename = format!("{:03}_{base}.{ext}", i + 1);
         let out_path = pkg_dir.join(&filename);
 
         let mut args = vec![
@@ -1555,20 +1653,28 @@ async fn save_clips_to_library(
             .map_err(|e| format!("ffmpeg clip {i}: {e}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("ffmpeg error clip {}: {stderr}", clip.name));
+            return Err(format!("ffmpeg error clip {}: {stderr}", clip.name_th));
         }
 
         let rel_path = format!("{pkg_id}/{filename}");
-        cut_results.push(((i + 1) as i64, clip.name.clone(), rel_path, round2(dur), clip.event.clone()));
+        let events_json = serde_json::to_string(&clip.events).unwrap_or_else(|_| "[]".into());
+        cut_results.push((
+            (i + 1) as i64,
+            clip.name_th.clone(),
+            clip.name_en.clone(),
+            rel_path,
+            round2(dur),
+            events_json,
+        ));
     }
 
     // Insert sound rows after all async work is done
     {
         let conn = open_db()?;
-        for (idx, name, rel_path, dur, event) in &cut_results {
+        for (idx, name_th, name_en, rel_path, dur, events_json) in &cut_results {
             conn.execute(
-                "INSERT INTO sounds (pkg_id, idx, name, file_path, duration, event) VALUES (?1,?2,?3,?4,?5,?6)",
-                rusqlite::params![pkg_id, idx, name, rel_path, dur, event],
+                "INSERT INTO sounds (pkg_id, idx, name_th, name_en, file_path, source_path, duration, events) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                rusqlite::params![pkg_id, idx, name_th, name_en, rel_path, opts.origin, dur, events_json],
             ).map_err(|e| format!("insert sound: {e}"))?;
         }
     }
@@ -1638,7 +1744,65 @@ fn save_pack(manifest: PackManifest) -> Result<String, String> {
         "INSERT OR REPLACE INTO packs (id, name, pack_type, events, mappings, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
         rusqlite::params![manifest.id, manifest.name, manifest.pack_type, events_json, mappings_json, manifest.created_at, manifest.updated_at],
     ).map_err(|e| format!("save pack: {e}"))?;
+    rebuild_pack_usage(&conn, &manifest.id, &manifest.mappings)?;
     Ok(manifest.id)
+}
+
+/// Rebuild the sound_usage reverse-index rows for one pack (called on save):
+/// drop its old rows, then map each event's sound (resolved by file_path) to
+/// this pack. Cost is paid on write (rare); backlink/radar reads stay O(1).
+fn rebuild_pack_usage(
+    conn: &rusqlite::Connection,
+    pack_id: &str,
+    mappings: &std::collections::HashMap<String, SoundMapping>,
+) -> Result<(), String> {
+    use rusqlite::OptionalExtension;
+    conn.execute("DELETE FROM sound_usage WHERE pack_id = ?1", [pack_id])
+        .map_err(|e| format!("clear usage: {e}"))?;
+    for (event, m) in mappings {
+        let sid: Option<i64> = conn
+            .query_row("SELECT id FROM sounds WHERE file_path = ?1", [&m.sound_path], |r| r.get(0))
+            .optional()
+            .map_err(|e| format!("resolve sound: {e}"))?;
+        if let Some(id) = sid {
+            conn.execute(
+                "INSERT INTO sound_usage (sound_id, pack_id, event) VALUES (?1,?2,?3)",
+                rusqlite::params![id, pack_id, event],
+            )
+            .map_err(|e| format!("insert usage: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// One pack/event that references a sound (backlink / impact-radar node).
+#[derive(Serialize)]
+struct SoundUsage {
+    pack_id: String,
+    pack_name: String,
+    event: String,
+}
+
+/// Backlink: which packs + events use a given sound. Indexed lookup on
+/// sound_usage — never scans packs.mappings.
+#[tauri::command]
+fn sound_usage(sound_id: i64) -> Result<Vec<SoundUsage>, String> {
+    let conn = open_db()?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT u.pack_id, COALESCE(p.name, u.pack_id), u.event
+             FROM sound_usage u LEFT JOIN packs p ON p.id = u.pack_id
+             WHERE u.sound_id = ?1 ORDER BY p.name, u.event",
+        )
+        .map_err(|e| format!("query: {e}"))?;
+    let rows: Vec<SoundUsage> = stmt
+        .query_map([sound_id], |r| {
+            Ok(SoundUsage { pack_id: r.get(0)?, pack_name: r.get(1)?, event: r.get(2)? })
+        })
+        .map_err(|e| format!("map: {e}"))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
 }
 
 #[tauri::command]
@@ -1672,6 +1836,8 @@ fn delete_pack(pack_id: String) -> Result<(), String> {
     let conn = open_db()?;
     conn.execute("DELETE FROM packs WHERE id = ?1", [&pack_id])
         .map_err(|e| format!("delete pack: {e}"))?;
+    conn.execute("DELETE FROM sound_usage WHERE pack_id = ?1", [&pack_id])
+        .map_err(|e| format!("delete usage: {e}"))?;
     Ok(())
 }
 
@@ -2053,6 +2219,7 @@ pub fn run() {
             init_library,
             query_sounds,
             save_clips_to_library,
+            sound_usage,
             delete_library_pkg,
             save_pack,
             load_packs,
