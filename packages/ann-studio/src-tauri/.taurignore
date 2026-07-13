@@ -1,0 +1,7 @@
+# Keep `tauri dev`'s file watcher off the Python sidecar venv + caches — they
+# hold thousands of files (faster-whisper, rapidocr/onnxruntime) and get written
+# to when the sidecars run (transcribe / detect_boundaries / detect_buttons),
+# which would otherwise trigger a full Rust rebuild mid-session.
+sidecar/.venv/
+sidecar/**/__pycache__/
+gen/
