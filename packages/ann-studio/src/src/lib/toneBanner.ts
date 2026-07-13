@@ -103,16 +103,30 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): str
  * pass 1 for the static/steady banner. `caption` overrides the fixed Thai
  * subtitle with the voice clip's own transcript line (auto-truncated to fit).
  */
+/** Audio-reactive state for a banner frame: the clip's loudness envelope
+ *  (0..1 per bucket) and the current playhead position (0..1). */
+export interface BannerWave {
+  env: number[];
+  head: number;
+}
+
 export function drawToneBanner(
   ctx: CanvasRenderingContext2D,
   id: string,
   progress = 1,
-  caption?: string
+  caption?: string,
+  wave?: BannerWave
 ) {
   const ev = GMAIDEN_EVENTS.find((e) => e.id === id);
   const label = (ev?.label ?? id).toUpperCase();
   const thai = (caption && caption.trim()) || EVENT_THAI[id] || ev?.trigger || "";
   const tone = TONES[eventTone(id)];
+
+  // current loudness at the playhead — drives a border/glow pulse
+  const level =
+    wave && wave.env.length
+      ? wave.env[Math.min(wave.env.length - 1, Math.max(0, Math.round(wave.head * (wave.env.length - 1))))]
+      : 0;
 
   const W = BANNER_W, H = BANNER_H;
   ctx.clearRect(0, 0, W, H);
@@ -131,11 +145,11 @@ export function drawToneBanner(
   ctx.fillStyle = "rgba(18,20,28,0.92)";
   ctx.fill();
 
-  // glow + border
+  // glow + border (pulses with the current audio level when reactive)
   ctx.save();
   ctx.shadowColor = tone.accent;
-  ctx.shadowBlur = 16;
-  ctx.lineWidth = 1.6;
+  ctx.shadowBlur = 16 + level * 16;
+  ctx.lineWidth = 1.6 + level * 1.2;
   ctx.strokeStyle = tone.accent;
   roundRect(ctx, px, py, pw, ph, r);
   ctx.stroke();
@@ -166,6 +180,27 @@ export function drawToneBanner(
   ctx.fillStyle = "#8794a6";
   ctx.font = "600 14px 'Segoe UI', system-ui, sans-serif";
   ctx.fillText(fitText(ctx, thai, W - 89 - 16), 89, H / 2 + 22);
+
+  // audio-reactive waveform strip along the bottom — bars up to the playhead
+  // are lit in the tone accent, the rest dim; a brighter cursor rides the head.
+  if (wave && wave.env.length) {
+    const n = wave.env.length;
+    const x0 = 88;
+    const x1 = W - 18;
+    const midY = H - 20;
+    const maxH = 12;
+    const bw = (x1 - x0) / n;
+    const headIdx = wave.head * (n - 1);
+    for (let i = 0; i < n; i++) {
+      const h = Math.max(1.5, wave.env[i] * maxH);
+      const x = x0 + i * bw;
+      ctx.fillStyle = i <= headIdx ? hexA(tone.accent, 0.9) : hexA(tone.accent, 0.22);
+      ctx.fillRect(x, midY - h, Math.max(1, bw - 1), h * 2);
+    }
+    const hx = x0 + wave.head * (x1 - x0);
+    ctx.fillStyle = tone.ink;
+    ctx.fillRect(hx - 0.75, midY - maxH - 2, 1.5, maxH * 2 + 4);
+  }
 
   ctx.restore();
 }

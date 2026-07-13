@@ -34,3 +34,38 @@ export async function loadPeaks(wavPath: string, buckets = 6000): Promise<Float3
   inflight.set(wavPath, p);
   return p;
 }
+
+/**
+ * Loudness envelope of the [start, end] window of a clip, downsampled to
+ * `buckets` values normalized to 0..1 (peak of the window = 1). Used to drive
+ * the audio-reactive banner. Returns a plain number[] for easy IPC.
+ */
+export async function clipEnvelope(
+  wavPath: string,
+  start: number,
+  end: number,
+  duration: number,
+  buckets = 48
+): Promise<number[]> {
+  const peaks = await loadPeaks(wavPath);
+  if (!(duration > 0) || !(end > start)) return new Array(buckets).fill(0);
+  const total = peaks.length;
+  const i0 = Math.max(0, Math.floor((start / duration) * total));
+  const i1 = Math.min(total, Math.ceil((end / duration) * total));
+  const span = Math.max(1, i1 - i0);
+  const out = new Array(buckets).fill(0);
+  let peak = 0;
+  for (let b = 0; b < buckets; b++) {
+    const s = i0 + Math.floor((b / buckets) * span);
+    const e = i0 + Math.floor(((b + 1) / buckets) * span);
+    let max = 0;
+    for (let i = s; i < Math.max(s + 1, e); i++) {
+      const v = peaks[i] || 0;
+      if (v > max) max = v;
+    }
+    out[b] = max;
+    if (max > peak) peak = max;
+  }
+  if (peak > 0) for (let b = 0; b < buckets; b++) out[b] = out[b] / peak;
+  return out;
+}

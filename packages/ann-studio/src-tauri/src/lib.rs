@@ -753,7 +753,11 @@ async fn install_gmaiden_pack(
 /// on the final frame (`-loop 1`), giving the auto tone banner an entrance
 /// animation without an author image. Lossless to keep the banner text crisp.
 #[tauri::command]
-async fn bake_animated_webp(frames: Vec<String>, fps: Option<u32>) -> Result<String, String> {
+async fn bake_animated_webp(
+    frames: Vec<String>,
+    fps: Option<u32>,
+    loop_count: Option<u32>,
+) -> Result<String, String> {
     use base64::Engine;
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -762,6 +766,8 @@ async fn bake_animated_webp(frames: Vec<String>, fps: Option<u32>) -> Result<Str
         return Err("no frames to bake".into());
     }
     let fps = fps.unwrap_or(24).clamp(1, 60);
+    // 0 = loop forever (audio-reactive pulse); 1 = play once, rest on last frame.
+    let loop_count = loop_count.unwrap_or(1);
 
     // unique temp dir (pid + monotonic counter — no wall-clock needed)
     let uid = format!("{}_{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
@@ -801,7 +807,7 @@ async fn bake_animated_webp(frames: Vec<String>, fps: Option<u32>) -> Result<Str
             "-lossless",
             "1",
             "-loop",
-            "1",
+            &loop_count.to_string(),
             &out.to_string_lossy(),
         ])
         .output()

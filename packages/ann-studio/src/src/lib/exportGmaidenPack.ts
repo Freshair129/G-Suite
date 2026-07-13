@@ -5,7 +5,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore } from "../store/useStudioStore";
 import { toneBannerPngDataUrl } from "./toneBanner";
-import { bakeToneWebp } from "./bakeBanner";
+import { bakeToneWebp, bakeReactiveWebp } from "./bakeBanner";
+import { clipEnvelope } from "./peaks";
 
 interface PackInstallReport {
   pack_id: string;
@@ -19,22 +20,26 @@ export async function installGmaidenPack(
   packName = "ann-pack",
   author = "",
   animate = true,
-  voiceCaption = true
+  voiceCaption = true,
+  reactive = false
 ): Promise<string> {
   const s = useStudioStore.getState();
-  if (!s.wavPath) return "ยังไม่มีไฟล์เสียง — นำเข้าไฟล์ก่อนนะครับ";
+  const wavPath = s.wavPath;
+  if (!wavPath) return "ยังไม่มีไฟล์เสียง — นำเข้าไฟล์ก่อนนะครับ";
   const mapped = s.clips.filter((c) => c.event && c.event !== "unused");
   if (!mapped.length) return "ยังไม่มี clip ที่ map event — กด “AI map” ก่อนนะครับ";
 
   // caption per event = the first mapped clip's transcript (the voice line),
   // so a pack's banners read out its own spoken words instead of a fixed label.
+  const firstClip = (ev: string) => mapped.find((c) => c.event === ev);
   const captionOf = (ev: string): string | undefined =>
-    voiceCaption ? mapped.find((c) => c.event === ev)?.name : undefined;
+    voiceCaption ? firstClip(ev)?.name : undefined;
 
   // one banner per mapped event, in priority order:
   //   1. the author's override image (animated webp/gif pass straight through)
-  //   2. a baked animated-WebP entrance of the tone banner (when `animate`)
-  //   3. the static PNG tone banner (also the fallback if a bake fails)
+  //   2. an audio-reactive bake (when `reactive`) — waveform pulses with voice
+  //   3. a baked animated-WebP entrance of the tone banner (when `animate`)
+  //   4. the static PNG tone banner (also the fallback if a bake fails)
   const overrides = s.bannerOverrides;
   const events = [...new Set(mapped.map((c) => c.event))];
   const banners = await Promise.all(
@@ -42,6 +47,14 @@ export async function installGmaidenPack(
       const ov = overrides[ev];
       if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
       const cap = captionOf(ev);
+      if (reactive) {
+        const c = firstClip(ev);
+        if (c) {
+          const env = await clipEnvelope(wavPath, c.start, c.end, s.duration).catch(() => []);
+          const webp = await bakeReactiveWebp(ev, env, c.end - c.start, cap);
+          if (webp) return { event: ev, b64: webp, ext: "webp" };
+        }
+      }
       if (animate) {
         const webp = await bakeToneWebp(ev, 2, cap);
         if (webp) return { event: ev, b64: webp, ext: "webp" };
