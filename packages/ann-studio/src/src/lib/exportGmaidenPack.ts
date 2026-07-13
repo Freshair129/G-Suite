@@ -85,7 +85,7 @@ export async function installGmaidenPack(
         master: c.master ?? {},
       })),
       banners,
-      gmaidenDir: null,
+      gmaidenDir: s.gmaidenPath || null,
       endpoint: "http://localhost:3000/announcer/install",
     });
     return `ติดตั้งลง G-Maiden ✅  ${r.events} events · ${r.clips} clips · ${r.banners} banners\n${r.pack_dir}`;
@@ -146,7 +146,7 @@ export async function installLibraryPack(
       author,
       clips,
       banners,
-      gmaidenDir: null,
+      gmaidenDir: s.gmaidenPath || null,
       endpoint: "http://localhost:3000/announcer/install",
     });
     return `ติดตั้งจากคลังลง G-Maiden ✅  ${r.events} events · ${r.clips} clips · ${r.banners} banners\n${r.pack_dir}`;

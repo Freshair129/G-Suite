@@ -587,6 +587,55 @@ struct InstallReport {
 }
 
 /// Locate the G-Maiden repo: arg → `GMAIDEN_DIR` env → sibling of the G-Suite repo.
+/// The voice-cache directory G-Maiden actually READS from, mirroring its own
+/// `voice_cache_dir()`: the exe-adjacent `voice-cache/` (an installed build)
+/// wins over the dev-tree `assets/voice-cache/`. So a pack lands where THIS
+/// G-Maiden looks for it — installed or dev — instead of always `assets/`.
+fn voice_cache_root(base: &Path) -> PathBuf {
+    let installed = base.join("voice-cache");
+    if installed.is_dir() {
+        return installed;
+    }
+    let dev = base.join("assets/voice-cache");
+    if dev.is_dir() {
+        return dev;
+    }
+    // neither exists yet — a repo checkout has `assets/`, an install dir does not
+    if base.join("assets").is_dir() {
+        dev
+    } else {
+        installed
+    }
+}
+
+/// Best-effort: resolve the INSTALLED G-Maiden's directory from its Start-menu
+/// shortcut, so G-Ann can target a real install (not just the dev repo) without
+/// the user configuring a path. Returns the exe's folder.
+fn detect_installed_gmaiden() -> Option<PathBuf> {
+    use std::os::windows::process::CommandExt;
+    let appdata = std::env::var_os("APPDATA")?;
+    let lnk = Path::new(&appdata).join("Microsoft/Windows/Start Menu/Programs/G-Maiden.lnk");
+    if !lnk.exists() {
+        return None;
+    }
+    let script = format!(
+        "(New-Object -ComObject WScript.Shell).CreateShortcut('{}').TargetPath",
+        lnk.to_string_lossy().replace('\'', "''")
+    );
+    let out = std::process::Command::new("powershell")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .ok()?;
+    let target = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if target.is_empty() {
+        return None;
+    }
+    Path::new(&target).parent().map(Path::to_path_buf).filter(|p| p.exists())
+}
+
+/// Locate a G-Maiden install: explicit arg → `GMAIDEN_DIR` env → the dev sibling
+/// repo (`../G-Maiden`) → the installed build via its Start-menu shortcut.
 fn resolve_gmaiden_dir(arg: &Option<String>) -> Option<PathBuf> {
     if let Some(d) = arg {
         let p = PathBuf::from(d);
@@ -600,17 +649,33 @@ fn resolve_gmaiden_dir(arg: &Option<String>) -> Option<PathBuf> {
             return Some(p);
         }
     }
-    // <manifest>/../../.. = G-Suite ; its sibling G-Maiden
+    // <manifest>/../../.. = G-Suite ; its sibling G-Maiden (dev repo)
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let gsuite = manifest.parent()?.parent()?.parent()?;
-    let sib = gsuite.parent()?.join("G-Maiden");
-    if sib.exists() {
-        return Some(sib);
+    if let Some(sib) = manifest
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(|d| d.join("G-Maiden"))
+    {
+        if sib.exists() {
+            return Some(sib);
+        }
     }
-    None
+    // fall back to the installed build
+    detect_installed_gmaiden()
 }
 
-/// Cut every event-mapped clip to WAV into G-Maiden's `assets/voice-cache/{event}/`
+/// Return the installed G-Maiden directory (from its Start-menu shortcut), or
+/// "" if not found. Lets the Settings UI auto-fill the G-Maiden path.
+#[tauri::command]
+fn detect_gmaiden_installed() -> String {
+    detect_installed_gmaiden()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// Cut every event-mapped clip to WAV into G-Maiden's voice-cache
 /// and (optionally) POST a notify to G-Maiden's install endpoint so it reloads.
 #[tauri::command]
 async fn install_pack(
@@ -621,8 +686,8 @@ async fn install_pack(
     endpoint: Option<String>,
 ) -> Result<InstallReport, String> {
     let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
-    let vc = base.join("assets/voice-cache");
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
+    let vc = voice_cache_root(&base);
 
     let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
     let mut installed = 0usize;
@@ -739,9 +804,9 @@ async fn install_gmaiden_pack(
     use serde_json::{json, Map, Value};
 
     let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
     let id = sanitize_filename(&pack_id);
-    let pack_dir = base.join("assets/voice-cache/packs").join(&id);
+    let pack_dir = voice_cache_root(&base).join("packs").join(&id);
     let clips_dir = pack_dir.join("clips");
     let banners_dir = pack_dir.join("banners");
     std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
@@ -889,9 +954,9 @@ async fn install_library_pack(
     use serde_json::{json, Map, Value};
 
     let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
     let id = sanitize_filename(&pack_id);
-    let pack_dir = base.join("assets/voice-cache/packs").join(&id);
+    let pack_dir = voice_cache_root(&base).join("packs").join(&id);
     let clips_dir = pack_dir.join("clips");
     let banners_dir = pack_dir.join("banners");
     std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
@@ -1156,8 +1221,8 @@ struct VoiceCacheScan {
 #[tauri::command]
 fn scan_voice_cache(gmaiden_dir: Option<String>) -> Result<VoiceCacheScan, String> {
     let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
-    let vc = base.join("assets/voice-cache");
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
+    let vc = voice_cache_root(&base);
     if !vc.exists() {
         return Ok(VoiceCacheScan {
             voice_cache_path: vc.to_string_lossy().into_owned(),
@@ -1936,6 +2001,7 @@ pub fn run() {
             install_pack,
             install_gmaiden_pack,
             install_library_pack,
+            detect_gmaiden_installed,
             bake_animated_webp,
             generate_banner_image,
             check_gmaiden,

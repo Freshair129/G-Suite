@@ -243,6 +243,22 @@ function AISection({ provider, llmModel, ollamaModels }: { provider: string; llm
 }
 
 function GMaidenSection({ path, connected }: { path: string; connected: boolean }) {
+  const { setGmaidenPath } = useStudioStore();
+  const [detecting, setDetecting] = useState(false);
+
+  async function autoDetect() {
+    setDetecting(true);
+    try {
+      const p = await invoke<string>("detect_gmaiden_installed");
+      if (p) setGmaidenPath(p);
+      else alert("หา G-Maiden ที่ติดตั้งไม่เจอ — พิมพ์ path เอง (เช่น G:\\GM\\G-Maiden)");
+    } catch (e) {
+      alert(`ตรวจหาไม่สำเร็จ: ${e}`);
+    } finally {
+      setDetecting(false);
+    }
+  }
+
   return (
     <>
       <SectionTitle title="G-Maiden" subtitle="เชื่อมต่อกับ G-Maiden Dota 2 AI Companion" />
@@ -256,12 +272,20 @@ function GMaidenSection({ path, connected }: { path: string; connected: boolean 
         </div>
       </FieldGroup>
 
-      <FieldGroup label="G-Maiden Path" description="ตำแหน่งโฟลเดอร์ G-Maiden (sibling dir หรือ GMAIDEN_DIR)">
+      <FieldGroup label="G-Maiden Path" description="โฟลเดอร์ G-Maiden ที่จะติดตั้ง pack (เว้นว่าง = auto: repo/installed)">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono text-ink-faint max-w-[200px] truncate" title={path}>
-            {path || "Auto-detect"}
-          </span>
-          <button className="grid place-items-center w-7 h-7 rounded-lg border border-line text-ink-faint hover:text-ink hover:bg-panel-hover transition">
+          <input
+            value={path}
+            onChange={(e) => setGmaidenPath(e.target.value)}
+            placeholder="auto — เช่น G:\GM\G-Maiden"
+            className="w-56 bg-panel border border-line rounded-lg px-2 py-1.5 text-[11px] text-ink font-mono outline-none focus:border-lime"
+          />
+          <button
+            onClick={autoDetect}
+            disabled={detecting}
+            title="ตรวจหา G-Maiden ที่ติดตั้ง (จาก Start Menu)"
+            className="grid place-items-center w-7 h-7 rounded-lg border border-line text-ink-faint hover:text-ink hover:bg-panel-hover transition disabled:opacity-50"
+          >
             <FolderOpen size={13} />
           </button>
         </div>

@@ -188,6 +188,8 @@ interface StudioState {
   setSdEndpoint: (url: string) => void;
   setView: (v: AppView) => void;
   setGMaiden: (connected: boolean, path: string, cache: VoiceCacheMap) => void;
+  /** set the G-Maiden install directory (where packs are written) */
+  setGmaidenPath: (path: string) => void;
   /** set (ov) or clear (null) the banner override for one event */
   setBannerOverride: (event: string, ov: BannerOverride | null) => void;
   /** pack builder: assign / unassign a library sound to an event */
@@ -395,6 +397,8 @@ export const useStudioStore = create<StudioState>()(
       setGMaiden: (gmaidenConnected, gmaidenPath, voiceCache) =>
         set({ gmaidenConnected, gmaidenPath, voiceCache }),
 
+      setGmaidenPath: (gmaidenPath) => set({ gmaidenPath }),
+
       setBannerOverride: (event, ov) =>
         set((s) => {
           const next = { ...s.bannerOverrides };
@@ -475,6 +479,7 @@ export const useStudioStore = create<StudioState>()(
         clips: s.clips,
         bannerOverrides: s.bannerOverrides,
         packBuilder: s.packBuilder,
+        gmaidenPath: s.gmaidenPath,
       }),
     }
   )
