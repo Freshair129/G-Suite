@@ -236,7 +236,7 @@ async fn export_all(
             name: clip.name.clone(),
             path: filename,
             event: clip.event.clone(),
-            duration,
+            duration: round2(duration),
         });
     }
 
@@ -256,6 +256,12 @@ async fn export_all(
         clips: exported,
         manifest_path: manifest_path.to_string_lossy().into_owned(),
     })
+}
+
+/// Round seconds to 2 decimals for clean metadata (cutting still uses full
+/// precision from clip.start/end — this only tidies the stored/reported number).
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -1553,7 +1559,7 @@ async fn save_clips_to_library(
         }
 
         let rel_path = format!("{pkg_id}/{filename}");
-        cut_results.push(((i + 1) as i64, clip.name.clone(), rel_path, dur, clip.event.clone()));
+        cut_results.push(((i + 1) as i64, clip.name.clone(), rel_path, round2(dur), clip.event.clone()));
     }
 
     // Insert sound rows after all async work is done
