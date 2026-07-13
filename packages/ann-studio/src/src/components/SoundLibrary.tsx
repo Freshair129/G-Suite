@@ -11,8 +11,10 @@ import {
   Trash2,
   RefreshCw,
   Link2,
+  Radar,
 } from "lucide-react";
 import { useStudioStore, genId, type LibPkg, type LibSound, type Clip } from "../store/useStudioStore";
+import ImpactRadar from "./ImpactRadar";
 
 export default function SoundLibrary() {
   const { libraryRoot, libraryPackages, setLibrary, setLibraryPackages,
@@ -240,6 +242,7 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
   const blobUrlRef = useRef<string | null>(null);
   const [usage, setUsage] = useState<Usage[] | null>(null);
   const [showUsage, setShowUsage] = useState(false);
+  const [radar, setRadar] = useState(false);
 
   // backlink: which packs/events use this sound (indexed sound_usage lookup)
   async function toggleUsage(e: React.MouseEvent) {
@@ -314,6 +317,13 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
         >
           <Link2 size={10} />
         </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setRadar(true); }}
+          title="impact radar — voice นี้ถูกใช้ที่ไหนบ้าง (กราฟ)"
+          className="grid place-items-center w-5 h-5 rounded text-ink-faint hover:text-lime transition shrink-0 opacity-0 group-hover:opacity-100"
+        >
+          <Radar size={10} />
+        </button>
         <span className="text-[9px] font-mono text-ink-faint shrink-0">{sound.duration.toFixed(1)}s</span>
         <button
           onClick={handlePlay}
@@ -340,6 +350,8 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
           )}
         </div>
       )}
+
+      {radar && <ImpactRadar sound={sound} onClose={() => setRadar(false)} />}
     </div>
   );
 }
