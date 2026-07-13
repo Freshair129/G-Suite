@@ -14,6 +14,10 @@ export interface Clip {
   //     shared source wav. Lets the SourceView canvas hold a whole pack's sounds.
   filePath?: string;
   fileDur?: number;
+  // the ORIGINAL file this clip came from (imported video/audio, or the library
+  // sound's own source). Carried through open-pack / drag so a re-saved pack
+  // references the true origin per clip, not the current import.
+  source?: string;
   // --- tuning (focused set; applied via ffmpeg on export). Optional so older
   //     clips / persisted projects still load. EQ/compressor params go here next.
   gain?: number; // dB, default 0

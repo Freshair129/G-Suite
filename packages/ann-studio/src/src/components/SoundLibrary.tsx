@@ -83,6 +83,7 @@ export default function SoundLibrary() {
         color: "",
         filePath: s.file_path,
         fileDur: s.duration,
+        source: s.source_path,
       }));
       setClips(next);
       setView("studio");
@@ -147,13 +148,19 @@ export default function SoundLibrary() {
             libraryPackages.map((pkg) => (
               <div key={pkg.id}>
                 <button
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("application/x-library-pack", pkg.id);
+                    e.dataTransfer.setData("text/plain", pkg.name);
+                    e.dataTransfer.effectAllowed = "copy";
+                  }}
                   onClick={() => togglePkg(pkg.id)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setCtxMenu({ pkg, x: e.clientX, y: e.clientY });
                   }}
-                  title="คลิกขวา → เปิดแก้ไขบน canvas"
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-ink-muted hover:bg-panel-hover transition group"
+                  title="ลากมาวางบน canvas / คลิกขวา → เปิดแก้ไข"
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-ink-muted hover:bg-panel-hover transition group cursor-grab active:cursor-grabbing"
                 >
                   {expanded[pkg.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   <Package size={13} className="text-lime/70 shrink-0" />

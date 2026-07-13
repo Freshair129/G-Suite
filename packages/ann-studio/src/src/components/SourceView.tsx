@@ -3,6 +3,7 @@
 // Mastering deck below (resizable). Zoom scales every waveform.
 
 import { useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Trash2, Wand2, Download, Send, ZoomIn, GripVertical, Save } from "lucide-react";
 import { useStudioStore, genId, type Clip, type LibSound } from "../store/useStudioStore";
 import { runAnalyzeVideo, runExport, sourceIsVideo } from "../lib/actions";
@@ -26,7 +27,7 @@ function fmt(t: number): string {
 
 export default function SourceView() {
   const {
-    wavPath, duration, clips, transcribing, libraryRoot, addClip,
+    wavPath, duration, clips, transcribing, libraryRoot, addClip, setClips,
     updateClip, updateClipSilent, pushHistory, removeClip, splitClip, moveClip,
     selectClip, selectedClipId, playheadId, playheadT,
   } = useStudioStore();
@@ -43,28 +44,44 @@ export default function SourceView() {
     c.filePath ? `${libraryRoot}/${c.filePath}`.replace(/\//g, "\\") : (wavPath ?? "");
   const clipDur = (c: Clip): number => (c.filePath ? c.fileDur ?? c.end : duration);
 
-  // drag a library sound onto the canvas → add it as a standalone clip
-  function onDropSound(e: React.DragEvent) {
+  const clipFromSound = (s: LibSound): Clip => ({
+    id: genId(),
+    name: s.name_th || s.name_en,
+    start: 0,
+    end: s.duration,
+    event: s.events?.[0] || "unused",
+    color: "",
+    filePath: s.file_path,
+    fileDur: s.duration,
+    source: s.source_path,
+  });
+
+  // drop a library sound (add one clip) OR a whole pack (load all its sounds)
+  async function onDropSound(e: React.DragEvent) {
     e.preventDefault();
     setDropOver(false);
+    const packId = e.dataTransfer.getData("application/x-library-pack");
+    if (packId) {
+      if (clips.length && !window.confirm("วาง pack จะแทนที่ clip ปัจจุบัน — ต่อไหม?")) return;
+      try {
+        const sounds = await invoke<LibSound[]>("query_sounds", { pkgId: packId });
+        setClips(sounds.map(clipFromSound));
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     const raw = e.dataTransfer.getData("application/x-library-sound-json");
     if (!raw) return;
     try {
-      const snd = JSON.parse(raw) as LibSound;
-      addClip({
-        id: genId(),
-        name: snd.name_th || snd.name_en,
-        start: 0,
-        end: snd.duration,
-        event: snd.events?.[0] || "unused",
-        color: "",
-        filePath: snd.file_path,
-        fileDur: snd.duration,
-      });
+      addClip(clipFromSound(JSON.parse(raw) as LibSound));
     } catch {
       /* ignore malformed drag */
     }
   }
+
+  const DRAG_TYPES = ["application/x-library-sound-json", "application/x-library-pack"];
+  const acceptsDrag = (e: React.DragEvent) => DRAG_TYPES.some((t) => e.dataTransfer.types.includes(t));
   const [zoom, setZoom] = useState(1);
   const [deckH, setDeckH] = useState(224);
   const dragId = useRef<string | null>(null);
@@ -89,7 +106,7 @@ export default function SourceView() {
       <div
         className={`flex-1 min-w-0 grid place-items-center bg-base text-center px-6 ${dropOver ? "bg-lime/5" : ""}`}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes("application/x-library-sound-json")) {
+          if (acceptsDrag(e)) {
             e.preventDefault();
             setDropOver(true);
           }
@@ -161,7 +178,7 @@ export default function SourceView() {
       <div
         className={`flex-1 min-h-0 overflow-y-auto ${dropOver ? "bg-lime/5" : ""}`}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes("application/x-library-sound-json")) {
+          if (acceptsDrag(e)) {
             e.preventDefault();
             setDropOver(true);
           }

@@ -1519,6 +1519,15 @@ struct SaveToLibClip {
     end: f64,
     #[serde(default)]
     events: Vec<String>,
+    // this clip's own origin (a library sound carries its source_path); empty →
+    // fall back to opts.origin (the current import). Keeps per-clip provenance.
+    #[serde(default)]
+    source: String,
+    // for a file-clip (opened pack / dragged library sound): the clip's OWN audio
+    // file relative to the sounds dir. When set, save copies that whole file
+    // instead of cutting from the shared source wav (start/end/padding ignored).
+    #[serde(default)]
+    file_path: String,
 }
 
 /// ASCII slug for filenames: lowercase, non-[a-z0-9] runs → single '-', trimmed.
@@ -1610,16 +1619,34 @@ async fn save_clips_to_library(
     };
 
     // Cut clips with ffmpeg (async), collect results
-    // (idx, name_th, name_en, rel_path, dur, events_json)
-    let mut cut_results: Vec<(i64, String, String, String, f64, String)> = Vec::new();
+    // (idx, name_th, name_en, rel_path, source, dur, events_json)
+    let mut cut_results: Vec<(i64, String, String, String, String, f64, String)> = Vec::new();
 
     for (i, clip) in clips.iter().enumerate() {
-        let padded_start = (clip.start - opts.padding).max(0.0);
-        let padded_end = (clip.end + opts.padding).min(total_duration);
-        let dur = padded_end - padded_start;
-        if dur <= 0.0 {
-            continue;
-        }
+        // input + trim: a file-clip (opened pack / dragged library sound) copies
+        // its OWN wav whole; a segment-clip cuts from the shared source wav.
+        let (input, trim, dur): (String, Vec<String>, f64) = if !clip.file_path.is_empty() {
+            let canon = sounds_dir()
+                .join(&clip.file_path)
+                .canonicalize()
+                .map_err(|e| format!("หาไฟล์ {}: {e}", clip.file_path))?;
+            if !canon.starts_with(sounds_dir()) {
+                return Err(format!("ไฟล์อยู่นอกคลัง: {}", clip.file_path));
+            }
+            (canon.to_string_lossy().into_owned(), vec![], round2(clip.end - clip.start))
+        } else {
+            let padded_start = (clip.start - opts.padding).max(0.0);
+            let padded_end = (clip.end + opts.padding).min(total_duration);
+            let d = padded_end - padded_start;
+            if d <= 0.0 {
+                continue;
+            }
+            (
+                source_path.clone(),
+                vec!["-ss".into(), format!("{padded_start:.3}"), "-t".into(), format!("{d:.3}")],
+                round2(d),
+            )
+        };
 
         // filename = <idx>_<eng-name>.ext (ASCII); fall back to the first event
         let base = {
@@ -1633,15 +1660,8 @@ async fn save_clips_to_library(
         let filename = format!("{:03}_{base}.{ext}", i + 1);
         let out_path = pkg_dir.join(&filename);
 
-        let mut args = vec![
-            "-y".to_string(),
-            "-i".to_string(),
-            source_path.clone(),
-            "-ss".to_string(),
-            format!("{padded_start:.3}"),
-            "-t".to_string(),
-            format!("{dur:.3}"),
-        ];
+        let mut args = vec!["-y".to_string(), "-i".to_string(), input];
+        args.extend(trim);
         args.extend(quality_args.iter().cloned());
         args.push(out_path.to_str().unwrap().to_string());
 
@@ -1658,11 +1678,14 @@ async fn save_clips_to_library(
 
         let rel_path = format!("{pkg_id}/{filename}");
         let events_json = serde_json::to_string(&clip.events).unwrap_or_else(|_| "[]".into());
+        // per-clip origin: the clip's own source (library sound) or the import
+        let source = if clip.source.is_empty() { opts.origin.clone() } else { clip.source.clone() };
         cut_results.push((
             (i + 1) as i64,
             clip.name_th.clone(),
             clip.name_en.clone(),
             rel_path,
+            source,
             round2(dur),
             events_json,
         ));
@@ -1671,10 +1694,10 @@ async fn save_clips_to_library(
     // Insert sound rows after all async work is done
     {
         let conn = open_db()?;
-        for (idx, name_th, name_en, rel_path, dur, events_json) in &cut_results {
+        for (idx, name_th, name_en, rel_path, source, dur, events_json) in &cut_results {
             conn.execute(
                 "INSERT INTO sounds (pkg_id, idx, name_th, name_en, file_path, source_path, duration, events) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                rusqlite::params![pkg_id, idx, name_th, name_en, rel_path, opts.origin, dur, events_json],
+                rusqlite::params![pkg_id, idx, name_th, name_en, rel_path, source, dur, events_json],
             ).map_err(|e| format!("insert sound: {e}"))?;
         }
     }

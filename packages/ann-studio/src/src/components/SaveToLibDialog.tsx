@@ -59,8 +59,8 @@ export default function SaveToLibDialog({ onClose }: Props) {
       alert("กรุณาตั้งชื่อ Package");
       return;
     }
-    if (!wavPath) {
-      alert("ไม่มีไฟล์เสียงต้นทาง");
+    if (!wavPath && clips.some((c) => !c.filePath)) {
+      alert("ไม่มีไฟล์เสียงต้นทาง — นำเข้าไฟล์ หรือเปิด pack จากคลัง");
       return;
     }
     setSaving(true);
@@ -71,11 +71,13 @@ export default function SaveToLibDialog({ onClose }: Props) {
         start: c.start,
         end: c.end,
         events: c.event && c.event !== "unused" ? [c.event] : [],
+        source: c.source ?? "", // per-clip origin (library sound carries its own)
+        filePath: c.filePath ?? "", // file-clip: copy its own wav instead of cutting
       }));
       const result: { pkg_id: string; saved: number } = await invoke(
         "save_clips_to_library",
         {
-          sourcePath: wavPath,
+          sourcePath: wavPath ?? "",
           clips: clipData,
           opts: {
             pkg_name: pkgName.trim(),
