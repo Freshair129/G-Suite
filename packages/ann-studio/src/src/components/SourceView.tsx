@@ -4,7 +4,7 @@
 
 import { useRef, useState } from "react";
 import { Trash2, Wand2, Download, Send, ZoomIn, GripVertical, Save } from "lucide-react";
-import { useStudioStore } from "../store/useStudioStore";
+import { useStudioStore, genId, type Clip, type LibSound } from "../store/useStudioStore";
 import { runAnalyzeVideo, runExport, sourceIsVideo } from "../lib/actions";
 import { installGmaidenPack } from "../lib/exportGmaidenPack";
 import EventPicker from "./EventPicker";
@@ -26,7 +26,7 @@ function fmt(t: number): string {
 
 export default function SourceView() {
   const {
-    wavPath, duration, clips, transcribing,
+    wavPath, duration, clips, transcribing, libraryRoot, addClip,
     updateClip, updateClipSilent, pushHistory, removeClip, splitClip, moveClip,
     selectClip, selectedClipId, playheadId, playheadT,
   } = useStudioStore();
@@ -34,7 +34,37 @@ export default function SourceView() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [showSave, setShowSave] = useState(false);
+  const [dropOver, setDropOver] = useState(false);
   const [tool, setTool] = useState<"select" | "split">("select");
+
+  // abs path + total duration for a clip's waveform (a library-file clip loads
+  // its own file; a segment clip loads the shared source wav)
+  const clipSrc = (c: Clip): string =>
+    c.filePath ? `${libraryRoot}/${c.filePath}`.replace(/\//g, "\\") : (wavPath ?? "");
+  const clipDur = (c: Clip): number => (c.filePath ? c.fileDur ?? c.end : duration);
+
+  // drag a library sound onto the canvas → add it as a standalone clip
+  function onDropSound(e: React.DragEvent) {
+    e.preventDefault();
+    setDropOver(false);
+    const raw = e.dataTransfer.getData("application/x-library-sound-json");
+    if (!raw) return;
+    try {
+      const snd = JSON.parse(raw) as LibSound;
+      addClip({
+        id: genId(),
+        name: snd.name,
+        start: 0,
+        end: snd.duration,
+        event: snd.event || "unused",
+        color: "",
+        filePath: snd.file_path,
+        fileDur: snd.duration,
+      });
+    } catch {
+      /* ignore malformed drag */
+    }
+  }
   const [zoom, setZoom] = useState(1);
   const [deckH, setDeckH] = useState(224);
   const dragId = useRef<string | null>(null);
@@ -54,12 +84,24 @@ export default function SourceView() {
     window.addEventListener("pointerup", up);
   }
 
-  if (!wavPath) {
+  if (!wavPath && clips.length === 0) {
     return (
-      <div className="flex-1 min-w-0 grid place-items-center bg-base text-center px-6">
+      <div
+        className={`flex-1 min-w-0 grid place-items-center bg-base text-center px-6 ${dropOver ? "bg-lime/5" : ""}`}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("application/x-library-sound-json")) {
+            e.preventDefault();
+            setDropOver(true);
+          }
+        }}
+        onDragLeave={() => setDropOver(false)}
+        onDrop={onDropSound}
+      >
         <div className="flex flex-col items-center gap-3">
           <div className="text-base font-semibold text-ink">ยังไม่มีไฟล์ต้นฉบับ</div>
-          <div className="text-sm text-ink-muted">กด “นำเข้าไฟล์” มุมขวาบน</div>
+          <div className="text-sm text-ink-muted">
+            กด “นำเข้าไฟล์” มุมขวาบน · หรือคลิกขวาที่ pack ในคลัง → เปิดแก้ไข · หรือลากเสียงจากคลังมาวางที่นี่
+          </div>
         </div>
       </div>
     );
@@ -114,11 +156,22 @@ export default function SourceView() {
 
       {msg && <div className="shrink-0 px-6 py-2 text-xs text-ink-muted whitespace-pre-line">{msg}</div>}
 
-      {/* clip list — grip to reorder, framed waveform w/ playhead */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      {/* clip list — grip to reorder, framed waveform w/ playhead. also a drop
+          target: drag a library sound in to add it as a standalone clip */}
+      <div
+        className={`flex-1 min-h-0 overflow-y-auto ${dropOver ? "bg-lime/5" : ""}`}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("application/x-library-sound-json")) {
+            e.preventDefault();
+            setDropOver(true);
+          }
+        }}
+        onDragLeave={() => setDropOver(false)}
+        onDrop={onDropSound}
+      >
         {clips.length === 0 ? (
           <div className="grid place-items-center py-24 text-sm text-ink-faint">
-            กด “แยกอัตโนมัติ” เพื่อถอดเสียงเป็น clips
+            กด “แยกอัตโนมัติ” เพื่อถอดเสียงเป็น clips · หรือลากเสียงจากคลังมาวาง
           </div>
         ) : (
           <div className="p-4 space-y-2.5">
@@ -164,8 +217,8 @@ export default function SourceView() {
                 </div>
                 <div className="rounded-lg border border-line/60 bg-black/25 p-1.5" onClick={(e) => e.stopPropagation()}>
                   <ClipWaveform
-                    wavPath={wavPath}
-                    duration={duration}
+                    wavPath={clipSrc(c)}
+                    duration={clipDur(c)}
                     clip={c}
                     accent={accentFor(c.event)}
                     mode={tool}

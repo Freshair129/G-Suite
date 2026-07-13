@@ -25,9 +25,11 @@ export async function installGmaidenPack(
 ): Promise<string> {
   const s = useStudioStore.getState();
   const wavPath = s.wavPath;
-  if (!wavPath) return "ยังไม่มีไฟล์เสียง — นำเข้าไฟล์ก่อนนะครับ";
   const mapped = s.clips.filter((c) => c.event && c.event !== "unused");
   if (!mapped.length) return "ยังไม่มี clip ที่ map event — กด “AI map” ก่อนนะครับ";
+  // segment clips need the source wav; file-clips (opened pack) bring their own file
+  if (!wavPath && mapped.some((c) => !c.filePath))
+    return "ยังไม่มีไฟล์เสียงต้นฉบับ — นำเข้าไฟล์ หรือเปิด pack จากคลัง";
 
   // caption per event = the first mapped clip's transcript (the voice line),
   // so a pack's banners read out its own spoken words instead of a fixed label.
@@ -49,8 +51,11 @@ export async function installGmaidenPack(
       const cap = captionOf(ev);
       if (reactive) {
         const c = firstClip(ev);
-        if (c) {
-          const env = await clipEnvelope(wavPath, c.start, c.end, s.duration).catch(() => []);
+        // envelope source = the clip's own file (opened pack) or the source wav
+        const src = c?.filePath ? `${s.libraryRoot}/${c.filePath}`.replace(/\//g, "\\") : wavPath;
+        if (c && src) {
+          const total = c.filePath ? c.fileDur ?? c.end : s.duration;
+          const env = await clipEnvelope(src, c.start, c.end, total).catch(() => []);
           const webp = await bakeReactiveWebp(ev, env, c.end - c.start, cap);
           if (webp) return { event: ev, b64: webp, ext: "webp" };
         }
@@ -69,12 +74,13 @@ export async function installGmaidenPack(
       packId,
       packName,
       author,
-      sourcePath: s.wavPath,
+      sourcePath: s.wavPath ?? "",
       clips: mapped.map((c) => ({
         name: c.name,
         start: c.start,
         end: c.end,
         event: c.event,
+        filePath: c.filePath ?? "",
         gain: c.gain ?? 0,
         fadeIn: c.fadeIn ?? 0,
         fadeOut: c.fadeOut ?? 0,

@@ -11,13 +11,14 @@ import {
   Trash2,
   RefreshCw,
 } from "lucide-react";
-import { useStudioStore, type LibPkg, type LibSound } from "../store/useStudioStore";
+import { useStudioStore, genId, type LibPkg, type LibSound, type Clip } from "../store/useStudioStore";
 
 export default function SoundLibrary() {
   const { libraryRoot, libraryPackages, setLibrary, setLibraryPackages,
-    sourcePath, duration, clips } = useStudioStore();
+    sourcePath, duration, clips, setClips, setView } = useStudioStore();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [pkgSounds, setPkgSounds] = useState<Record<string, LibSound[]>>({});
+  const [ctxMenu, setCtxMenu] = useState<{ pkg: LibPkg; x: number; y: number } | null>(null);
   const [libH, setLibH] = useState(300); // height of the top (Sound Library) section
   const asideRef = useRef<HTMLElement>(null);
 
@@ -49,6 +50,42 @@ export default function SoundLibrary() {
     }
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+  }
+
+  // close the context menu on any outside click / escape
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [ctxMenu]);
+
+  // "open on canvas": load a library pack's sounds into SourceView as
+  // standalone-file clips (edit / reorder / remap / add more by dragging in)
+  async function openPackOnCanvas(pkg: LibPkg) {
+    setCtxMenu(null);
+    if (clips.length && !confirm(`เปิด "${pkg.name}" บน canvas จะแทนที่ clip ปัจจุบัน — ต่อไหม?`)) return;
+    try {
+      const sounds = pkgSounds[pkg.id] ?? (await invoke<LibSound[]>("query_sounds", { pkgId: pkg.id }));
+      const next: Clip[] = sounds.map((s) => ({
+        id: genId(),
+        name: s.name,
+        start: 0,
+        end: s.duration,
+        event: s.event || "unused",
+        color: "",
+        filePath: s.file_path,
+        fileDur: s.duration,
+      }));
+      setClips(next);
+      setView("studio");
+    } catch (e) {
+      alert(`เปิด pack ไม่สำเร็จ: ${e}`);
+    }
   }
 
   async function togglePkg(pkgId: string) {
@@ -108,6 +145,11 @@ export default function SoundLibrary() {
               <div key={pkg.id}>
                 <button
                   onClick={() => togglePkg(pkg.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setCtxMenu({ pkg, x: e.clientX, y: e.clientY });
+                  }}
+                  title="คลิกขวา → เปิดแก้ไขบน canvas"
                   className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-ink-muted hover:bg-panel-hover transition group"
                 >
                   {expanded[pkg.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -145,7 +187,7 @@ export default function SoundLibrary() {
         <div className="flex items-center px-3 h-9 shrink-0 border-b border-line">
           <span className="text-xs font-semibold text-ink-muted">Source</span>
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-2">
+        <div className="flex-1 overflow-y-auto px-3 py-2" data-src-panel>
           {sourcePath ? (
             <>
               <div className="flex items-center gap-1.5">
@@ -163,6 +205,24 @@ export default function SoundLibrary() {
           )}
         </div>
       </div>
+
+      {/* right-click pack → context menu */}
+      {ctxMenu && (
+        <div
+          className="fixed z-50 min-w-[180px] rounded-lg border border-line bg-panel shadow-xl py-1 text-xs"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => openPackOnCanvas(ctxMenu.pkg)}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-ink hover:bg-panel-hover transition"
+          >
+            <Package size={12} className="text-lime" />
+            เปิดแก้ไขบน canvas
+          </button>
+          <div className="px-3 py-1 text-[10px] text-ink-faint">{ctxMenu.pkg.clip_count} เสียง · ลากเพิ่มได้</div>
+        </div>
+      )}
     </aside>
   );
 }

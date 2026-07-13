@@ -8,6 +8,12 @@ export interface Clip {
   end: number;
   event: string;
   color: string;
+  // --- standalone library-file clip (from "open pack" / drag from library).
+  //     When set, this clip is its OWN wav at `<libraryRoot>/filePath` (start/end
+  //     are within that file, fileDur = its full length), not a segment of the
+  //     shared source wav. Lets the SourceView canvas hold a whole pack's sounds.
+  filePath?: string;
+  fileDur?: number;
   // --- tuning (focused set; applied via ffmpeg on export). Optional so older
   //     clips / persisted projects still load. EQ/compressor params go here next.
   gain?: number; // dB, default 0

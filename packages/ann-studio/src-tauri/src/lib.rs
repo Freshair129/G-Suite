@@ -478,6 +478,11 @@ struct InstallClip {
     start: f64,
     end: f64,
     event: String,
+    // standalone library-file clip: path relative to the sounds dir. When set,
+    // this clip is cut from that file (start/end within it) instead of the shared
+    // source wav — lets a pack opened on the canvas mix file-clips + segments.
+    #[serde(default)]
+    file_path: String,
     // tuning (focused set) — applied as an ffmpeg -af chain on cut. Defaulted so
     // callers that don't tune (install_pack / sendToGMaiden) still deserialize.
     #[serde(default)]
@@ -844,10 +849,24 @@ async fn install_gmaiden_pack(
         let fname = format!("{}_{:02}.wav", sanitize_filename(&clip.event), *n);
         let out_path = clips_dir.join(&fname);
         let dur = clip.end - clip.start;
+        // a file-clip is cut from its own library wav (contained under sounds_dir);
+        // a segment clip is cut from the shared source wav.
+        let input = if clip.file_path.is_empty() {
+            source_path.clone()
+        } else {
+            let canon = sounds_dir()
+                .join(&clip.file_path)
+                .canonicalize()
+                .map_err(|e| format!("หาไฟล์ {}: {e}", clip.file_path))?;
+            if !canon.starts_with(sounds_dir()) {
+                return Err(format!("ไฟล์อยู่นอกคลัง: {}", clip.file_path));
+            }
+            canon.to_string_lossy().into_owned()
+        };
         let mut args: Vec<String> = vec![
             "-y".into(),
             "-i".into(),
-            source_path.clone(),
+            input,
             "-ss".into(),
             format!("{:.3}", clip.start),
             "-t".into(),
