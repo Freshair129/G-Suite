@@ -3,7 +3,7 @@
 // for each mapped event (W2); an author override can replace them later.
 
 import { invoke } from "@tauri-apps/api/core";
-import { useStudioStore } from "../store/useStudioStore";
+import { useStudioStore, type LibSound } from "../store/useStudioStore";
 import { toneBannerPngDataUrl } from "./toneBanner";
 import { bakeToneWebp, bakeReactiveWebp } from "./bakeBanner";
 import { clipEnvelope } from "./peaks";
@@ -102,25 +102,39 @@ export async function installGmaidenPack(
 export async function installLibraryPack(
   packName = "ann-pack",
   author = "",
-  animate = true
+  animate = true,
+  voiceCaption = true,
+  reactive = false
 ): Promise<string> {
   const s = useStudioStore.getState();
   const pb = s.packBuilder;
+  const libraryRoot = s.libraryRoot;
   const events = Object.keys(pb).filter((ev) => (pb[ev]?.length ?? 0) > 0);
   if (!events.length) return "ยังไม่มีเสียงในหน้าประกอบ pack — ลากเสียงจากคลังมาวางก่อนนะครับ";
 
   const clips = events.flatMap((ev) => pb[ev].map((snd) => ({ event: ev, filePath: snd.file_path })));
 
+  // banner per event, mirroring the session path but sourced from the first
+  // assigned library sound: caption = its name, reactive envelope = the whole file.
   const overrides = s.bannerOverrides;
+  const firstOf = (ev: string): LibSound | undefined => pb[ev][0];
+  const absOf = (snd: LibSound) => `${libraryRoot}/${snd.file_path}`.replace(/\//g, "\\");
   const banners = await Promise.all(
     events.map(async (ev) => {
       const ov = overrides[ev];
       if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
-      if (animate) {
-        const webp = await bakeToneWebp(ev);
+      const snd = firstOf(ev);
+      const cap = voiceCaption ? snd?.name : undefined;
+      if (reactive && snd) {
+        const env = await clipEnvelope(absOf(snd), 0, snd.duration, snd.duration).catch(() => []);
+        const webp = await bakeReactiveWebp(ev, env, snd.duration, cap);
         if (webp) return { event: ev, b64: webp, ext: "webp" };
       }
-      return { event: ev, b64: toneBannerPngDataUrl(ev, 2).split(",")[1], ext: "png" };
+      if (animate) {
+        const webp = await bakeToneWebp(ev, 2, cap);
+        if (webp) return { event: ev, b64: webp, ext: "webp" };
+      }
+      return { event: ev, b64: toneBannerPngDataUrl(ev, 2, cap).split(",")[1], ext: "png" };
     })
   );
 

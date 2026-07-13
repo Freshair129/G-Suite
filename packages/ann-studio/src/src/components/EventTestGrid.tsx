@@ -429,7 +429,7 @@ export default function EventTestGrid() {
               onClick={async () => {
                 setInstallingLib(true);
                 try {
-                  alert(await installLibraryPack("ann-pack", "", animate));
+                  alert(await installLibraryPack("ann-pack", "", animate, voiceCaption, reactive));
                 } finally {
                   setInstallingLib(false);
                 }
