@@ -40,7 +40,15 @@ async function fileToOverride(file: File): Promise<BannerOverride | null> {
 }
 
 /** A single tone banner drawn on a transparent canvas, CSS-scaled to `width`. */
-function BannerCanvas({ event, width }: { event: string; width: number }) {
+function BannerCanvas({
+  event,
+  width,
+  caption,
+}: {
+  event: string;
+  width: number;
+  caption?: string;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current;
@@ -54,8 +62,8 @@ function BannerCanvas({ event, width }: { event: string; width: number }) {
     const ctx = c.getContext("2d");
     if (!ctx) return;
     ctx.scale(scale, scale);
-    drawToneBanner(ctx, event, 1);
-  }, [event, width]);
+    drawToneBanner(ctx, event, 1, caption);
+  }, [event, width, caption]);
   return <canvas ref={ref} className="block" />;
 }
 
@@ -64,10 +72,12 @@ function BannerView({
   event,
   width,
   override,
+  caption,
 }: {
   event: string;
   width: number;
   override?: BannerOverride;
+  caption?: string;
 }) {
   if (override) {
     return (
@@ -81,7 +91,7 @@ function BannerView({
       />
     );
   }
-  return <BannerCanvas event={event} width={width} />;
+  return <BannerCanvas event={event} width={width} caption={caption} />;
 }
 
 export default function EventTestGrid() {
@@ -93,6 +103,7 @@ export default function EventTestGrid() {
   const [fired, setFired] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [animate, setAnimate] = useState(true);
+  const [voiceCaption, setVoiceCaption] = useState(true);
   const firedTimer = useRef<number | null>(null);
   const urlCache = useRef<{ path: string; url: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -108,6 +119,10 @@ export default function EventTestGrid() {
   }, [clips]);
 
   const overrideCount = Object.keys(bannerOverrides).length;
+
+  // caption per event = the first mapped clip's transcript (the voice line)
+  const captionOf = (id: string): string | undefined =>
+    voiceCaption ? byEvent[id]?.[0]?.name : undefined;
 
   function pickOverride(event: string) {
     pendingEvent.current = event;
@@ -181,7 +196,12 @@ export default function EventTestGrid() {
       <div className="sticky top-0 z-10 h-[164px] grid place-items-center bg-base border-b border-line">
         {fired ? (
           <div key={fired} style={{ animation: "gannPop .22s ease-out" }}>
-            <BannerView event={fired} width={420} override={bannerOverrides[fired]} />
+            <BannerView
+              event={fired}
+              width={420}
+              override={bannerOverrides[fired]}
+              caption={captionOf(fired)}
+            />
           </div>
         ) : (
           <p className="text-ink-faint text-sm">
@@ -203,6 +223,15 @@ export default function EventTestGrid() {
             <label className="flex items-center gap-1.5 text-xs text-ink-muted cursor-pointer select-none">
               <input
                 type="checkbox"
+                checked={voiceCaption}
+                onChange={(e) => setVoiceCaption(e.target.checked)}
+                className="accent-lime"
+              />
+              ข้อความจาก voice
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted cursor-pointer select-none">
+              <input
+                type="checkbox"
                 checked={animate}
                 onChange={(e) => setAnimate(e.target.checked)}
                 className="accent-lime"
@@ -213,7 +242,7 @@ export default function EventTestGrid() {
               onClick={async () => {
                 setInstalling(true);
                 try {
-                  alert(await installGmaidenPack("ann-pack", "", animate));
+                  alert(await installGmaidenPack("ann-pack", "", animate, voiceCaption));
                 } finally {
                   setInstalling(false);
                 }
@@ -241,7 +270,7 @@ export default function EventTestGrid() {
                   className="group relative block w-full"
                   title={ev.trigger}
                 >
-                  <BannerView event={ev.id} width={280} override={ov} />
+                  <BannerView event={ev.id} width={280} override={ov} caption={captionOf(ev.id)} />
                   <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-black/55">
                     {n > 0 ? (
                       <span style={{ color: t.accent }}>{n} clip</span>

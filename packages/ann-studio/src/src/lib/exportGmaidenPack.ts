@@ -18,12 +18,18 @@ interface PackInstallReport {
 export async function installGmaidenPack(
   packName = "ann-pack",
   author = "",
-  animate = true
+  animate = true,
+  voiceCaption = true
 ): Promise<string> {
   const s = useStudioStore.getState();
   if (!s.wavPath) return "ยังไม่มีไฟล์เสียง — นำเข้าไฟล์ก่อนนะครับ";
   const mapped = s.clips.filter((c) => c.event && c.event !== "unused");
   if (!mapped.length) return "ยังไม่มี clip ที่ map event — กด “AI map” ก่อนนะครับ";
+
+  // caption per event = the first mapped clip's transcript (the voice line),
+  // so a pack's banners read out its own spoken words instead of a fixed label.
+  const captionOf = (ev: string): string | undefined =>
+    voiceCaption ? mapped.find((c) => c.event === ev)?.name : undefined;
 
   // one banner per mapped event, in priority order:
   //   1. the author's override image (animated webp/gif pass straight through)
@@ -35,11 +41,12 @@ export async function installGmaidenPack(
     events.map(async (ev) => {
       const ov = overrides[ev];
       if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
+      const cap = captionOf(ev);
       if (animate) {
-        const webp = await bakeToneWebp(ev);
+        const webp = await bakeToneWebp(ev, 2, cap);
         if (webp) return { event: ev, b64: webp, ext: "webp" };
       }
-      return { event: ev, b64: toneBannerPngDataUrl(ev, 2).split(",")[1], ext: "png" };
+      return { event: ev, b64: toneBannerPngDataUrl(ev, 2, cap).split(",")[1], ext: "png" };
     })
   );
 

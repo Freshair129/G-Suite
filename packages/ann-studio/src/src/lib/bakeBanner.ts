@@ -14,7 +14,8 @@ const FPS = 24;
 
 export async function bakeToneWebp(
   event: string,
-  scale = 2
+  scale = 2,
+  caption?: string
 ): Promise<string | null> {
   const pngs: string[] = [];
   for (let i = 0; i < FRAMES; i++) {
@@ -25,7 +26,7 @@ export async function bakeToneWebp(
     const ctx = c.getContext("2d");
     if (!ctx) return null;
     ctx.scale(scale, scale);
-    drawToneBanner(ctx, event, progress);
+    drawToneBanner(ctx, event, progress, caption);
     const b64 = c.toDataURL("image/png").split(",")[1];
     if (!b64) return null;
     pngs.push(b64);

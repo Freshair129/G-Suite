@@ -83,15 +83,35 @@ function hexA(hex: string, a: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+/** Trim `text` with an ellipsis so it fits `maxW` px at the current ctx font. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  const ell = "…";
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(text.slice(0, mid) + ell).width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo).trimEnd() + ell;
+}
+
 /**
  * Draw one event's tone banner in LOGICAL coordinates (BANNER_W x BANNER_H).
  * `progress` (0..1) drives a subtle entrance used when baking animation frames;
- * pass 1 for the static/steady banner.
+ * pass 1 for the static/steady banner. `caption` overrides the fixed Thai
+ * subtitle with the voice clip's own transcript line (auto-truncated to fit).
  */
-export function drawToneBanner(ctx: CanvasRenderingContext2D, id: string, progress = 1) {
+export function drawToneBanner(
+  ctx: CanvasRenderingContext2D,
+  id: string,
+  progress = 1,
+  caption?: string
+) {
   const ev = GMAIDEN_EVENTS.find((e) => e.id === id);
   const label = (ev?.label ?? id).toUpperCase();
-  const thai = EVENT_THAI[id] ?? ev?.trigger ?? "";
+  const thai = (caption && caption.trim()) || EVENT_THAI[id] || ev?.trigger || "";
   const tone = TONES[eventTone(id)];
 
   const W = BANNER_W, H = BANNER_H;
@@ -142,26 +162,26 @@ export function drawToneBanner(ctx: CanvasRenderingContext2D, id: string, progre
   ctx.font = "800 22px 'Segoe UI', system-ui, sans-serif";
   ctx.fillText(label, 88, H / 2 - 2);
 
-  // thai subtitle
+  // thai subtitle (or the voice transcript line) — truncated to the panel width
   ctx.fillStyle = "#8794a6";
   ctx.font = "600 14px 'Segoe UI', system-ui, sans-serif";
-  ctx.fillText(thai, 89, H / 2 + 22);
+  ctx.fillText(fitText(ctx, thai, W - 89 - 16), 89, H / 2 + 22);
 
   ctx.restore();
 }
 
 /** Offscreen canvas with one banner rendered at `scale` (for crisp export). */
-export function toneBannerCanvas(id: string, scale = 2): HTMLCanvasElement {
+export function toneBannerCanvas(id: string, scale = 2, caption?: string): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = BANNER_W * scale;
   c.height = BANNER_H * scale;
   const ctx = c.getContext("2d")!;
   ctx.scale(scale, scale);
-  drawToneBanner(ctx, id, 1);
+  drawToneBanner(ctx, id, 1, caption);
   return c;
 }
 
 /** PNG (alpha) data URL — the static default banner for an event. */
-export function toneBannerPngDataUrl(id: string, scale = 2): string {
-  return toneBannerCanvas(id, scale).toDataURL("image/png");
+export function toneBannerPngDataUrl(id: string, scale = 2, caption?: string): string {
+  return toneBannerCanvas(id, scale, caption).toDataURL("image/png");
 }
