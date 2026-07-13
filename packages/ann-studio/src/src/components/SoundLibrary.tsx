@@ -10,6 +10,7 @@ import {
   GripVertical,
   Trash2,
   RefreshCw,
+  Link2,
 } from "lucide-react";
 import { useStudioStore, genId, type LibPkg, type LibSound, type Clip } from "../store/useStudioStore";
 
@@ -227,10 +228,31 @@ export default function SoundLibrary() {
   );
 }
 
+interface Usage {
+  pack_id: string;
+  pack_name: string;
+  event: string;
+}
+
 function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string }) {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
+  const [usage, setUsage] = useState<Usage[] | null>(null);
+  const [showUsage, setShowUsage] = useState(false);
+
+  // backlink: which packs/events use this sound (indexed sound_usage lookup)
+  async function toggleUsage(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (usage === null) {
+      try {
+        setUsage(await invoke<Usage[]>("sound_usage", { soundId: sound.id }));
+      } catch {
+        setUsage([]);
+      }
+    }
+    setShowUsage((v) => !v);
+  }
 
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData("application/x-library-sound", sound.file_path);
@@ -264,26 +286,60 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
   }
 
   return (
-    <div
-      draggable
-      onDragStart={handleDragStart}
-      className="group flex items-center gap-1 px-2 py-1 text-xs hover:bg-panel-hover transition cursor-grab active:cursor-grabbing"
-      style={{ paddingLeft: "28px" }}
-      title={`${sound.name_th || sound.name_en} (${sound.duration.toFixed(1)}s)`}
-    >
-      <GripVertical size={10} className="text-ink-faint/40 shrink-0 opacity-0 group-hover:opacity-100 transition" />
-      <FileAudio size={12} className="text-lime/70 shrink-0" />
-      <span className="truncate flex-1 text-ink-muted" title={sound.name_en}>
-        {sound.name_th || sound.name_en}
-        {sound.name_en && <span className="text-ink-faint/70 ml-1">· {sound.name_en}</span>}
-      </span>
-      <span className="text-[9px] font-mono text-ink-faint shrink-0">{sound.duration.toFixed(1)}s</span>
-      <button
-        onClick={handlePlay}
-        className="grid place-items-center w-5 h-5 rounded text-ink-faint hover:text-lime transition shrink-0 opacity-0 group-hover:opacity-100"
+    <div style={{ paddingLeft: "28px" }}>
+      <div
+        draggable
+        onDragStart={handleDragStart}
+        className="group flex items-center gap-1 px-2 py-1 text-xs hover:bg-panel-hover transition cursor-grab active:cursor-grabbing"
+        title={`${sound.name_th || sound.name_en} (${sound.duration.toFixed(1)}s)`}
       >
-        {playing ? <Square size={10} /> : <Play size={10} />}
-      </button>
+        <GripVertical size={10} className="text-ink-faint/40 shrink-0 opacity-0 group-hover:opacity-100 transition" />
+        <FileAudio size={12} className="text-lime/70 shrink-0" />
+        <span className="truncate flex-1 min-w-0 text-ink-muted" title={sound.name_en}>
+          {sound.name_th || sound.name_en}
+          {sound.name_en && <span className="text-ink-faint/70 ml-1">· {sound.name_en}</span>}
+        </span>
+        {/* events this voice serves (multi) */}
+        {sound.events.slice(0, 2).map((ev) => (
+          <span key={ev} className="text-[8px] leading-none px-1 py-0.5 rounded bg-lime/10 text-lime/80 shrink-0">{ev}</span>
+        ))}
+        {sound.events.length > 2 && (
+          <span className="text-[8px] text-ink-faint shrink-0">+{sound.events.length - 2}</span>
+        )}
+        {/* backlink: who uses this voice */}
+        <button
+          onClick={toggleUsage}
+          title="ใช้ใน pack ไหนบ้าง"
+          className={`grid place-items-center w-5 h-5 rounded transition shrink-0 ${showUsage ? "text-lime" : "text-ink-faint opacity-0 group-hover:opacity-100 hover:text-lime"}`}
+        >
+          <Link2 size={10} />
+        </button>
+        <span className="text-[9px] font-mono text-ink-faint shrink-0">{sound.duration.toFixed(1)}s</span>
+        <button
+          onClick={handlePlay}
+          className="grid place-items-center w-5 h-5 rounded text-ink-faint hover:text-lime transition shrink-0 opacity-0 group-hover:opacity-100"
+        >
+          {playing ? <Square size={10} /> : <Play size={10} />}
+        </button>
+      </div>
+
+      {showUsage && (
+        <div className="pl-6 pr-2 pb-1 space-y-0.5">
+          {usage === null ? (
+            <div className="text-[9px] text-ink-faint">กำลังโหลด…</div>
+          ) : usage.length === 0 ? (
+            <div className="text-[9px] text-ink-faint">ยังไม่มี pack ไหนใช้เสียงนี้</div>
+          ) : (
+            usage.map((u, i) => (
+              <div key={i} className="flex items-center gap-1 text-[9px] text-ink-muted">
+                <Package size={8} className="text-lime/60 shrink-0" />
+                <span className="truncate">{u.pack_name}</span>
+                <span className="text-ink-faint shrink-0">· {u.event}</span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
