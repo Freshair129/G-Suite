@@ -3,3 +3,9 @@
 # Unpinned: Python 3.13 needs recent av/ctranslate2 wheels (older pins build
 # PyAV from source and fail without ffmpeg dev headers).
 faster-whisper==1.2.1
+
+# G-Vision engine (detect_boundaries.py / detect_buttons.py): PyAV for frame
+# decode (already pulled in by faster-whisper), plus ONNX OCR for W4 button
+# labels — rapidocr-onnxruntime is self-contained (no PyTorch, no tesseract
+# binary; brings numpy + opencv + onnxruntime).
+rapidocr-onnxruntime

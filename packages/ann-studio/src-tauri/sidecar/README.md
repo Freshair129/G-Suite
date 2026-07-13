@@ -38,27 +38,35 @@ Default `medium`. For Thai announcer audio `large-v3` is markedly more accurate
 GPU. The model downloads from Hugging Face on first run and is cached under
 `~/.cache/huggingface`.
 
-## W4 — button-OCR event label (contract, not yet implemented)
+## W4 — button-OCR event label (`detect_buttons.py`)
 
 The hybrid vision pipeline is: `detect_boundaries.py` (W1) finds each clip's
 time window, whisper gives the spoken text, and **button-OCR gives the event
-label**. HoN announcer-pack showcase videos highlight an event *button* per line
-(Double Tap / Quad Kill / Killing Spree / …); OCRing the active button names the
-event far more reliably than guessing from the (Thai) caption.
-
-Planned sidecar (`detect_buttons.py`), mirroring `detect_boundaries.py`'s JSON
-contract — video + the same line windows in, one raw label per line out:
+label**. HoN announcer-pack showcase videos show a fixed grid of event *buttons*;
+the user clicks each to play it (a golden Dota-style cursor sits on the active
+one) while the green caption + audio fire. `detect_buttons.py` reads which button
+was active per line window: OCR the panel → label + position for each button,
+find the golden cursor (warm blob, R>G>B), pick the OCR label nearest the cursor,
+vote across a few samples.
 
 ```
-{ "labels": [ { "startMs": 1234, "endMs": 2750, "label": "Quad Kill" }, ... ] }
+python detect_buttons.py <video> --windows '[[startMs,endMs],...]' \
+    [--roi 0.36,0.80,0.82,1.0] [--samples 3] [--cursor-min-area 30]
+# → {"labels":[{"startMs":..,"endMs":..,"label":"Hat Trick","cursor":true,"conf":0.85}, ...]}
 ```
 
-The frontend does **not** hardcode the HoN→Dota table in Python — it passes the
-raw `label` string to `matchAnnouncerLabel()` in `src/src/lib/honEventMap.ts`,
-the single source of truth (HoN streak ladder ≈ Dota's; multikills by count:
-Quad = ultra_kill, Annihilation = rampage). Unmatched labels fall back to the
-LLM / manual mapping. Keep the OCR sidecar dumb: emit text, resolve in one place.
+The script emits the **raw** label; the frontend resolves HoN→G-Maiden via
+`matchAnnouncerLabel()` in `src/src/lib/honEventMap.ts`, the single source of
+truth (streak ladder ≈ Dota's; multikills by count — Double Tap = double_kill,
+Hat Trick = triple_kill, Quad Kill = ultra_kill, Annihilation = rampage; it
+tolerates OCR noise: camelCase, mild misreads). Unmatched labels fall back to the
+LLM / manual mapping — keep the OCR sidecar dumb, resolve in one place.
 
-Caveat (same as W1): the button ROI + highlight detection is calibrated to the
-HoN preview UI; community videos will need per-video ROI/threshold options.
-An OCR engine (tesseract / easyocr) must be added to the venv before this runs.
+Verified on `inbound/KOM-ANNOUNCER.mp4`: 11/11 line windows got a cursor + label
+(Hat Trick, Bloodlust, Double Tap, Immortal, Annihilation, Genocide, …). OCR is
+`rapidocr-onnxruntime` (in `requirements.txt`; ONNX, no PyTorch/tesseract).
+
+Caveat (same as W1): the panel ROI + cursor color are calibrated to the Na Khom /
+HoN preview UI; community videos vary, so `--roi` and the cursor thresholds are
+parameters a later step should learn per video. The Rust wrapper that chains
+W1→whisper→W4 for a full auto-label pass is not wired yet (neither is W1's).

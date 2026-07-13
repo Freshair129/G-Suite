@@ -25,6 +25,7 @@ export const ANNOUNCER_ALIASES: Record<string, string> = {
   "double kill": "double_kill",
   "double tap": "double_kill",
   "triple kill": "triple_kill",
+  "hat trick": "triple_kill", // HoN's 3-kill button
   "quad kill": "ultra_kill",
   "ultra kill": "ultra_kill",
   "annihilation": "rampage",
@@ -45,9 +46,14 @@ export const ANNOUNCER_ALIASES: Record<string, string> = {
   "respawn": "respawn",
 };
 
-/** Lowercase, replace every non-alphanumeric run with a single space, trim. */
+/** Split camelCase (OCR concatenates "HatTrick"/"DoubleTap"), lowercase,
+ *  collapse every non-alphanumeric run to a single space, trim. */
 function norm(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return s
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 // Normalized lookup: the aliases above, plus every event's own label and id, so
