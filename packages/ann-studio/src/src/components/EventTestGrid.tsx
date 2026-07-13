@@ -12,6 +12,7 @@ import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { drawToneBanner, eventTone, TONES, BANNER_W, BANNER_H } from "../lib/toneBanner";
 import { installGmaidenPack } from "../lib/exportGmaidenPack";
 import { clipEnvelope } from "../lib/peaks";
+import { generateBanner } from "../lib/genBanner";
 import { useStudioStore, type Clip, type BannerOverride } from "../store/useStudioStore";
 
 const EVENTS = GMAIDEN_EVENTS.filter((e) => e.id !== "unused");
@@ -155,6 +156,8 @@ export default function EventTestGrid() {
   const wavPath = useStudioStore((s) => s.wavPath);
   const bannerOverrides = useStudioStore((s) => s.bannerOverrides);
   const setBannerOverride = useStudioStore((s) => s.setBannerOverride);
+  const sdEndpoint = useStudioStore((s) => s.sdEndpoint);
+  const [genEvent, setGenEvent] = useState<string | null>(null);
 
   const duration = useStudioStore((s) => s.duration);
 
@@ -188,6 +191,20 @@ export default function EventTestGrid() {
   function pickOverride(event: string) {
     pendingEvent.current = event;
     fileInput.current?.click();
+  }
+
+  async function genAiBanner(event: string) {
+    if (genEvent) return;
+    setGenEvent(event);
+    try {
+      const ov = await generateBanner(event, sdEndpoint);
+      if (ov) setBannerOverride(event, ov);
+      else alert("SD ไม่คืนรูป — ลองใหม่นะครับ");
+    } catch (e) {
+      alert(`สร้างภาพ AI ไม่สำเร็จ: ${e}`);
+    } finally {
+      setGenEvent(null);
+    }
   }
 
   async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
@@ -382,14 +399,24 @@ export default function EventTestGrid() {
                   >
                     {ov ? "เปลี่ยนภาพ" : "แทนภาพเอง"}
                   </button>
-                  {ov && (
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setBannerOverride(ev.id, null)}
-                      className="text-[11px] text-ink-faint hover:text-danger transition"
+                      onClick={() => genAiBanner(ev.id)}
+                      disabled={genEvent !== null}
+                      className="text-[11px] text-ink-muted hover:text-lime transition disabled:opacity-40"
+                      title={`สร้างภาพด้วย Stable Diffusion (${sdEndpoint})`}
                     >
-                      ล้าง
+                      {genEvent === ev.id ? "กำลังวาด…" : "✨ AI"}
                     </button>
-                  )}
+                    {ov && (
+                      <button
+                        onClick={() => setBannerOverride(ev.id, null)}
+                        className="text-[11px] text-ink-faint hover:text-danger transition"
+                      >
+                        ล้าง
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

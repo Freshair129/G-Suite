@@ -828,6 +828,63 @@ async fn bake_animated_webp(
     encoded
 }
 
+/// Generate a banner image via a local **Stable Diffusion WebUI (A1111-
+/// compatible)** `txt2img` endpoint. Returns the first image as base64 PNG (no
+/// `data:` prefix) for use as a banner override. Requires the WebUI running with
+/// `--api` at `endpoint` (default `http://127.0.0.1:7860`); errors clearly if not.
+#[tauri::command]
+async fn generate_banner_image(
+    prompt: String,
+    endpoint: String,
+    negative: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+    steps: Option<u32>,
+) -> Result<String, String> {
+    use serde_json::{json, Value};
+
+    let ep = endpoint.trim().trim_end_matches('/');
+    if ep.is_empty() {
+        return Err("ยังไม่ได้ตั้ง Stable Diffusion endpoint (Settings → AI)".into());
+    }
+    let url = format!("{ep}/sdapi/v1/txt2img");
+    let body = json!({
+        "prompt": prompt,
+        "negative_prompt": negative.unwrap_or_default(),
+        "width": width.unwrap_or(768),
+        "height": height.unwrap_or(256),
+        "steps": steps.unwrap_or(24),
+        "cfg_scale": 7,
+        "sampler_name": "DPM++ 2M Karras",
+    });
+
+    let resp = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await
+        .map_err(|e| format!("เชื่อม SD ไม่ได้ ({e}) — เปิด Stable Diffusion WebUI แบบ --api ที่ {ep} หรือยัง?"))?;
+
+    if !resp.status().is_success() {
+        let code = resp.status();
+        let msg = resp.text().await.unwrap_or_default();
+        return Err(format!("SD {code}: {msg}"));
+    }
+
+    let v: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("อ่านผล SD ไม่ได้: {e}"))?;
+    let img = v["images"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|s| s.as_str())
+        .ok_or("SD ไม่คืนรูปภาพ")?;
+    // A1111 returns bare base64; some forks prefix a data: URL — strip either way.
+    Ok(img.rsplit(',').next().unwrap_or(img).to_string())
+}
+
 /// Check whether the G-Maiden repo can be found. Returns its absolute path if
 /// so, empty string otherwise — lets the frontend show "integrate" before doing
 /// the heavier voice-cache scan.
@@ -1641,6 +1698,7 @@ pub fn run() {
             install_pack,
             install_gmaiden_pack,
             bake_animated_webp,
+            generate_banner_image,
             check_gmaiden,
             scan_voice_cache,
             init_library,

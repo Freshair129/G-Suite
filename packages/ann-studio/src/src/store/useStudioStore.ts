@@ -131,6 +131,8 @@ interface StudioState {
   transcribing: boolean;
   provider: "ollama" | "claude";
   llmModel: string;
+  /** Stable Diffusion WebUI (A1111-compatible) base URL for AI banner art */
+  sdEndpoint: string;
 
   view: AppView;
   gmaidenConnected: boolean;
@@ -180,6 +182,7 @@ interface StudioState {
   setTranscribing: (v: boolean) => void;
   setProvider: (p: "ollama" | "claude") => void;
   setLlmModel: (m: string) => void;
+  setSdEndpoint: (url: string) => void;
   setView: (v: AppView) => void;
   setGMaiden: (connected: boolean, path: string, cache: VoiceCacheMap) => void;
   /** set (ov) or clear (null) the banner override for one event */
@@ -239,6 +242,7 @@ export const useStudioStore = create<StudioState>()(
       transcribing: false,
       provider: "ollama",
       llmModel: "",
+      sdEndpoint: "http://127.0.0.1:7860",
 
       view: "studio",
       gmaidenConnected: false,
@@ -375,6 +379,8 @@ export const useStudioStore = create<StudioState>()(
       setProvider: (provider) => set({ provider }),
 
       setLlmModel: (llmModel) => set({ llmModel }),
+
+      setSdEndpoint: (sdEndpoint) => set({ sdEndpoint }),
 
       setView: (view) => set({ view }),
 

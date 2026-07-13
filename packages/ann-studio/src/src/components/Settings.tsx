@@ -185,7 +185,7 @@ function AudioSection() {
 }
 
 function AISection({ provider, llmModel, ollamaModels }: { provider: string; llmModel: string; ollamaModels: string[] }) {
-  const { setProvider, setLlmModel } = useStudioStore();
+  const { setProvider, setLlmModel, sdEndpoint, setSdEndpoint } = useStudioStore();
 
   return (
     <>
@@ -219,6 +219,16 @@ function AISection({ provider, llmModel, ollamaModels }: { provider: string; llm
 
       <FieldGroup label="Function Calling" description="รูปแบบ JSON protocol สำหรับ AI chat">
         <span className="text-[10px] font-mono text-lime">{`{action, args, reply}`}</span>
+      </FieldGroup>
+
+      <FieldGroup label="SD Banner Endpoint" description="Stable Diffusion WebUI (--api) สำหรับสร้างภาพ banner ด้วย AI">
+        <input
+          type="text"
+          value={sdEndpoint}
+          onChange={(e) => setSdEndpoint(e.target.value)}
+          placeholder="http://127.0.0.1:7860"
+          className="w-52 bg-panel border border-line rounded-lg px-2 py-1.5 text-xs text-ink font-mono outline-none focus:border-lime"
+        />
       </FieldGroup>
 
       <div className="mt-4 p-3 rounded-lg bg-panel/50 border border-line/30">
