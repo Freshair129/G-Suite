@@ -37,3 +37,28 @@ Default `medium`. For Thai announcer audio `large-v3` is markedly more accurate
 (cleaner text, no hallucinated foreign tokens, full coverage) — pair it with the
 GPU. The model downloads from Hugging Face on first run and is cached under
 `~/.cache/huggingface`.
+
+## W4 — button-OCR event label (contract, not yet implemented)
+
+The hybrid vision pipeline is: `detect_boundaries.py` (W1) finds each clip's
+time window, whisper gives the spoken text, and **button-OCR gives the event
+label**. HoN announcer-pack showcase videos highlight an event *button* per line
+(Double Tap / Quad Kill / Killing Spree / …); OCRing the active button names the
+event far more reliably than guessing from the (Thai) caption.
+
+Planned sidecar (`detect_buttons.py`), mirroring `detect_boundaries.py`'s JSON
+contract — video + the same line windows in, one raw label per line out:
+
+```
+{ "labels": [ { "startMs": 1234, "endMs": 2750, "label": "Quad Kill" }, ... ] }
+```
+
+The frontend does **not** hardcode the HoN→Dota table in Python — it passes the
+raw `label` string to `matchAnnouncerLabel()` in `src/src/lib/honEventMap.ts`,
+the single source of truth (HoN streak ladder ≈ Dota's; multikills by count:
+Quad = ultra_kill, Annihilation = rampage). Unmatched labels fall back to the
+LLM / manual mapping. Keep the OCR sidecar dumb: emit text, resolve in one place.
+
+Caveat (same as W1): the button ROI + highlight detection is calibrated to the
+HoN preview UI; community videos will need per-video ROI/threshold options.
+An OCR engine (tesseract / easyocr) must be added to the venv before this runs.

@@ -4,6 +4,7 @@ import { runAutoSplit, runExport, sendToGMaiden } from "./actions";
 import { installGmaidenPack } from "./exportGmaidenPack";
 import { eventContractForPrompt, GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { analyzeClip, featuresYaml } from "./features";
+import { matchAnnouncerLabel } from "./honEventMap";
 
 /**
  * The chat is function-calling: the LLM replies with a single JSON object
@@ -220,7 +221,27 @@ export async function autoMapEvents(): Promise<string> {
   if (!ordered.length) return "ยังไม่มี clip ให้ map";
 
   const valid = new Set(GMAIDEN_EVENTS.map((e) => e.id));
-  const clipList = ordered.map((c, i) => `${i + 1}. ${c.name}`).join("\n");
+
+  // W4 deterministic pass: a clip whose name carries a known announcer label
+  // (HoN button text / Dota event name) maps here — no LLM guess needed. The
+  // LLM handles only what's left (e.g. Thai transcript lines).
+  let direct = 0;
+  const remaining: typeof ordered = [];
+  for (const c of ordered) {
+    const hit = matchAnnouncerLabel(c.name);
+    if (hit && valid.has(hit)) {
+      useStudioStore.getState().updateClip(c.id, { event: hit });
+      direct++;
+    } else {
+      remaining.push(c);
+    }
+  }
+  const total = ordered.length;
+  if (!remaining.length) {
+    return `map event ให้ ${direct}/${total} clips แล้ว 🎯 (ทั้งหมดจากป้าย announcer)`;
+  }
+
+  const clipList = remaining.map((c, i) => `${i + 1}. ${c.name}`).join("\n");
   const system = `คุณคือผู้ช่วย map เสียงพากย์ announcer เกม Dota 2 ให้ตรงกับ event ของ G-Maiden
 จับคู่ข้อความของแต่ละ clip กับ event id ที่เหมาะที่สุดจากรายการนี้ (ใช้ id ตรงตามนี้เท่านั้น):
 ${eventContractForPrompt()}
@@ -235,25 +256,27 @@ ${eventContractForPrompt()}
     prompt,
   });
 
+  const doneNote = direct > 0 ? ` (${direct} จากป้าย announcer)` : "";
   const a = raw.indexOf("{");
   const b = raw.lastIndexOf("}");
-  if (a === -1 || b === -1) return "AI ตอบไม่เป็น JSON — ลองใหม่หรือเปลี่ยน provider";
+  if (a === -1 || b === -1)
+    return `map จากป้ายได้ ${direct}/${total} clips แล้ว — ส่วนที่เหลือ AI ตอบไม่เป็น JSON ลองใหม่`;
   let parsed: { map?: Array<{ index: number; event: string }> };
   try {
     parsed = JSON.parse(raw.slice(a, b + 1));
   } catch {
-    return "อ่านผลจาก AI ไม่ได้ — ลองใหม่";
+    return `map จากป้ายได้ ${direct}/${total} clips แล้ว — อ่านผล AI ส่วนที่เหลือไม่ได้ ลองใหม่`;
   }
 
   let applied = 0;
   for (const m of parsed.map || []) {
-    const clip = ordered[m.index - 1];
+    const clip = remaining[m.index - 1];
     if (clip && valid.has(m.event)) {
       useStudioStore.getState().updateClip(clip.id, { event: m.event });
       applied++;
     }
   }
-  return `map event ให้ ${applied}/${ordered.length} clips แล้ว 🎯`;
+  return `map event ให้ ${direct + applied}/${total} clips แล้ว 🎯${doneNote}`;
 }
 
 /** Send a user message through the LLM and run whatever action it picks. */
