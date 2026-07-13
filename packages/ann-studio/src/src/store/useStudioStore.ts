@@ -142,6 +142,9 @@ interface StudioState {
   /** event id → author banner override (unset = use the auto tone banner) */
   bannerOverrides: Record<string, BannerOverride>;
 
+  /** event id → library sounds assembled on the test screen (the pack builder) */
+  packBuilder: Record<string, LibSound[]>;
+
   libraryRoot: string;
   libraryTree: LibraryNode[];
   libraryPackages: LibPkg[];
@@ -187,6 +190,10 @@ interface StudioState {
   setGMaiden: (connected: boolean, path: string, cache: VoiceCacheMap) => void;
   /** set (ov) or clear (null) the banner override for one event */
   setBannerOverride: (event: string, ov: BannerOverride | null) => void;
+  /** pack builder: assign / unassign a library sound to an event */
+  addToPackBuilder: (event: string, sound: LibSound) => void;
+  removeFromPackBuilder: (event: string, idx: number) => void;
+  clearPackBuilder: () => void;
   setLibrary: (root: string, tree: LibraryNode[]) => void;
   setLibraryPackages: (pkgs: LibPkg[]) => void;
   setPacks: (packs: Pack[]) => void;
@@ -249,6 +256,7 @@ export const useStudioStore = create<StudioState>()(
       gmaidenPath: "",
       voiceCache: {},
       bannerOverrides: {},
+      packBuilder: {},
 
       libraryRoot: "",
       libraryTree: [],
@@ -395,6 +403,24 @@ export const useStudioStore = create<StudioState>()(
           return { bannerOverrides: next };
         }),
 
+      addToPackBuilder: (event, sound) =>
+        set((s) => {
+          const list = s.packBuilder[event] ?? [];
+          if (list.some((x) => x.id === sound.id)) return s; // no dup
+          return { packBuilder: { ...s.packBuilder, [event]: [...list, sound] } };
+        }),
+
+      removeFromPackBuilder: (event, idx) =>
+        set((s) => {
+          const list = (s.packBuilder[event] ?? []).filter((_, i) => i !== idx);
+          const next = { ...s.packBuilder };
+          if (list.length) next[event] = list;
+          else delete next[event];
+          return { packBuilder: next };
+        }),
+
+      clearPackBuilder: () => set({ packBuilder: {} }),
+
       setLibrary: (libraryRoot, libraryTree) => set({ libraryRoot, libraryTree }),
 
       setLibraryPackages: (libraryPackages) => set({ libraryPackages }),
@@ -448,6 +474,7 @@ export const useStudioStore = create<StudioState>()(
         duration: s.duration,
         clips: s.clips,
         bannerOverrides: s.bannerOverrides,
+        packBuilder: s.packBuilder,
       }),
     }
   )

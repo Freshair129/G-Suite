@@ -174,6 +174,7 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
 
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData("application/x-library-sound", sound.file_path);
+    e.dataTransfer.setData("application/x-library-sound-json", JSON.stringify(sound));
     e.dataTransfer.setData("text/plain", sound.name);
     e.dataTransfer.effectAllowed = "copy";
   }

@@ -10,10 +10,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { drawToneBanner, eventTone, TONES, BANNER_W, BANNER_H } from "../lib/toneBanner";
-import { installGmaidenPack } from "../lib/exportGmaidenPack";
+import { installGmaidenPack, installLibraryPack } from "../lib/exportGmaidenPack";
 import { clipEnvelope } from "../lib/peaks";
 import { generateBanner } from "../lib/genBanner";
-import { useStudioStore, type Clip, type BannerOverride } from "../store/useStudioStore";
+import { useStudioStore, type Clip, type BannerOverride, type LibSound, type LibPkg } from "../store/useStudioStore";
 
 const EVENTS = GMAIDEN_EVENTS.filter((e) => e.id !== "unused");
 
@@ -159,6 +159,16 @@ export default function EventTestGrid() {
   const sdEndpoint = useStudioStore((s) => s.sdEndpoint);
   const [genEvent, setGenEvent] = useState<string | null>(null);
 
+  // pack builder (event → library sounds assembled here)
+  const packBuilder = useStudioStore((s) => s.packBuilder);
+  const addToPackBuilder = useStudioStore((s) => s.addToPackBuilder);
+  const removeFromPackBuilder = useStudioStore((s) => s.removeFromPackBuilder);
+  const libraryRoot = useStudioStore((s) => s.libraryRoot);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [pickerEvent, setPickerEvent] = useState<string | null>(null);
+  const [libSounds, setLibSounds] = useState<Array<LibSound & { owner: string }>>([]);
+  const [installingLib, setInstallingLib] = useState(false);
+
   const duration = useStudioStore((s) => s.duration);
 
   const [fired, setFired] = useState<string | null>(null);
@@ -192,6 +202,43 @@ export default function EventTestGrid() {
     pendingEvent.current = event;
     fileInput.current?.click();
   }
+
+  // drop a library sound onto an event card → assign it to that event
+  function onDropSound(event: string, e: React.DragEvent) {
+    e.preventDefault();
+    setDropTarget(null);
+    const raw = e.dataTransfer.getData("application/x-library-sound-json");
+    if (!raw) return;
+    try {
+      addToPackBuilder(event, JSON.parse(raw) as LibSound);
+    } catch {
+      /* ignore malformed drag */
+    }
+  }
+
+  // lazy-load a flat list of every library sound (with owner) for the picker
+  async function ensureLibSounds() {
+    if (libSounds.length) return;
+    try {
+      const info = await invoke<{ packages: LibPkg[] }>("init_library");
+      const all = await Promise.all(
+        info.packages.map(async (p) => {
+          const sounds = await invoke<LibSound[]>("query_sounds", { pkgId: p.id });
+          return sounds.map((s) => ({ ...s, owner: p.name }));
+        })
+      );
+      setLibSounds(all.flat());
+    } catch {
+      /* library not ready */
+    }
+  }
+
+  async function openPicker(event: string) {
+    setPickerEvent((cur) => (cur === event ? null : event));
+    await ensureLibSounds();
+  }
+
+  const packBuilderTotal = Object.values(packBuilder).reduce((n, list) => n + list.length, 0);
 
   async function genAiBanner(event: string) {
     if (genEvent) return;
@@ -237,6 +284,24 @@ export default function EventTestGrid() {
     setStageWave(null);
     if (firedTimer.current) window.clearTimeout(firedTimer.current);
     firedTimer.current = window.setTimeout(() => setFired(null), 3500);
+
+    // prefer a library sound assigned via the pack builder (whole file)
+    const lib = packBuilder[id];
+    if (lib?.length) {
+      try {
+        const abs = `${libraryRoot}/${lib[0].file_path}`.replace(/\//g, "\\");
+        const buf = await invoke<ArrayBuffer>("read_audio_bytes", { path: abs });
+        const url = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+        if (audioRef.current) audioRef.current.pause();
+        const a = new Audio(url);
+        audioRef.current = a;
+        a.onended = () => URL.revokeObjectURL(url);
+        void a.play().catch(() => {});
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
 
     // audio: play the first mapped clip's segment of the source wav
     const cs = byEvent[id];
@@ -318,7 +383,7 @@ export default function EventTestGrid() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-ink-faint">{clips.length} clip แมปแล้ว</span>
+            <span className="text-xs text-ink-faint">{clips.length} clip · คลัง {packBuilderTotal}</span>
             <label className="flex items-center gap-1.5 text-xs text-ink-muted cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -360,18 +425,43 @@ export default function EventTestGrid() {
             >
               {installing ? "กำลังติดตั้ง…" : "ติดตั้งลง G-Maiden (พร้อม banner)"}
             </button>
+            <button
+              onClick={async () => {
+                setInstallingLib(true);
+                try {
+                  alert(await installLibraryPack("ann-pack", "", animate));
+                } finally {
+                  setInstallingLib(false);
+                }
+              }}
+              disabled={installingLib || packBuilderTotal === 0}
+              title="ติดตั้ง pack ที่ประกอบจากคลังเสียง (ลากเสียงมาวางบนการ์ด)"
+              className="px-3 h-8 rounded-full bg-white text-black text-xs font-semibold hover:bg-gray-200 transition disabled:opacity-40"
+            >
+              {installingLib ? "กำลังติดตั้ง…" : `ติดตั้งจากคลัง (${packBuilderTotal})`}
+            </button>
           </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           {EVENTS.map((ev) => {
             const n = byEvent[ev.id]?.length ?? 0;
+            const libList = packBuilder[ev.id] ?? [];
+            const total = n + libList.length;
             const t = TONES[eventTone(ev.id)];
             const ov = bannerOverrides[ev.id];
             return (
               <div
                 key={ev.id}
-                className="rounded-xl overflow-hidden border border-line hover:border-white/25 transition"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dropTarget !== ev.id) setDropTarget(ev.id);
+                }}
+                onDragLeave={() => setDropTarget((c) => (c === ev.id ? null : c))}
+                onDrop={(e) => onDropSound(ev.id, e)}
+                className={`rounded-xl overflow-hidden border transition ${
+                  dropTarget === ev.id ? "border-lime bg-lime/10" : "border-line hover:border-white/25"
+                }`}
               >
                 <button
                   onClick={() => fire(ev.id)}
@@ -380,10 +470,10 @@ export default function EventTestGrid() {
                 >
                   <BannerView event={ev.id} width={280} override={ov} caption={captionOf(ev.id)} />
                   <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-black/55">
-                    {n > 0 ? (
-                      <span style={{ color: t.accent }}>{n} clip</span>
+                    {total > 0 ? (
+                      <span style={{ color: t.accent }}>{total} เสียง</span>
                     ) : (
-                      <span className="text-ink-faint">ยังไม่มีเสียง</span>
+                      <span className="text-ink-faint">ลากเสียงมาวาง</span>
                     )}
                   </span>
                   {ov && (
@@ -417,6 +507,54 @@ export default function EventTestGrid() {
                       </button>
                     )}
                   </div>
+                </div>
+
+                {/* pack builder: library sounds assigned to this event */}
+                <div className="px-2 py-1.5 bg-black/20 border-t border-line/60 space-y-1">
+                  {libList.map((snd, i) => (
+                    <div key={snd.id} className="flex items-center gap-1.5 text-[10px] text-ink-muted">
+                      <span className="text-lime/70 shrink-0">♪</span>
+                      <span className="truncate flex-1" title={snd.name}>{snd.name}</span>
+                      <span className="text-ink-faint shrink-0">{snd.duration.toFixed(1)}s</span>
+                      <button
+                        onClick={() => removeFromPackBuilder(ev.id, i)}
+                        className="text-ink-faint hover:text-danger shrink-0"
+                        title="เอาออก"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => openPicker(ev.id)}
+                    className="text-[10px] text-lime hover:underline"
+                  >
+                    + เพิ่มเสียงจากคลัง
+                  </button>
+                  {pickerEvent === ev.id && (
+                    <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-line bg-panel">
+                      {libSounds.length === 0 ? (
+                        <div className="px-2 py-2 text-[10px] text-ink-faint">
+                          ยังไม่มีเสียงในคลัง — กด Save to Library ก่อน
+                        </div>
+                      ) : (
+                        libSounds.map((snd) => (
+                          <button
+                            key={snd.id}
+                            onClick={() => {
+                              addToPackBuilder(ev.id, snd);
+                              setPickerEvent(null);
+                            }}
+                            className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] text-left hover:bg-panel-hover transition"
+                          >
+                            <span className="text-lime/70 shrink-0">{snd.owner}</span>
+                            <span className="truncate flex-1 text-ink-muted">{snd.name}</span>
+                            <span className="text-ink-faint shrink-0">{snd.duration.toFixed(1)}s</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );

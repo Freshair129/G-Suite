@@ -863,6 +863,128 @@ async fn install_gmaiden_pack(
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LibPackClip {
+    event: String,
+    /// path relative to the sounds dir (LibSound.file_path)
+    file_path: String,
+}
+
+/// Install a G-Maiden manifest pack assembled from LIBRARY sounds (the test-
+/// screen pack builder). Unlike [`install_gmaiden_pack`] (which cuts each clip
+/// from one source wav), every clip here is an already-cut library wav that is
+/// COPIED into the pack. Banners + manifest are identical.
+#[tauri::command]
+async fn install_library_pack(
+    pack_id: String,
+    pack_name: String,
+    author: String,
+    clips: Vec<LibPackClip>,
+    banners: Vec<BannerAsset>,
+    gmaiden_dir: Option<String>,
+    endpoint: Option<String>,
+) -> Result<PackInstallReport, String> {
+    use base64::Engine;
+    use serde_json::{json, Map, Value};
+
+    let base = resolve_gmaiden_dir(&gmaiden_dir)
+        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือระบุ path")?;
+    let id = sanitize_filename(&pack_id);
+    let pack_dir = base.join("assets/voice-cache/packs").join(&id);
+    let clips_dir = pack_dir.join("clips");
+    let banners_dir = pack_dir.join("banners");
+    std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
+    std::fs::create_dir_all(&banners_dir).map_err(|e| format!("mkdir banners: {e}"))?;
+
+    let snd_root = sounds_dir();
+    let mut mappings: Map<String, Value> = Map::new();
+    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut clip_total = 0usize;
+    for clip in &clips {
+        if clip.event.is_empty() || clip.event == "unused" {
+            continue;
+        }
+        // resolve + contain the library source under sounds_dir (defensive)
+        let canon = snd_root
+            .join(&clip.file_path)
+            .canonicalize()
+            .map_err(|e| format!("หาไฟล์ {}: {e}", clip.file_path))?;
+        if !canon.starts_with(&snd_root) {
+            return Err(format!("ไฟล์อยู่นอกคลัง: {}", clip.file_path));
+        }
+        let n = per_event.entry(clip.event.clone()).or_insert(0);
+        *n += 1;
+        let fname = format!("{}_{:02}.wav", sanitize_filename(&clip.event), *n);
+        std::fs::copy(&canon, clips_dir.join(&fname))
+            .map_err(|e| format!("copy {}: {e}", clip.file_path))?;
+        let entry = mappings.entry(clip.event.clone()).or_insert_with(|| {
+            json!({ "text": "", "thai": "", "banner": "", "bannerAsset": "", "clips": [] })
+        });
+        entry["clips"].as_array_mut().unwrap().push(json!(format!("clips/{fname}")));
+        clip_total += 1;
+    }
+
+    if mappings.is_empty() {
+        return Err("ไม่มี event ที่ map — เพิ่มเสียงก่อนนะครับ".into());
+    }
+
+    let mut banner_total = 0usize;
+    let mut cover = String::new();
+    for b in &banners {
+        if !mappings.contains_key(&b.event) {
+            continue;
+        }
+        let ext = match b.ext.as_str() {
+            "png" | "webp" | "webm" | "gif" | "apng" => b.ext.as_str(),
+            _ => "png",
+        };
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(b.b64.trim())
+            .map_err(|e| format!("banner base64 ({}): {e}", b.event))?;
+        let fname = format!("{}.{}", sanitize_filename(&b.event), ext);
+        std::fs::write(banners_dir.join(&fname), &data)
+            .map_err(|e| format!("write banner {}: {e}", b.event))?;
+        let rel = format!("banners/{fname}");
+        if let Some(m) = mappings.get_mut(&b.event) {
+            m["bannerAsset"] = json!(rel);
+        }
+        if cover.is_empty() {
+            cover = rel.clone();
+        }
+        banner_total += 1;
+    }
+
+    let manifest = json!({
+        "id": id, "name": pack_name, "version": "0.1.0", "locale": "th",
+        "author": author, "description": "", "coverImage": cover,
+        "mappings": Value::Object(mappings.clone()),
+    });
+    std::fs::write(
+        pack_dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .map_err(|e| format!("write manifest: {e}"))?;
+
+    if let Some(ep) = &endpoint {
+        if !ep.is_empty() {
+            let _ = reqwest::Client::new()
+                .post(ep)
+                .json(&json!({ "packId": id }))
+                .send()
+                .await;
+        }
+    }
+
+    Ok(PackInstallReport {
+        pack_id: id,
+        pack_dir: pack_dir.to_string_lossy().into_owned(),
+        events: mappings.len(),
+        clips: clip_total,
+        banners: banner_total,
+    })
+}
+
 /// Bake a sequence of alpha PNG frames (base64, no `data:` prefix) into a single
 /// **animated WebP** and return it base64-encoded. The clip plays once and rests
 /// on the final frame (`-loop 1`), giving the auto tone banner an entrance
@@ -1813,6 +1935,7 @@ pub fn run() {
             read_audio_bytes,
             install_pack,
             install_gmaiden_pack,
+            install_library_pack,
             bake_animated_webp,
             generate_banner_image,
             check_gmaiden,

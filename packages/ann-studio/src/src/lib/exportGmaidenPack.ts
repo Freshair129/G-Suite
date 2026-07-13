@@ -93,3 +93,50 @@ export async function installGmaidenPack(
     return `ติดตั้งไม่สำเร็จ: ${e}`;
   }
 }
+
+/**
+ * Install the test-screen pack builder (event → library sounds) into G-Maiden.
+ * Each sound is an already-cut library wav copied into the pack; banners follow
+ * the same priority (override → animated tone → static PNG) as the session path.
+ */
+export async function installLibraryPack(
+  packName = "ann-pack",
+  author = "",
+  animate = true
+): Promise<string> {
+  const s = useStudioStore.getState();
+  const pb = s.packBuilder;
+  const events = Object.keys(pb).filter((ev) => (pb[ev]?.length ?? 0) > 0);
+  if (!events.length) return "ยังไม่มีเสียงในหน้าประกอบ pack — ลากเสียงจากคลังมาวางก่อนนะครับ";
+
+  const clips = events.flatMap((ev) => pb[ev].map((snd) => ({ event: ev, filePath: snd.file_path })));
+
+  const overrides = s.bannerOverrides;
+  const banners = await Promise.all(
+    events.map(async (ev) => {
+      const ov = overrides[ev];
+      if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
+      if (animate) {
+        const webp = await bakeToneWebp(ev);
+        if (webp) return { event: ev, b64: webp, ext: "webp" };
+      }
+      return { event: ev, b64: toneBannerPngDataUrl(ev, 2).split(",")[1], ext: "png" };
+    })
+  );
+
+  const packId = `pack_${Date.now().toString(36)}`;
+  try {
+    const r = await invoke<PackInstallReport>("install_library_pack", {
+      packId,
+      packName,
+      author,
+      clips,
+      banners,
+      gmaidenDir: null,
+      endpoint: "http://localhost:3000/announcer/install",
+    });
+    return `ติดตั้งจากคลังลง G-Maiden ✅  ${r.events} events · ${r.clips} clips · ${r.banners} banners\n${r.pack_dir}`;
+  } catch (e) {
+    return `ติดตั้งไม่สำเร็จ: ${e}`;
+  }
+}
