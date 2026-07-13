@@ -634,6 +634,32 @@ fn detect_installed_gmaiden() -> Option<PathBuf> {
     Path::new(&target).parent().map(Path::to_path_buf).filter(|p| p.exists())
 }
 
+/// The dev sibling repo (`../G-Maiden` next to G-Suite), if present.
+fn dev_repo() -> Option<PathBuf> {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(|d| d.join("G-Maiden"))
+}
+
+/// Best-effort auto-detect of a G-Maiden that already has a `voice-cache/` to
+/// write into, in the order Boss actually runs one: a repo RELEASE build, then
+/// a debug build, then the installed build (Start-menu shortcut). Returns the
+/// directory to pass as the base — `voice_cache_root` picks its layout.
+fn detect_gmaiden_target() -> Option<PathBuf> {
+    let mut cands: Vec<PathBuf> = Vec::new();
+    if let Some(repo) = dev_repo() {
+        cands.push(repo.join("src-tauri/target/release"));
+        cands.push(repo.join("src-tauri/target/debug"));
+    }
+    if let Some(installed) = detect_installed_gmaiden() {
+        cands.push(installed);
+    }
+    cands.into_iter().find(|c| c.join("voice-cache").is_dir())
+}
+
 /// Locate a G-Maiden install: explicit arg → `GMAIDEN_DIR` env → the dev sibling
 /// repo (`../G-Maiden`) → the installed build via its Start-menu shortcut.
 fn resolve_gmaiden_dir(arg: &Option<String>) -> Option<PathBuf> {
@@ -649,28 +675,21 @@ fn resolve_gmaiden_dir(arg: &Option<String>) -> Option<PathBuf> {
             return Some(p);
         }
     }
-    // <manifest>/../../.. = G-Suite ; its sibling G-Maiden (dev repo)
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    if let Some(sib) = manifest
-        .parent()
-        .and_then(Path::parent)
-        .and_then(Path::parent)
-        .and_then(Path::parent)
-        .map(|d| d.join("G-Maiden"))
-    {
+    // dev sibling repo (`../G-Maiden`) — for running G-Maiden from source
+    if let Some(sib) = dev_repo() {
         if sib.exists() {
             return Some(sib);
         }
     }
-    // fall back to the installed build
-    detect_installed_gmaiden()
+    // fall back to a real built/installed G-Maiden (release/debug/installed)
+    detect_gmaiden_target()
 }
 
 /// Return the installed G-Maiden directory (from its Start-menu shortcut), or
 /// "" if not found. Lets the Settings UI auto-fill the G-Maiden path.
 #[tauri::command]
 fn detect_gmaiden_installed() -> String {
-    detect_installed_gmaiden()
+    detect_gmaiden_target()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
 }

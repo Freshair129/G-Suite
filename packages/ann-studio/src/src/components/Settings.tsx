@@ -272,12 +272,12 @@ function GMaidenSection({ path, connected }: { path: string; connected: boolean 
         </div>
       </FieldGroup>
 
-      <FieldGroup label="G-Maiden Path" description="โฟลเดอร์ G-Maiden ที่จะติดตั้ง pack (เว้นว่าง = auto: repo/installed)">
+      <FieldGroup label="G-Maiden Path" description="โฟลเดอร์ G-Maiden ที่จะติดตั้ง pack — กดปุ่มเพื่อ auto-detect (release build → installed)">
         <div className="flex items-center gap-2">
           <input
             value={path}
             onChange={(e) => setGmaidenPath(e.target.value)}
-            placeholder="auto — เช่น G:\GM\G-Maiden"
+            placeholder="auto — เช่น ...\target\release หรือ G:\GM\G-Maiden"
             className="w-56 bg-panel border border-line rounded-lg px-2 py-1.5 text-[11px] text-ink font-mono outline-none focus:border-lime"
           />
           <button
