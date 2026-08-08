@@ -2232,39 +2232,51 @@ fn read_text_file(path: String) -> Result<String, String> {
 /// and returns the raw query string. Armed only when the user clicks sign-in;
 /// the PKCE code is useless without the code_verifier held by supabase-js in
 /// the webview, so a rogue local request cannot hijack the session. The
-/// authorization code is never logged.
+/// authorization code is never logged. Listener stops at a 180-second deadline.
 #[tauri::command]
 async fn gid_oauth_listen() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| {
         use std::io::{Read, Write};
+        use std::time::{Duration, Instant};
         let listener = std::net::TcpListener::bind("127.0.0.1:3210")
             .map_err(|e| format!("bind 127.0.0.1:3210: {e}"))?;
         listener
-            .set_nonblocking(false)
+            .set_nonblocking(true)
             .map_err(|e| format!("listener mode: {e}"))?;
-        // accept until we see the callback path or ~180s worth of connections
-        for _ in 0..600 {
-            let (mut stream, _) = listener.accept().map_err(|e| format!("accept: {e}"))?;
-            let mut buf = [0u8; 4096];
-            let n = stream.read(&mut buf).unwrap_or(0);
-            let head = String::from_utf8_lossy(&buf[..n]).to_string();
-            let first = head.lines().next().unwrap_or("");
-            if let Some(path) = first.split_whitespace().nth(1) {
-                if let Some(q) = path.strip_prefix("/auth/callback?") {
-                    let body = "<html><body style=\"font-family:sans-serif;background:#0b0d12;color:#dfe7ff;display:grid;place-items:center;height:100vh\"><div>เข้าสู่ระบบสำเร็จ — กลับไปที่ G-AnnStudio ได้เลย</div></body></html>";
-                    let _ = stream.write_all(
-                        format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                            body.len(), body
-                        )
-                        .as_bytes(),
-                    );
-                    return Ok(q.to_string());
+        let deadline = Instant::now() + Duration::from_secs(180);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let _ = stream.set_nonblocking(false);
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                    let mut buf = [0u8; 4096];
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let first = head.lines().next().unwrap_or("");
+                    if let Some(path) = first.split_whitespace().nth(1) {
+                        if let Some(q) = path.strip_prefix("/auth/callback?") {
+                            let body = "<html><body style=\"font-family:sans-serif;background:#0b0d12;color:#dfe7ff;display:grid;place-items:center;height:100vh\"><div>เข้าสู่ระบบสำเร็จ — กลับไปที่ G-AnnStudio ได้เลย</div></body></html>";
+                            let _ = stream.write_all(
+                                format!(
+                                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                    body.len(), body
+                                )
+                                .as_bytes(),
+                            );
+                            return Ok(q.to_string());
+                        }
+                    }
+                    let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                 }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => return Err(format!("accept: {e}")),
             }
-            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            if Instant::now() >= deadline {
+                return Err("sign-in timed out (no callback within 180s)".to_string());
+            }
         }
-        Err("no callback received".to_string())
     })
     .await
     .map_err(|e| format!("listener task: {e}"))?
