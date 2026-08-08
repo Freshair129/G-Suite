@@ -15,6 +15,11 @@
       "type": "string",
       "description": "Display name of the announcer pack."
     },
+    "authorGid": {
+      "type": "string",
+      "pattern": "^G-[FBP][23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6,10}$",
+      "description": "Optional GID of the creator (unsigned display metadata, not identity proof)"
+    },
     "clips": {
       "type": "array",
       "items": {

@@ -824,6 +824,7 @@ async fn install_gmaiden_pack(
     pack_id: String,
     pack_name: String,
     author: String,
+    author_gid: Option<String>,
     source_path: String,
     clips: Vec<InstallClip>,
     banners: Vec<BannerAsset>,
@@ -936,7 +937,7 @@ async fn install_gmaiden_pack(
         banner_total += 1;
     }
 
-    let manifest = json!({
+    let mut manifest = json!({
         "id": id,
         "name": pack_name,
         "version": "0.1.0",
@@ -946,6 +947,9 @@ async fn install_gmaiden_pack(
         "coverImage": cover,
         "mappings": Value::Object(mappings.clone()),
     });
+    if let Some(gid) = author_gid.as_deref().filter(|g| !g.is_empty()) {
+        manifest["authorGid"] = json!(gid);
+    }
     std::fs::write(
         pack_dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap(),
@@ -989,6 +993,7 @@ async fn install_library_pack(
     pack_id: String,
     pack_name: String,
     author: String,
+    author_gid: Option<String>,
     clips: Vec<LibPackClip>,
     banners: Vec<BannerAsset>,
     gmaiden_dir: Option<String>,
@@ -1064,11 +1069,14 @@ async fn install_library_pack(
         banner_total += 1;
     }
 
-    let manifest = json!({
+    let mut manifest = json!({
         "id": id, "name": pack_name, "version": "0.1.0", "locale": "th",
         "author": author, "description": "", "coverImage": cover,
         "mappings": Value::Object(mappings.clone()),
     });
+    if let Some(gid) = author_gid.as_deref().filter(|g| !g.is_empty()) {
+        manifest["authorGid"] = json!(gid);
+    }
     std::fs::write(
         pack_dir.join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap(),
