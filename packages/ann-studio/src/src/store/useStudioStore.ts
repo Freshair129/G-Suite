@@ -224,6 +224,13 @@ interface StudioState {
   setPlayheadPos: (p: number) => void;
   setTrackCount: (n: number) => void;
   setMasterVolume: (v: number) => void;
+
+  // optional Google sign-in (gstore GID hub) — fills authorGid/display-name
+  // for exported packs; every authoring flow works signed-out
+  gid: string;
+  gidDisplayName: string;
+  gidSignedIn: boolean;
+  setGidAuth: (p: { gid: string; displayName: string; signedIn: boolean }) => void;
 }
 
 const COLORS = [
@@ -479,6 +486,11 @@ export const useStudioStore = create<StudioState>()(
       setTrackCount: (trackCount) => set({ trackCount }),
 
       setMasterVolume: (masterVolume) => set({ masterVolume }),
+
+      gid: "",
+      gidDisplayName: "",
+      gidSignedIn: false,
+      setGidAuth: (p) => set({ gid: p.gid, gidDisplayName: p.displayName, gidSignedIn: p.signedIn }),
     }),
     {
       name: "gann-project",
