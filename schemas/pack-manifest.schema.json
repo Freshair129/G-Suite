@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Freshair129/G-Suite/schemas/pack-manifest.schema.json",
+  "title": "G-Maiden Announcer Pack Manifest",
+  "description": "The `manifest.json` at the root of an INSTALLED announcer pack (`voice-cache/packs/<id>/manifest.json`) — the real producer/consumer contract between G-AnnStudio and G-Maiden. Produced by G-AnnStudio's `install_gmaiden_pack` and `install_library_pack` (packages/ann-studio/src-tauri/src/lib.rs); consumed by G-Maiden's `src-tauri/src/voice_api/pack_io.rs` `struct Manifest` (serde `rename_all = \"camelCase\"`), which is the ground truth this schema describes. Not to be confused with `announcer-manifest.schema.json`, which covers the flat sidecar the plain `export` writes next to raw WAVs.",
+  "type": "object",
+  "required": ["id", "name", "version", "locale", "author", "description", "mappings"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Pack identifier, and the folder name under `voice-cache/packs/`. G-AnnStudio runs it through `sanitize_filename` before creating the directory; G-Maiden re-derives the directory itself, so this field is identity/display metadata. Avoid the value `voice-pack-default`, which G-Maiden reserves for the synthesized read-only bundled pack (`voice_api::DEFAULT_PACK_ID`)."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-facing pack name shown on the inventory tile and reported by `active_pack_name()`."
+    },
+    "version": {
+      "type": "string",
+      "description": "Pack version string (semver-ish). Both installers currently hard-code \"0.1.0\"; it is not the manifest schema version.",
+      "examples": ["0.1.0"]
+    },
+    "locale": {
+      "type": "string",
+      "description": "Spoken language of the clips, as a BCP-47-ish tag. Both installers currently write \"th\"; the bundled default pack reports \"th-TH\". Display metadata only — G-Maiden does not switch behavior on it.",
+      "examples": ["th", "th-TH", "en"]
+    },
+    "author": {
+      "type": "string",
+      "description": "Free-text creator name. Unverified — anyone can type anything here."
+    },
+    "authorGid": {
+      "type": "string",
+      "pattern": "^G-[FBP][23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6,10}$",
+      "description": "OPTIONAL creator GID (SPEC-2026-08-09 §4). Present only when the author was signed in to G-AnnStudio at export time; both installers omit the key entirely when the value is absent or an empty string, and packs authored before Phase 2 never carry it. UNSIGNED display metadata, never identity proof — the manifest is a plain file inside an importable `.zip`, so this value is attacker-controlled. G-Maiden surfaces it as an explicitly *unverified* creator chip and must not grant trust, entitlement, or authorship on the strength of it."
+    },
+    "description": {
+      "type": "string",
+      "description": "Long-form pack blurb. Both installers currently write \"\"."
+    },
+    "coverImage": {
+      "description": "OPTIONAL pack-level cover image for the inventory tile, as a pack-relative path. The installers set it to the first banner they write, or \"\" when the pack ships no banners. Absent or empty makes G-Maiden fall back to the first banner file alphabetically, then to a client-side gradient placeholder.",
+      "anyOf": [
+        { "type": "string", "const": "" },
+        { "$ref": "#/definitions/packRelativePath" }
+      ]
+    },
+    "mappings": {
+      "type": "object",
+      "description": "Event id -> clip/banner binding. Keys are announcer event ids from the authoritative taxonomy in `gmaiden-events.json` (mirrored in G-Maiden's `voice_api::EVENTS`); unknown ids are parsed and stored but never fired, and events with no entry fall through G-Maiden's chain to the legacy flat cache, the bundled default pack, then SAPI TTS. May legitimately be `{}`: G-Maiden's own `create_template`/`create_pack_skeleton` writes an empty-mappings skeleton that the user then fills in from the Voice Packs UI. Producer-side only, and NOT a constraint on this format: the two G-AnnStudio installers emit an entry only for events that have at least one mapped clip, and abort rather than ship a pack with nothing mapped.",
+      "additionalProperties": { "$ref": "#/definitions/mapping" }
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "mapping": {
+      "type": "object",
+      "description": "One event's binding. All five keys are REQUIRED: G-Maiden's `ManifestMapping` declares no serde defaults, so omitting any one of them fails the parse of the ENTIRE manifest, not just this entry. Both installers always emit all five, using \"\" / [] for the unused ones.",
+      "required": ["text", "thai", "banner", "bannerAsset", "clips"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "English caption for the event. Both installers currently write \"\"."
+        },
+        "thai": {
+          "type": "string",
+          "description": "Thai caption for the event. Both installers currently write \"\"."
+        },
+        "banner": {
+          "type": "string",
+          "description": "Banner CAPTION override — plain text drawn on the overlay card, NOT a path (the image is `bannerAsset`). When non-empty it replaces the event's default label in `voice_api::fired_banner`; \"\" keeps the default. Both installers currently write \"\"."
+        },
+        "bannerAsset": {
+          "description": "Pack-relative path to the banner IMAGE shown on the overlay when this event fires; inlined as a base64 `data:` URL because the overlay CSP is `img-src 'self' data:`. \"\" (the default) makes the overlay fall back to its built-in kill card. The installers set this only for events that also have clips.",
+          "anyOf": [
+            { "type": "string", "const": "" },
+            { "$ref": "#/definitions/packRelativePath" }
+          ]
+        },
+        "clips": {
+          "type": "array",
+          "description": "Pack-relative audio clips for this event; `audio::play_random` picks one per firing. The installers write `clips/<event>_NN.wav`. May be empty for a banner-only mapping, in which case audio falls through G-Maiden's normal chain (flat voice-cache, bundled default pack, SAPI TTS).",
+          "items": { "$ref": "#/definitions/packRelativePath" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "packRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A path relative to the pack directory, with `/` or `\\` separators (G-Maiden normalizes `\\` to `/`). These strings are ATTACKER-INFLUENCED — a manifest ships inside imported `.zip` packs — so G-Maiden resolves every one of them through `voice_api::safe_pack_path()`, which structurally rejects absolute, drive-qualified, UNC and verbatim paths and any `..` component, then canonicalizes and contains-checks the result against the pack directory (catching symlink escapes). Entries that fail validation are dropped silently rather than being fatal. The `pattern` here mirrors the cheap structural half of that check; it is documentation of intent, and is NOT the security boundary.",
+      "pattern": "^(?!([A-Za-z]:|[\\\\/]))(?!.*(^|[\\\\/])\\.\\.([\\\\/]|$)).+$"
+    }
+  }
+}

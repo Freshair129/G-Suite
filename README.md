@@ -37,8 +37,14 @@ Shared, language-agnostic specs in [`schemas/`](schemas) — neither repo depend
   authoritative list of events a pack can voice (kills, the full streak ladder, state events). Both
   G-AnnStudio (maps clips to these) and G-Maiden (`src-tauri/src/announcer.rs` fires them, plays
   `voice-cache/{event}/*.wav`) follow it. The streak ladder matches G-Maiden's overlay kill banner.
+- [`pack-manifest.schema.json`](schemas/pack-manifest.schema.json) — **the install contract**. The
+  `manifest.json` at the root of an installed pack (`voice-cache/packs/<id>/`), written by
+  `install_gmaiden_pack`/`install_library_pack` and parsed by G-Maiden's
+  `src-tauri/src/voice_api/pack_io.rs` `Manifest` — which is the ground truth the schema tracks.
+  Carries the pack metadata (`id`/`name`/`version`/`locale`/`author`/optional `authorGid`/
+  `description`/`coverImage`) plus the per-event `mappings`.
 - [`announcer-manifest.schema.json`](schemas/announcer-manifest.schema.json) — the JSON manifest the
-  plain `export` writes alongside the WAV clips.
+  plain `export` writes alongside the WAV clips. An export inventory only; G-Maiden never reads it.
 
 ## Stack
 

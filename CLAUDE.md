@@ -20,7 +20,9 @@ changing anything under "The G-Maiden seam" below).
 ## Layout
 
 ```
-schemas/                 shared contracts (gmaiden-events.json = event taxonomy; announcer-manifest)
+schemas/                 shared contracts (gmaiden-events.json = event taxonomy; pack-manifest =
+                         installed pack manifest.json, the real install contract; announcer-manifest
+                         = plain-export sidecar, G-Maiden never reads it)
 packages/ann-studio/
   package.json           tauri-cli root; `pnpm tauri build/dev` runs from HERE (not src/)
   src/                   React frontend (own package.json; Vite → ../src-tauri/gen/web)

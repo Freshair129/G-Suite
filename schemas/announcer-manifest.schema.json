@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/Freshair129/G-Suite/schemas/announcer-manifest.schema.json",
-  "title": "G-Maiden Announcer Manifest",
-  "description": "Contract between G-AnnStudio (producer) and G-Maiden (consumer). Maps audio clips to in-game Dota 2 events.",
+  "title": "G-AnnStudio Plain-Export Sidecar Manifest",
+  "description": "The `announcer-manifest.json` that G-AnnStudio's plain export (`export_all`, packages/ann-studio/src-tauri/src/lib.rs) writes alongside the raw WAV clips it cuts. This is an EXPORT INVENTORY, not the G-AnnStudio -> G-Maiden install contract: G-Maiden never reads this file. For the installed-pack contract (`voice-cache/packs/<id>/manifest.json`, written by `install_gmaiden_pack`/`install_library_pack` and parsed by G-Maiden's `voice_api::Manifest`), see `pack-manifest.schema.json` — that is where per-pack metadata such as `authorGid` lives.",
   "type": "object",
   "required": ["version", "pack_name", "clips"],
   "properties": {
@@ -14,11 +14,6 @@
     "pack_name": {
       "type": "string",
       "description": "Display name of the announcer pack."
-    },
-    "authorGid": {
-      "type": "string",
-      "pattern": "^G-[FBP][23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6,10}$",
-      "description": "Optional GID of the creator (unsigned display metadata, not identity proof)"
     },
     "clips": {
       "type": "array",
