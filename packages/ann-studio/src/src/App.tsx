@@ -7,6 +7,7 @@ import Settings from "./components/Settings";
 import EventTestGrid from "./components/EventTestGrid";
 import SourceView from "./components/SourceView";
 import { useStudioStore } from "./store/useStudioStore";
+import { restoreGidSession } from "./lib/gidAuth";
 import { useEffect, useState } from "react";
 
 export default function App() {
@@ -31,6 +32,10 @@ export default function App() {
     function up() { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
+
+  useEffect(() => {
+    void restoreGidSession();
+  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

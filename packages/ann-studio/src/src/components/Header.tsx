@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, useEffect } from "react";
-import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings, Play, Save, FolderOpen } from "lucide-react";
+import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings, Play, Save, FolderOpen, UserCircle2 } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runExport } from "../lib/actions";
 import { saveProject, openProject } from "../lib/project";
+import { signInWithGoogle, signOutGid } from "../lib/gidAuth";
 import type { AppView } from "../store/useStudioStore";
 
 function shortModel(m: string): string {
@@ -12,11 +13,12 @@ function shortModel(m: string): string {
 }
 
 export default function Header() {
-  const { wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel, view, setView } =
+  const { wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel, view, setView, gid, gidSignedIn } =
     useStudioStore();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [gidBusy, setGidBusy] = useState(false);
 
   useEffect(() => {
     invoke<string[]>("list_ollama_models")
@@ -84,6 +86,16 @@ export default function Header() {
       alert(msg);
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function handleGidSignIn() {
+    setGidBusy(true);
+    try {
+      const err = await signInWithGoogle();
+      if (err) alert(`เชื่อม GID ไม่สำเร็จ: ${err}`);
+    } finally {
+      setGidBusy(false);
     }
   }
 
@@ -167,6 +179,28 @@ export default function Header() {
             {ollamaModels.length === 0 && <option value="ollama:">Local · (no model)</option>}
           </select>
         </div>
+
+        {gidSignedIn ? (
+          <div className="hidden sm:flex items-center gap-1.5 pl-3 pr-1 py-1 bg-panel rounded-full border border-line text-xs">
+            <UserCircle2 size={14} className="text-lime shrink-0" />
+            <span className="text-ink-muted">GID {gid}</span>
+            <button
+              onClick={() => void signOutGid()}
+              className="px-2 py-0.5 rounded-full text-ink-faint hover:text-ink hover:bg-panel-hover transition"
+            >
+              ออกจากระบบ
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleGidSignIn}
+            disabled={gidBusy}
+            className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
+          >
+            <UserCircle2 size={15} className="text-lime" />
+            {gidBusy ? "กำลังเชื่อม…" : "เชื่อม GID"}
+          </button>
+        )}
 
         <button
           onClick={async () => alert(await openProject())}

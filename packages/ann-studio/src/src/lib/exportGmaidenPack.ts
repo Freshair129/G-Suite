@@ -24,6 +24,8 @@ export async function installGmaidenPack(
   reactive = false
 ): Promise<string> {
   const s = useStudioStore.getState();
+  const authorGid = s.gidSignedIn && s.gid ? s.gid : undefined;
+  const authorName = author || (s.gidSignedIn ? s.gidDisplayName : "");
   const wavPath = s.wavPath;
   const mapped = s.clips.filter((c) => c.event && c.event !== "unused");
   if (!mapped.length) return "ยังไม่มี clip ที่ map event — กด “AI map” ก่อนนะครับ";
@@ -73,7 +75,8 @@ export async function installGmaidenPack(
     const r = await invoke<PackInstallReport>("install_gmaiden_pack", {
       packId,
       packName,
-      author,
+      author: authorName,
+      authorGid,
       sourcePath: s.wavPath ?? "",
       clips: mapped.map((c) => ({
         name: c.name,
@@ -113,6 +116,8 @@ export async function installLibraryPack(
   reactive = false
 ): Promise<string> {
   const s = useStudioStore.getState();
+  const authorGid = s.gidSignedIn && s.gid ? s.gid : undefined;
+  const authorName = author || (s.gidSignedIn ? s.gidDisplayName : "");
   const pb = s.packBuilder;
   const libraryRoot = s.libraryRoot;
   const events = Object.keys(pb).filter((ev) => (pb[ev]?.length ?? 0) > 0);
@@ -149,7 +154,8 @@ export async function installLibraryPack(
     const r = await invoke<PackInstallReport>("install_library_pack", {
       packId,
       packName,
-      author,
+      author: authorName,
+      authorGid,
       clips,
       banners,
       gmaidenDir: s.gmaidenPath || null,
