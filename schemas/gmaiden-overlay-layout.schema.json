@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://g-suite.local/schemas/gmaiden-overlay-layout.schema.json",
+  "title": "G-Maiden overlay layout sync v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "layout"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alert", "gmeter", "toast", "companion", "advice", "buyback", "missing", "banner", "lowhp", "vol", "standby", "clock", "kda", "gold", "gpm", "xpm", "nw", "score", "hero"],
+      "properties": {
+        "alert": { "$ref": "#/$defs/module" }, "gmeter": { "$ref": "#/$defs/module" }, "toast": { "$ref": "#/$defs/module" },
+        "companion": { "$ref": "#/$defs/module" }, "advice": { "$ref": "#/$defs/module" }, "buyback": { "$ref": "#/$defs/module" },
+        "missing": { "$ref": "#/$defs/module" }, "banner": { "$ref": "#/$defs/module" }, "lowhp": { "$ref": "#/$defs/module" },
+        "vol": { "$ref": "#/$defs/module" }, "standby": { "$ref": "#/$defs/module" }, "clock": { "$ref": "#/$defs/module" },
+        "kda": { "$ref": "#/$defs/module" }, "gold": { "$ref": "#/$defs/module" }, "gpm": { "$ref": "#/$defs/module" },
+        "xpm": { "$ref": "#/$defs/module" }, "nw": { "$ref": "#/$defs/module" }, "score": { "$ref": "#/$defs/module" }, "hero": { "$ref": "#/$defs/module" }
+      }
+    }
+  },
+  "$defs": {
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "scale", "enabled"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 100 },
+        "y": { "type": "number", "minimum": 0, "maximum": 100 },
+        "scale": { "type": "number", "minimum": 0.6, "maximum": 1.6 },
+        "enabled": { "type": "boolean" }
+      }
+    }
+  }
+}

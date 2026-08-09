@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { cloneDefaultOverlayLayout, type OverlayLayout } from "../lib/overlayLayout";
 
 export interface Clip {
   id: string;
@@ -33,7 +34,7 @@ export interface Clip {
   master?: Record<string, number>;
 }
 
-export type AppView = "studio" | "profile" | "settings" | "test" | "source";
+export type AppView = "studio" | "profile" | "settings" | "test" | "overlay" | "source";
 
 /** Author-supplied banner image that replaces the auto tone-banner for one event.
  *  `b64` has NO `data:` prefix (ready for the Rust install command); `mime` is
@@ -150,6 +151,7 @@ interface StudioState {
   gmaidenConnected: boolean;
   gmaidenPath: string;
   voiceCache: VoiceCacheMap;
+  overlayLayout: OverlayLayout;
 
   /** event id → author banner override (unset = use the auto tone banner) */
   bannerOverrides: Record<string, BannerOverride>;
@@ -202,6 +204,7 @@ interface StudioState {
   setGMaiden: (connected: boolean, path: string, cache: VoiceCacheMap) => void;
   /** set the G-Maiden install directory (where packs are written) */
   setGmaidenPath: (path: string) => void;
+  setOverlayLayout: (layout: OverlayLayout) => void;
   /** set (ov) or clear (null) the banner override for one event */
   setBannerOverride: (event: string, ov: BannerOverride | null) => void;
   /** pack builder: assign / unassign a library sound to an event */
@@ -276,6 +279,7 @@ export const useStudioStore = create<StudioState>()(
       gmaidenConnected: false,
       gmaidenPath: "",
       voiceCache: {},
+      overlayLayout: cloneDefaultOverlayLayout(),
       bannerOverrides: {},
       packBuilder: {},
 
@@ -417,6 +421,7 @@ export const useStudioStore = create<StudioState>()(
         set({ gmaidenConnected, gmaidenPath, voiceCache }),
 
       setGmaidenPath: (gmaidenPath) => set({ gmaidenPath }),
+      setOverlayLayout: (overlayLayout) => set({ overlayLayout }),
 
       setBannerOverride: (event, ov) =>
         set((s) => {
@@ -504,6 +509,7 @@ export const useStudioStore = create<StudioState>()(
         bannerOverrides: s.bannerOverrides,
         packBuilder: s.packBuilder,
         gmaidenPath: s.gmaidenPath,
+        overlayLayout: s.overlayLayout,
       }),
     }
   )

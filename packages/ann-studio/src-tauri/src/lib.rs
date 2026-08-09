@@ -1257,6 +1257,35 @@ fn check_gmaiden(gmaiden_dir: Option<String>) -> GMaidenStatus {
 }
 
 #[derive(Serialize)]
+struct OverlayLayoutSyncReport {
+    ok: bool,
+}
+
+/// Send an already-edited layout to G-Maiden's dedicated bounded receiver.
+/// This intentionally does not share the announcer install route: no pack file,
+/// asset, or other settings field can cross this seam.
+#[tauri::command]
+async fn sync_overlay_layout(layout: serde_json::Value) -> Result<OverlayLayoutSyncReport, String> {
+    let response = reqwest::Client::new()
+        .post("http://127.0.0.1:3000/overlay/layout")
+        .json(&serde_json::json!({ "schemaVersion": 1, "layout": layout }))
+        .send()
+        .await
+        .map_err(|_| "เชื่อมต่อ G-Maiden ไม่ได้ — เปิด G-Maiden ก่อนแล้วลอง Sync ใหม่".to_string())?;
+    let payload: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| "G-Maiden ตอบกลับ layout sync ไม่ถูกต้อง".to_string())?;
+    if payload["ok"].as_bool() != Some(true) {
+        return Err(payload["error"]
+            .as_str()
+            .unwrap_or("G-Maiden ปฏิเสธ layout นี้")
+            .to_string());
+    }
+    Ok(OverlayLayoutSyncReport { ok: true })
+}
+
+#[derive(Serialize)]
 struct VoiceCacheEntry {
     event: String,
     files: Vec<String>,
@@ -2301,6 +2330,7 @@ pub fn run() {
             bake_animated_webp,
             generate_banner_image,
             check_gmaiden,
+            sync_overlay_layout,
             scan_voice_cache,
             init_library,
             query_sounds,

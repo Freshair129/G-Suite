@@ -6,6 +6,7 @@ import SoundLibrary from "./components/SoundLibrary";
 import Settings from "./components/Settings";
 import EventTestGrid from "./components/EventTestGrid";
 import SourceView from "./components/SourceView";
+import OverlayLab from "./components/OverlayLab";
 import { useStudioStore } from "./store/useStudioStore";
 import { restoreGidSession } from "./lib/gidAuth";
 import { useEffect, useState } from "react";
@@ -57,6 +58,8 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         {view === "settings" ? (
           <Settings />
+        ) : view === "overlay" ? (
+          <OverlayLab />
         ) : view === "test" ? (
           <EventTestGrid />
         ) : view === "profile" ? (

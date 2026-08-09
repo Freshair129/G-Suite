@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, useEffect } from "react";
-import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings, Play, Save, FolderOpen, UserCircle2 } from "lucide-react";
+import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings, Play, Save, FolderOpen, UserCircle2, PanelsTopLeft } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runExport } from "../lib/actions";
 import { saveProject, openProject } from "../lib/project";
@@ -146,6 +146,17 @@ export default function Header() {
           >
             <Play size={13} />
             ทดสอบ
+          </button>
+          <button
+            onClick={() => setView("overlay")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
+              view === "overlay"
+                ? "bg-white/10 text-white"
+                : "text-ink-faint hover:text-ink"
+            }`}
+          >
+            <PanelsTopLeft size={13} />
+            Overlay Lab
           </button>
           <button
             onClick={() => setView("settings")}
