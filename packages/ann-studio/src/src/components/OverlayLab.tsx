@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus, RotateCcw, Send, Sparkles } from "lucide-react";
+import BannerEditor from "./BannerEditor";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { toneBannerPngDataUrl } from "../lib/toneBanner";
 import {
+  boxPercent,
   cloneDefaultOverlayLayout,
+  DOTA_HUD_ZONES,
+  moduleCollisions,
+  moduleRect,
   OVERLAY_MODULE_IDS,
   syncOverlayLayout,
+  zoneConflicts,
   type OverlayLayout,
   type OverlayModuleId,
 } from "../lib/overlayLayout";
@@ -31,6 +37,7 @@ export default function OverlayLab() {
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("Draft only. Sync when you are happy with the HUD clearance.");
+  const [surface, setSurface] = useState<"banner" | "hud">("banner");
 
   useEffect(() => () => { if (screenUrl) URL.revokeObjectURL(screenUrl); }, [screenUrl]);
 
@@ -38,12 +45,47 @@ export default function OverlayLab() {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
   };
 
+  // The old drag rounded to whole percent while the grid overlay is drawn at 5%,
+  // so a module could never land on a line the user could actually see — the
+  // "magnet is off" report. Snap to the same 5% the grid draws, hold Alt for 1%.
+  //
+  // A uniform grid still cannot line a module up with Dota's HUD, whose edges sit
+  // at no round percentage, so we also snap the module's EDGES to nearby zone
+  // edges. Edge snapping is what makes a card sit flush against the top bar
+  // instead of "near enough"; centre-only snapping never could.
+  const GRID = 5;
+  const EDGE_SNAP = 1.5; // % — how close an edge must be before it grabs
+
+  const snapAxis = (
+    value: number,
+    half: number,
+    edges: number[],
+    fine: boolean,
+  ) => {
+    if (!fine) {
+      for (const edge of edges) {
+        // try aligning this module's near edge, then its far edge, to the guide
+        for (const candidate of [edge + half, edge - half]) {
+          if (Math.abs(candidate - value) <= EDGE_SNAP) return candidate;
+        }
+      }
+    }
+    const step = fine ? 1 : GRID;
+    return Math.round(value / step) * step;
+  };
+
   const move = (event: React.PointerEvent) => {
     if (!dragging || !stageRef.current) return;
     const box = stageRef.current.getBoundingClientRect();
+    const fine = event.altKey;
+    const { w, h } = boxPercent(dragging, layout[dragging].scale);
+    const rawX = ((event.clientX - box.left) / box.width) * 100;
+    const rawY = ((event.clientY - box.top) / box.height) * 100;
+    const xEdges = [0, 100, ...DOTA_HUD_ZONES.flatMap((z) => [z.left, z.right])];
+    const yEdges = [0, 100, ...DOTA_HUD_ZONES.flatMap((z) => [z.top, z.bottom])];
     update(dragging, {
-      x: Math.round(clamp(((event.clientX - box.left) / box.width) * 100, 0, 100)),
-      y: Math.round(clamp(((event.clientY - box.top) / box.height) * 100, 0, 100)),
+      x: clamp(snapAxis(rawX, w / 2, xEdges, fine), 0, 100),
+      y: clamp(snapAxis(rawY, h / 2, yEdges, fine), 0, 100),
     });
   };
 
@@ -76,6 +118,10 @@ export default function OverlayLab() {
     ? `data:${bannerOverrides[eventId].mime};base64,${bannerOverrides[eventId].b64}`
     : toneBannerPngDataUrl(eventId, 2);
 
+  if (surface === "banner") {
+    return <BannerEditor onOpenHudLayout={() => setSurface("hud")} />;
+  }
+
   return (
     <main className="flex-1 min-w-0 grid grid-cols-[minmax(0,1fr)_280px] overflow-hidden bg-base">
       <section className="min-w-0 overflow-y-auto p-5">
@@ -86,6 +132,9 @@ export default function OverlayLab() {
             <p className="text-xs text-ink-faint mt-1">Drag modules over a 16:9 Dota reference. Only Sync changes G-Maiden.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-lime/40 text-xs text-lime hover:bg-lime/10" onClick={() => setSurface("banner")}>
+              Banner editor
+            </button>
             <label className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink cursor-pointer">
               <ImagePlus size={14} /> Screenshot
               <input type="file" accept="image/*" className="hidden" onChange={loadScreenshot} />
@@ -114,40 +163,98 @@ export default function OverlayLab() {
           className="relative aspect-video overflow-hidden rounded-xl border border-line bg-[#111214] select-none"
           style={screenUrl ? { background: `center / cover no-repeat url(${screenUrl})` } : undefined}
         >
-          {!screenUrl && <>
-            <div className="absolute inset-x-0 top-0 h-[8%] bg-black/65 border-b border-white/10" />
-            <div className="absolute bottom-0 left-0 h-[29%] w-[27%] bg-black/60 border border-white/10" />
-            <div className="absolute bottom-0 left-[28%] h-[23%] w-[45%] bg-black/60 border border-white/10" />
-            <div className="absolute bottom-0 right-0 h-[26%] w-[25%] bg-black/60 border border-white/10" />
+          {/* Zones are drawn over a loaded screenshot too: the whole point is to see
+              where Dota will paint, and a screenshot taken between events shows an
+              EMPTY kill-feed strip — the one region that matters most at trigger time. */}
+          {DOTA_HUD_ZONES.map((zone) => (
+            <div
+              key={zone.id}
+              className={`absolute pointer-events-none ${
+                zone.kind === "transient"
+                  ? "border border-dashed border-amber-400/70 bg-amber-400/10"
+                  : screenUrl
+                    ? "border border-white/15"
+                    : "border border-white/10 bg-black/60"
+              }`}
+              style={{
+                left: `${zone.left}%`, top: `${zone.top}%`,
+                width: `${zone.right - zone.left}%`, height: `${zone.bottom - zone.top}%`,
+              }}
+            >
+              <span className="absolute left-1 top-0.5 text-[9px] leading-tight text-white/45">{zone.label}</span>
+            </div>
+          ))}
+          {!screenUrl && (
             <span className="absolute top-3 right-3 text-[10px] text-white/40">Load a Dota screenshot for exact HUD clearance</span>
-          </>}
+          )}
           <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] bg-[size:5%_5%]" />
           {OVERLAY_MODULE_IDS.map((id) => {
             const cfg = layout[id];
             if (!cfg.enabled) return null;
             const isBanner = id === "banner";
             const visible = !isBanner || playing;
+            // Size the box from MODULE_BOX rather than letting the label size it.
+            // A chip that fits its own text tells you nothing about whether the
+            // real module clears the HUD — which was the whole complaint.
+            const { w, h } = boxPercent(id, cfg.scale);
+            const rect = moduleRect(id, cfg);
+            const conflicts = zoneConflicts(rect);
+            const blocked = conflicts.some((z) => z.kind === "blocked");
+            const transient = conflicts.some((z) => z.kind === "transient");
+            const edge = blocked ? "border-red-400 bg-red-500/15" : transient ? "border-amber-400 bg-amber-400/15" : "border-white/35 bg-black/55";
             return (
               <div
                 key={id}
+                title={conflicts.length ? `Overlaps: ${conflicts.map((z) => z.label).join(", ")}` : LABEL[id]}
                 onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setDragging(id); }}
-                className={`absolute cursor-grab active:cursor-grabbing ${visible ? "" : "opacity-35"}`}
-                style={{ left: `${cfg.x}%`, top: `${cfg.y}%`, transform: `translate(-50%, -50%) scale(${cfg.scale})` }}
+                className={`absolute cursor-grab active:cursor-grabbing overflow-hidden rounded border ${edge} ${visible ? "" : "opacity-35"}`}
+                style={{
+                  left: `${cfg.x}%`, top: `${cfg.y}%`,
+                  width: `${w}%`, height: `${h}%`,
+                  transform: "translate(-50%, -50%)",
+                }}
               >
-                {isBanner ? (
-                  <div className="w-[230px] rounded-md border border-lime/50 bg-black/70 p-1 shadow-glow">
-                    <img src={banner} alt={`${eventId} banner`} className="block w-full rounded-sm" draggable={false} />
-                  </div>
-                ) : (
-                  <div className="rounded-md border border-white/25 bg-black/75 px-2 py-1 text-[10px] font-semibold text-white whitespace-nowrap">
-                    {LABEL[id]}
-                  </div>
+                {isBanner && (
+                  <img src={banner} alt={`${eventId} banner`} className="absolute inset-0 h-full w-full object-contain" draggable={false} />
                 )}
+                <span className="pointer-events-none absolute left-1 top-0.5 text-[9px] font-semibold leading-tight text-white drop-shadow">
+                  {LABEL[id]}
+                </span>
               </div>
             );
           })}
         </div>
-        <p className="mt-2 text-xs text-ink-faint">The banner is shown for 3.5 seconds, matching the in-game event window. Dota HUD areas remain visible as a clearance guide.</p>
+        <p className="mt-2 text-xs text-ink-faint">
+          Modules are drawn at their real size for a 1920&times;1080 screen. Snaps to the 5% grid and to
+          HUD edges; hold <kbd className="rounded border border-line px-1">Alt</kbd> for 1% nudges.
+          The banner previews for 3.5 seconds, matching the in-game event window.
+        </p>
+        {(() => {
+          // Overlap is only a problem when two things are on screen together, and the
+          // pair that bites is a module sitting under Dota's own kill banner — clear
+          // whenever you look at a screenshot, occupied exactly when an event fires.
+          const zoneHits = OVERLAY_MODULE_IDS
+            .filter((id) => layout[id].enabled)
+            .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, layout[id])) }))
+            .filter((entry) => entry.zones.length > 0);
+          const pairs = moduleCollisions(layout);
+          if (!zoneHits.length && !pairs.length) {
+            return <p className="mt-1 text-xs text-lime">No overlaps: every enabled module clears the HUD and each other.</p>;
+          }
+          return (
+            <div className="mt-1 space-y-0.5 text-xs">
+              {zoneHits.map(({ id, zones }) => (
+                <p key={id} className={zones.some((z) => z.kind === "blocked") ? "text-red-400" : "text-amber-400"}>
+                  {LABEL[id]} overlaps {zones.map((z) => z.label).join(", ")}
+                  {zones.every((z) => z.kind === "transient") && " — clear now, covered when the event fires"}
+                </p>
+              ))}
+              {pairs.map(([a, b]) => (
+                <p key={`${a}-${b}`} className="text-amber-400">{LABEL[a]} and {LABEL[b]} overlap each other</p>
+              ))}
+            </div>
+          );
+        })()}
       </section>
 
       <aside className="border-l border-line overflow-y-auto p-4 bg-panel/25">
