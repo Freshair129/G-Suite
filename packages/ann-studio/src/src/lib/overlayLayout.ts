@@ -13,9 +13,12 @@ const module = (x: number, y: number, enabled = true): OverlayModuleLayout => ({
 
 /** Mirrors G-Maiden `overlay/modules.ts::DEFAULT_LAYOUT`. Keep in sync with the v1 schema. */
 export const DEFAULT_OVERLAY_LAYOUT: OverlayLayout = {
-  alert: module(50, 12), gmeter: module(7, 47), toast: module(50, 19), companion: module(7, 39),
-  advice: module(50, 72), buyback: module(50, 63), missing: module(88, 12), banner: module(50, 27),
-  lowhp: module(50, 44), vol: module(50, 92), standby: module(50, 50), clock: module(5, 4),
+  // Top-centre column restacked 2026-08-11: Dota's own kill feed owns y8–17 at
+  // centre, so alert moved out from under it (was y12) and toast/banner shifted
+  // down to keep the column clear of itself. vol left the bottom HUD (was 50,92).
+  alert: module(50, 20), gmeter: module(7, 47), toast: module(50, 24), companion: module(7, 39),
+  advice: module(50, 72), buyback: module(50, 63), missing: module(88, 12), banner: module(50, 34),
+  lowhp: module(50, 44), vol: module(14, 72), standby: module(50, 50), clock: module(5, 4),
   kda: module(12, 4), gold: module(19, 4), gpm: module(26, 4), xpm: module(26, 10, false),
   nw: module(32, 4), score: module(58, 4, false), hero: module(14, 33, false),
 };
@@ -84,12 +87,12 @@ export const DOTA_HUD_ZONES: HudZone[] = [
   // left edge is 35, not a rounder 30: G-Maiden's own module registry records that
   // Dota's portrait bar "starts ≈x35", and the default stat strip is tuned to end
   // just short of it. A wider guess here flags that deliberate clearance as a bug.
-  { id: "topbar", label: "Hero portraits / score", left: 35, top: 0, right: 65, bottom: 8, kind: "blocked" },
-  { id: "killfeed", label: "Kill banner / feed", left: 38, top: 8, right: 62, bottom: 17, kind: "transient" },
-  { id: "scoreboard", label: "Scoreboard / FPS", left: 88, top: 0, right: 100, bottom: 6, kind: "blocked" },
-  { id: "minimap", label: "Minimap", left: 0, top: 78, right: 13, bottom: 100, kind: "blocked" },
-  { id: "hud", label: "Bottom HUD", left: 28, top: 77, right: 73, bottom: 100, kind: "blocked" },
-  { id: "shop", label: "Items / shop", left: 75, top: 74, right: 100, bottom: 100, kind: "blocked" },
+  { id: "topbar", label: "Dota 2 · hero portraits / score", left: 35, top: 0, right: 65, bottom: 8, kind: "blocked" },
+  { id: "killfeed", label: "Dota 2 · kill banner / feed", left: 38, top: 8, right: 62, bottom: 17, kind: "transient" },
+  { id: "scoreboard", label: "Dota 2 · scoreboard / FPS", left: 88, top: 0, right: 100, bottom: 6, kind: "blocked" },
+  { id: "minimap", label: "Dota 2 · minimap", left: 0, top: 78, right: 13, bottom: 100, kind: "blocked" },
+  { id: "hud", label: "Dota 2 · bottom HUD", left: 28, top: 77, right: 73, bottom: 100, kind: "blocked" },
+  { id: "shop", label: "Dota 2 · items / shop", left: 75, top: 74, right: 100, bottom: 100, kind: "blocked" },
 ];
 
 /** Zones a module's rect currently intrudes on. */

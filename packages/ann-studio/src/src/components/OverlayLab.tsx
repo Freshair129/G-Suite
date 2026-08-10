@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus, RotateCcw, Send, Sparkles } from "lucide-react";
 import BannerEditor from "./BannerEditor";
+import { OverlayModulePreview } from "./OverlayModulePreview";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { toneBannerPngDataUrl } from "../lib/toneBanner";
 import {
+  BOX_REF,
   boxPercent,
   cloneDefaultOverlayLayout,
   DOTA_HUD_ZONES,
@@ -31,6 +33,9 @@ export default function OverlayLab() {
   const setLayout = useStudioStore((s) => s.setOverlayLayout);
   const bannerOverrides = useStudioStore((s) => s.bannerOverrides);
   const stageRef = useRef<HTMLDivElement>(null);
+  // Previews are real px, so they must shrink with the stage: the reference is a
+  // 1920-wide screen and the stage is whatever the panel gives us.
+  const [stageScale, setStageScale] = useState(0);
   const [dragging, setDragging] = useState<OverlayModuleId | null>(null);
   const [eventId, setEventId] = useState("kill");
   const [playing, setPlaying] = useState(false);
@@ -40,6 +45,21 @@ export default function OverlayLab() {
   const [surface, setSurface] = useState<"banner" | "hud">("banner");
 
   useEffect(() => () => { if (screenUrl) URL.revokeObjectURL(screenUrl); }, [screenUrl]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const measure = () => setStageScale(stage.getBoundingClientRect().width / BOX_REF.w);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    return () => observer.disconnect();
+    // `surface` matters even though it is unused above: this component returns
+    // <BannerEditor/> before the stage exists, so on the first mount the ref is
+    // null and this effect bails. Without the dep it never re-runs when the user
+    // switches to the HUD surface, stageScale stays 0, and every preview renders
+    // at scale(0) — an invisible module inside a correctly-sized box.
+  }, [surface]);
 
   const update = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
@@ -214,10 +234,18 @@ export default function OverlayLab() {
                   transform: "translate(-50%, -50%)",
                 }}
               >
-                {isBanner && (
-                  <img src={banner} alt={`${eventId} banner`} className="absolute inset-0 h-full w-full object-contain" draggable={false} />
-                )}
-                <span className="pointer-events-none absolute left-1 top-0.5 text-[9px] font-semibold leading-tight text-white drop-shadow">
+                {/* The real component, drawn at true px and scaled by the stage, so
+                    the preview is the actual thing rather than a stand-in. The
+                    bordered box around it is the MODULE_BOX footprint used for the
+                    overlap maths — when the two disagree visibly, MODULE_BOX is the
+                    entry that needs updating. */}
+                <div
+                  className="pointer-events-none absolute left-1/2 top-1/2 origin-center"
+                  style={{ transform: `translate(-50%, -50%) scale(${stageScale * cfg.scale})` }}
+                >
+                  <OverlayModulePreview id={id} bannerSrc={isBanner ? banner : undefined} />
+                </div>
+                <span className="pointer-events-none absolute -top-3.5 left-0 whitespace-nowrap text-[9px] font-semibold leading-tight text-white/80 drop-shadow">
                   {LABEL[id]}
                 </span>
               </div>
