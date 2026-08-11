@@ -30,3 +30,9 @@ pnpm-debug.log*
 # Env
 .env
 .env.local
+
+# Vite build output from verification runs (`vite build --outDir .verify-*-build`).
+# Untracked but previously unignored, so a `git add -A` would have committed ~3MB
+# of bundled JS. The directories are left in place; only the paths are ignored.
+.verify-build/
+.verify-*-build/
