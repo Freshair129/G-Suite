@@ -75,47 +75,19 @@ export default function OverlayLab() {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
   };
 
-  // The old drag rounded to whole percent while the grid overlay is drawn at 5%,
-  // so a module could never land on a line the user could actually see — the
-  // "magnet is off" report. Snap to the same 5% the grid draws, hold Alt for 1%.
-  //
-  // A uniform grid still cannot line a module up with Dota's HUD, whose edges sit
-  // at no round percentage, so we also snap the module's EDGES to nearby zone
-  // edges. Edge snapping is what makes a card sit flush against the top bar
-  // instead of "near enough"; centre-only snapping never could.
-  const GRID = 5;
-  const EDGE_SNAP = 1.5; // % — how close an edge must be before it grabs
-
-  const snapAxis = (
-    value: number,
-    half: number,
-    edges: number[],
-    fine: boolean,
-  ) => {
-    if (!fine) {
-      for (const edge of edges) {
-        // try aligning this module's near edge, then its far edge, to the guide
-        for (const candidate of [edge + half, edge - half]) {
-          if (Math.abs(candidate - value) <= EDGE_SNAP) return candidate;
-        }
-      }
-    }
-    const step = fine ? 1 : GRID;
-    return Math.round(value / step) * step;
-  };
-
+  // Free positioning, no magnet. Snapping was added to fix a grid that never
+  // lined up, but the real answer is that a uniform grid is the wrong tool here:
+  // Dota's HUD edges sit at no round percentage, so any grid fights the layout
+  // instead of helping it. Placement is now continuous and the conflict readout
+  // — which knows the actual geometry — is what tells you when you are wrong.
+  // Values are rounded to 0.1% purely to keep the synced layout tidy.
   const move = (event: React.PointerEvent) => {
     if (!dragging || !stageRef.current) return;
     const box = stageRef.current.getBoundingClientRect();
-    const fine = event.altKey;
-    const { w, h } = boxPercent(dragging, layout[dragging].scale);
-    const rawX = ((event.clientX - box.left) / box.width) * 100;
-    const rawY = ((event.clientY - box.top) / box.height) * 100;
-    const xEdges = [0, 100, ...DOTA_HUD_ZONES.flatMap((z) => [z.left, z.right])];
-    const yEdges = [0, 100, ...DOTA_HUD_ZONES.flatMap((z) => [z.top, z.bottom])];
+    const round = (value: number) => Math.round(value * 10) / 10;
     update(dragging, {
-      x: clamp(snapAxis(rawX, w / 2, xEdges, fine), 0, 100),
-      y: clamp(snapAxis(rawY, h / 2, yEdges, fine), 0, 100),
+      x: clamp(round(((event.clientX - box.left) / box.width) * 100), 0, 100),
+      y: clamp(round(((event.clientY - box.top) / box.height) * 100), 0, 100),
     });
   };
 
@@ -219,7 +191,8 @@ export default function OverlayLab() {
               Dota 2 reference — load your own capture for your aspect ratio / HUD skin
             </span>
           )}
-          <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] bg-[size:5%_5%]" />
+          {/* Grid overlay removed with the magnet: lines you cannot snap to are
+              just texture over the game screenshot. */}
           {OVERLAY_MODULE_IDS.map((id) => {
             const cfg = layout[id];
             if (!cfg.enabled) return null;
@@ -233,33 +206,48 @@ export default function OverlayLab() {
             const conflicts = zoneConflicts(rect);
             const blocked = conflicts.some((z) => z.kind === "blocked");
             const transient = conflicts.some((z) => z.kind === "transient");
-            const edge = blocked ? "border-red-400 bg-red-500/15" : transient ? "border-amber-400 bg-amber-400/15" : "border-white/35 bg-black/55";
+            // Ring ONLY when something is wrong. The permanent grey box that used
+            // to sit here framed every module in furniture that was not part of the
+            // overlay, and its overflow-hidden clipped any preview wider than the
+            // nominal MODULE_BOX — the advice and buyback cards lost their last
+            // line. The box still drives hit-testing and the overlap maths; it is
+            // just no longer painted.
+            const ring = blocked
+              ? "ring-1 ring-red-400"
+              : transient
+                ? "ring-1 ring-amber-400"
+                : dragging === id
+                  ? "ring-1 ring-lime/70"
+                  : "";
             return (
               <div
                 key={id}
                 title={conflicts.length ? `Overlaps: ${conflicts.map((z) => z.label).join(", ")}` : LABEL[id]}
                 onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setDragging(id); }}
-                className={`absolute cursor-grab active:cursor-grabbing overflow-hidden rounded border ${edge} ${visible ? "" : "opacity-35"}`}
+                className={`absolute cursor-grab active:cursor-grabbing rounded ${ring} ${visible ? "" : "opacity-35"}`}
                 style={{
                   left: `${cfg.x}%`, top: `${cfg.y}%`,
                   width: `${w}%`, height: `${h}%`,
                   transform: "translate(-50%, -50%)",
                 }}
               >
-                {/* The real component, drawn at true px and scaled by the stage, so
-                    the preview is the actual thing rather than a stand-in. The
-                    bordered box around it is the MODULE_BOX footprint used for the
-                    overlap maths — when the two disagree visibly, MODULE_BOX is the
-                    entry that needs updating. */}
-                <div
-                  className="pointer-events-none absolute left-1/2 top-1/2 origin-center"
-                  style={{ transform: `translate(-50%, -50%) scale(${stageScale * cfg.scale})` }}
-                >
-                  <OverlayModulePreview id={id} bannerSrc={isBanner ? banner : undefined} />
+                {/* The real component at true px, scaled by the stage. Centred with
+                    flex so the scale is about its own centre and nothing is clipped:
+                    the wrapper keeps MODULE_BOX dimensions for hit-testing while the
+                    preview is free to overflow it. */}
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="origin-center" style={{ transform: `scale(${stageScale * cfg.scale})` }}>
+                    <OverlayModulePreview id={id} bannerSrc={isBanner ? banner : undefined} />
+                  </div>
                 </div>
-                <span className="pointer-events-none absolute -top-3.5 left-0 whitespace-nowrap text-[9px] font-semibold leading-tight text-white/80 drop-shadow">
-                  {LABEL[id]}
-                </span>
+                {/* Name only the module being moved. A permanent label on all 19 is
+                    the same clutter the grey boxes were — and the modules now look
+                    like themselves, so they no longer need naming to be identified. */}
+                {dragging === id && (
+                  <span className="pointer-events-none absolute -top-4 left-0 whitespace-nowrap rounded bg-black/80 px-1 text-[10px] font-semibold leading-tight text-lime">
+                    {LABEL[id]} · {cfg.x},{cfg.y}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -302,7 +290,16 @@ export default function OverlayLab() {
         <div className="space-y-2">
           {OVERLAY_MODULE_IDS.map((id) => {
             const cfg = layout[id];
-            return <div key={id} className="rounded-lg border border-line bg-black/15 p-2">
+            // Accent the row for the module being dragged. With 19 rows and no
+            // labels on the stage, there was nothing tying the thing under the
+            // cursor to its entry here — and the live x,y readout is in this row,
+            // so it is exactly where you look while positioning.
+            const active = dragging === id;
+            return <div
+              key={id}
+              ref={(node) => { if (active && node) node.scrollIntoView({ block: "nearest" }); }}
+              className={`rounded-lg border p-2 transition-colors ${active ? "border-lime bg-lime/10" : "border-line bg-black/15"}`}
+            >
               <div className="flex items-center justify-between gap-2"><label className="flex items-center gap-2 text-xs text-ink-muted"><input className="accent-lime" type="checkbox" checked={cfg.enabled} onChange={(event) => update(id, { enabled: event.target.checked })} />{LABEL[id]}</label><span className="text-[10px] text-ink-faint">{cfg.x},{cfg.y}</span></div>
               <div className="mt-1.5 flex items-center gap-2"><span className="text-[10px] text-ink-faint">Scale</span><input className="flex-1" type="range" min="0.6" max="1.6" step="0.05" value={cfg.scale} disabled={!cfg.enabled} onChange={(event) => update(id, { scale: Number(event.target.value) })} /><span className="w-7 text-right text-[10px] text-ink-muted">{cfg.scale.toFixed(2)}</span></div>
             </div>;
