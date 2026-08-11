@@ -14,6 +14,7 @@ import {
   DOTA_HUD_ZONES,
   STAGE_ZONES,
   modulesOnScreen,
+  ACCEPTED_OVERLAPS,
   moduleCollisions,
   moduleRect,
   OVERLAY_MODULE_IDS,
@@ -304,7 +305,8 @@ export default function OverlayLab() {
             const { w, h } = boxPercent(id, cfg.scale);
             const rect = moduleRect(id, cfg);
             const drawn = onScreen.has(id);
-            const conflicts = drawn ? zoneConflicts(rect, zones) : [];
+            const accepted = ACCEPTED_OVERLAPS[id] !== undefined;
+            const conflicts = drawn && !accepted ? zoneConflicts(rect, zones) : [];
             const blocked = conflicts.some((z) => z.kind === "blocked");
             const transient = conflicts.some((z) => z.kind === "transient");
             // Ring ONLY when something is wrong. The permanent grey box that used
@@ -364,7 +366,7 @@ export default function OverlayLab() {
           // pair that bites is a module sitting under Dota's own kill banner — clear
           // whenever you look at a screenshot, occupied exactly when an event fires.
           const zoneHits = OVERLAY_MODULE_IDS
-            .filter((id) => layout[id].enabled && onScreen.has(id))
+            .filter((id) => layout[id].enabled && onScreen.has(id) && ACCEPTED_OVERLAPS[id] === undefined)
             .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, layout[id]), zones) }))
             .filter((entry) => entry.zones.length > 0);
           const pairs = moduleCollisions(layout);

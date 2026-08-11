@@ -18,7 +18,11 @@ export const DEFAULT_OVERLAY_LAYOUT: OverlayLayout = {
   // down to keep the column clear of itself. vol left the bottom HUD (was 50,92).
   alert: module(50, 20), gmeter: module(7, 47), toast: module(50, 24), companion: module(7, 39),
   advice: module(50, 72), buyback: module(50, 63), missing: module(88, 12), banner: module(50, 34),
-  lowhp: module(50, 44), vol: module(14, 72), standby: module(50, 50),
+  // The three cues that outlive a match, placed to clear BOTH screens (see
+  // DOTA_PREGAME_ZONES). standby is pre-game only, so it takes the top band
+  // above the rosters; toast and vol take the left band and the bottom gutter,
+  // the two strips neither screen uses.
+  lowhp: module(50, 44), vol: module(20, 95), standby: module(50, 5),
   // Stat strip compacted left: Dota's portrait bar really begins at ~31%, so the
   // old strip put Net Worth (box 29.5–34.5) underneath it. Everything shifts left
   // to end clear of 30. `score` left the bar entirely — it is disabled by default,
@@ -146,11 +150,32 @@ export const PREGAME_MODULES: ReadonlySet<OverlayModuleId> = new Set<OverlayModu
   "toast",
 ]);
 
-/** Modules worth checking on a given screen. In-game draws them all. */
+/**
+ * The mirror of PREGAME_MODULES: `standby` renders on `!inGame`, so it is the
+ * one module the in-game screen never draws. Judging it there is the same
+ * false positive in the other direction.
+ */
+export const INGAME_HIDDEN: ReadonlySet<OverlayModuleId> = new Set<OverlayModuleId>(["standby"]);
+
+/**
+ * Overlaps that are a deliberate trade, not a defect — reported as accepted
+ * rather than as a red warning.
+ *
+ * A checker that keeps flagging something nobody intends to fix teaches people
+ * to ignore it, which costs more than the overlap does. Recording the reason
+ * here keeps the red list strictly actionable while leaving the fact visible.
+ */
+export const ACCEPTED_OVERLAPS: Partial<Record<OverlayModuleId, string>> = {
+  toast:
+    "in-game it belongs to the alert → toast → banner column, which is where it fires " +
+    "almost always; pre-game it is a ≤3s notification passing over the map",
+};
+
+/** Modules a given screen actually draws — the only ones worth judging on it. */
 export function modulesOnScreen(screen: StageScreen): readonly OverlayModuleId[] {
   return screen === "pregame"
     ? OVERLAY_MODULE_IDS.filter((id) => PREGAME_MODULES.has(id))
-    : OVERLAY_MODULE_IDS;
+    : OVERLAY_MODULE_IDS.filter((id) => !INGAME_HIDDEN.has(id));
 }
 
 /**
