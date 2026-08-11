@@ -41,6 +41,26 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
  */
 const DOTA_HUD_REFERENCE = "/dota-hud-reference.webp";
 
+/**
+ * View state that has to survive leaving the tab.
+ *
+ * App.tsx swaps tabs by conditional render, so OverlayLab unmounts and every
+ * useState in it dies: you came back to the Banner editor, on the default event,
+ * with your loaded screenshot gone — even though the layout itself had been kept
+ * all along (it lives in the persisted store, as do banner edits). Losing your
+ * place on every tab switch reads as "it forgot everything".
+ *
+ * Module-scoped on purpose rather than added to useStudioStore: this is view
+ * state, not project data, and a blob: URL is meaningless after a reload anyway.
+ * It survives tab switches — the actual complaint — while restarting the app
+ * still starts clean.
+ */
+const labView: { surface: "banner" | "hud"; eventId: string; screenUrl: string | null } = {
+  surface: "banner",
+  eventId: "kill",
+  screenUrl: null,
+};
+
 export default function OverlayLab() {
   const layout = useStudioStore((s) => s.overlayLayout);
   const setLayout = useStudioStore((s) => s.setOverlayLayout);
@@ -50,14 +70,24 @@ export default function OverlayLab() {
   // 1920-wide screen and the stage is whatever the panel gives us.
   const [stageScale, setStageScale] = useState(0);
   const [dragging, setDragging] = useState<OverlayModuleId | null>(null);
-  const [eventId, setEventId] = useState("kill");
   const [playing, setPlaying] = useState(false);
-  const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("Draft only. Sync when you are happy with the HUD clearance.");
-  const [surface, setSurface] = useState<"banner" | "hud">("banner");
 
-  useEffect(() => () => { if (screenUrl) URL.revokeObjectURL(screenUrl); }, [screenUrl]);
+  // Seed from the cache above and write back on every change, so a tab switch
+  // returns you to the surface, event and screenshot you left.
+  const [eventId, setEventIdState] = useState(labView.eventId);
+  const [screenUrl, setScreenUrlState] = useState<string | null>(labView.screenUrl);
+  const [surface, setSurfaceState] = useState<"banner" | "hud">(labView.surface);
+
+  const setEventId = (value: string) => { labView.eventId = value; setEventIdState(value); };
+  const setSurface = (value: "banner" | "hud") => { labView.surface = value; setSurfaceState(value); };
+  const setScreenUrl = (value: string | null) => { labView.screenUrl = value; setScreenUrlState(value); };
+
+  // No revoke-on-unmount: the object URL has to outlive this component now, or
+  // coming back to the tab would show a dead image. The previous URL is revoked
+  // when a new screenshot replaces it (loadScreenshot), which bounds this to one
+  // live URL per session.
 
   useEffect(() => {
     const stage = stageRef.current;
