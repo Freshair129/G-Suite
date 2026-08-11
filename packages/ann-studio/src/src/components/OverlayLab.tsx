@@ -28,6 +28,16 @@ const LABEL: Record<OverlayModuleId, string> = {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
+/**
+ * Annotated 16:9 Dota 2 HUD reference, bundled so the stage shows the real game
+ * out of the box instead of grey placeholder blocks — you cannot judge clearance
+ * against rectangles. Users can still load their own capture over it, which is
+ * the accurate option: HUD geometry shifts with aspect ratio and HUD skins.
+ *
+ * Valve/Dota 2 artwork, used as a layout reference inside a companion tool.
+ */
+const DOTA_HUD_REFERENCE = "/dota-hud-reference.webp";
+
 export default function OverlayLab() {
   const layout = useStudioStore((s) => s.overlayLayout);
   const setLayout = useStudioStore((s) => s.setOverlayLayout);
@@ -181,7 +191,7 @@ export default function OverlayLab() {
           onPointerUp={() => setDragging(null)}
           onPointerLeave={() => setDragging(null)}
           className="relative aspect-video overflow-hidden rounded-xl border border-line bg-[#111214] select-none"
-          style={screenUrl ? { background: `center / cover no-repeat url(${screenUrl})` } : undefined}
+          style={{ background: `center / cover no-repeat url(${screenUrl ?? DOTA_HUD_REFERENCE})` }}
         >
           {/* Zones are drawn over a loaded screenshot too: the whole point is to see
               where Dota will paint, and a screenshot taken between events shows an
@@ -189,12 +199,12 @@ export default function OverlayLab() {
           {DOTA_HUD_ZONES.map((zone) => (
             <div
               key={zone.id}
+              // Outline only, never filled: there is always a real screen underneath
+              // now, and blanking out the HUD would hide the very thing being cleared.
               className={`absolute pointer-events-none ${
                 zone.kind === "transient"
-                  ? "border border-dashed border-amber-400/70 bg-amber-400/10"
-                  : screenUrl
-                    ? "border border-white/15"
-                    : "border border-white/10 bg-black/60"
+                  ? "border border-dashed border-amber-400/80 bg-amber-400/10"
+                  : "border border-white/25"
               }`}
               style={{
                 left: `${zone.left}%`, top: `${zone.top}%`,
@@ -205,7 +215,9 @@ export default function OverlayLab() {
             </div>
           ))}
           {!screenUrl && (
-            <span className="absolute top-3 right-3 text-[10px] text-white/40">Load a Dota screenshot for exact HUD clearance</span>
+            <span className="absolute bottom-1 right-2 text-[9px] text-white/50">
+              Dota 2 reference — load your own capture for your aspect ratio / HUD skin
+            </span>
           )}
           <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] bg-[size:5%_5%]" />
           {OVERLAY_MODULE_IDS.map((id) => {
