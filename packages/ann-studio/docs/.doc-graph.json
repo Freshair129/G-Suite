@@ -1,0 +1,1067 @@
+{
+  "version": "1.0.0",
+  "generated_by": "rwang:doc-graph",
+  "generated_at": "2026-08-11T16:36:36.471223Z",
+  "scope": "G-Overlay Lab and the G-Maiden handoff",
+  "stats": {
+    "total_nodes": 49,
+    "total_edges": 86,
+    "stale_edges": 1,
+    "contradiction_edges": 0,
+    "coverage": {
+      "requirements_with_code": "80% (4/5, partial)",
+      "requirements_with_tests": "80% (4/5, partial)",
+      "code_with_docs": "100% (11/11 in scoped graph)"
+    }
+  },
+  "nodes": [
+    {
+      "id": "doc:PRODUCT",
+      "type": "document",
+      "label": "G-AnnStudio Product Context",
+      "defined_in": "packages/ann-studio/PRODUCT.md",
+      "hash": "ef1a46d49948",
+      "status": "beta"
+    },
+    {
+      "id": "doc:README",
+      "type": "document",
+      "label": "Documentation Hub",
+      "defined_in": "packages/ann-studio/docs/README.md",
+      "hash": "ef3db332bc21",
+      "status": "beta"
+    },
+    {
+      "id": "doc:PRD-SDD-v0.1",
+      "type": "document",
+      "label": "G-AnnStudio PRD and SDD v0.1",
+      "defined_in": "packages/ann-studio/docs/PRD-SDD-v0.1.md",
+      "hash": "1e6ec80483f9",
+      "status": "beta"
+    },
+    {
+      "id": "doc:implementation-plan",
+      "type": "document",
+      "label": "G-Overlay Lab Implementation Plan",
+      "defined_in": "packages/ann-studio/docs/implementation-plan.md",
+      "hash": "68274acf8037",
+      "status": "changed",
+      "last_verified": "2026-08-11T16:36:33.646324Z"
+    },
+    {
+      "id": "doc:rca-vite-build-timeout",
+      "type": "document",
+      "label": "Vite Build Timeout RCA",
+      "defined_in": "packages/ann-studio/docs/rca/2026-08-11-vite-build-timeout.md",
+      "hash": "43bac32220a7",
+      "status": "beta"
+    },
+    {
+      "id": "doc:ARCHITECTURE",
+      "type": "document",
+      "label": "G-AnnStudio Architecture",
+      "defined_in": "packages/ann-studio/docs/ARCHITECTURE.md",
+      "hash": "85ee1e4fa533",
+      "status": "beta"
+    },
+    {
+      "id": "doc:CONTRIBUTING",
+      "type": "document",
+      "label": "G-AnnStudio Contributing",
+      "defined_in": "packages/ann-studio/docs/CONTRIBUTING.md",
+      "hash": "eeb66072dc4f",
+      "status": "beta"
+    },
+    {
+      "id": "doc:frontend-design-system",
+      "type": "document",
+      "label": "Frontend Design System",
+      "defined_in": "packages/ann-studio/docs/frontend-design-system.md",
+      "hash": "4cbd68e9b600",
+      "status": "beta"
+    },
+    {
+      "id": "doc:api-index",
+      "type": "document",
+      "label": "G-AnnStudio API Index",
+      "defined_in": "packages/ann-studio/docs/api/README.md",
+      "hash": "ec549b0697b5",
+      "status": "beta"
+    },
+    {
+      "id": "doc:appendix-A",
+      "type": "document",
+      "label": "Local API Specification",
+      "defined_in": "packages/ann-studio/docs/appendices/A-api-spec.md",
+      "hash": "6dc3809bea44",
+      "status": "beta"
+    },
+    {
+      "id": "doc:appendix-B",
+      "type": "document",
+      "label": "Local Banner Project Schema",
+      "defined_in": "packages/ann-studio/docs/appendices/B-local-project-schema.md",
+      "hash": "5c6700343ba6",
+      "status": "beta"
+    },
+    {
+      "id": "doc:appendix-E",
+      "type": "document",
+      "label": "G-AnnStudio Risk Matrix",
+      "defined_in": "packages/ann-studio/docs/appendices/E-risk-matrix.md",
+      "hash": "ed858d907548",
+      "status": "beta"
+    },
+    {
+      "id": "doc:appendix-F",
+      "type": "document",
+      "label": "G-AnnStudio Glossary",
+      "defined_in": "packages/ann-studio/docs/appendices/F-glossary.md",
+      "hash": "3e26822341b9",
+      "status": "beta"
+    },
+    {
+      "id": "doc:content-taxonomy",
+      "type": "document",
+      "label": "Content-Type Taxonomy",
+      "defined_in": "packages/ann-studio/docs/content-taxonomy.md",
+      "hash": "01bb2b7bc23c",
+      "status": "proposal"
+    },
+    {
+      "id": "doc:g-overlay-lab",
+      "type": "document",
+      "label": "G-Overlay Lab Sync",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab.md",
+      "hash": "1aa393bd57ee",
+      "status": "current"
+    },
+    {
+      "id": "doc:g-overlay-lab-figma-editor",
+      "type": "document",
+      "label": "Figma-grade Banner Editor",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "hash": "a67e3ef94c50",
+      "status": "beta"
+    },
+    {
+      "id": "doc:motion-export-contract",
+      "type": "document",
+      "label": "Motion Export Contract Draft",
+      "defined_in": "packages/ann-studio/docs/motion-export-contract-draft.md",
+      "hash": "7e7484dfde93",
+      "status": "candidate"
+    },
+    {
+      "id": "doc:traceability",
+      "type": "document",
+      "label": "G-Overlay Lab Traceability",
+      "defined_in": "packages/ann-studio/docs/appendices/D-traceability.md",
+      "hash": "e9e60f208aea",
+      "status": "beta"
+    },
+    {
+      "id": "doc:CR-014",
+      "type": "document",
+      "label": "G-Maiden CR-014 Sync Receiver",
+      "defined_in": "G-Maiden/docs/change request/CR-014-g-overlay-lab-sync.md",
+      "hash": "93182ed9431e",
+      "status": "current"
+    },
+    {
+      "id": "sec:g-overlay-lab-figma-editor:requirements",
+      "type": "section",
+      "label": "Requirement map",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "beta"
+    },
+    {
+      "id": "sec:g-overlay-lab-figma-editor:cloud",
+      "type": "section",
+      "label": "Private cloud sync C-3/HIGH",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "beta"
+    },
+    {
+      "id": "req:GOE-001",
+      "type": "requirement",
+      "label": "Layer tree composition",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "partial"
+    },
+    {
+      "id": "req:GOE-002",
+      "type": "requirement",
+      "label": "Canvas and inspector editing",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "partial"
+    },
+    {
+      "id": "req:GOE-003",
+      "type": "requirement",
+      "label": "Runtime-safe motion export",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "partial"
+    },
+    {
+      "id": "req:GOE-004",
+      "type": "requirement",
+      "label": "HUD event preview",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "partial"
+    },
+    {
+      "id": "req:GOE-005",
+      "type": "requirement",
+      "label": "Private cloud sync",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "proposed"
+    },
+    {
+      "id": "code:schema/gmaiden-overlay-layout",
+      "type": "code_file",
+      "label": "Overlay layout schema v1",
+      "defined_in": "schemas/gmaiden-overlay-layout.schema.json",
+      "hash": "15c2a918d610",
+      "status": "current"
+    },
+    {
+      "id": "code:ann/OverlayLab",
+      "type": "code_file",
+      "label": "G-Overlay Lab surface router",
+      "defined_in": "packages/ann-studio/src/src/components/OverlayLab.tsx",
+      "hash": "92704b9da916",
+      "status": "changed",
+      "annotations": {
+        "@req": [
+          "GOE-004"
+        ],
+        "@spec": [
+          "SDD-004"
+        ]
+      },
+      "last_verified": "2026-08-11T16:36:35.756529Z"
+    },
+    {
+      "id": "code:ann/overlayLayout",
+      "type": "code_file",
+      "label": "Overlay layout sender",
+      "defined_in": "packages/ann-studio/src/src/lib/overlayLayout.ts",
+      "hash": "d3ac8aecafa0",
+      "status": "changed",
+      "last_verified": "2026-08-11T16:36:35.756718Z"
+    },
+    {
+      "id": "code:ann/bakeBanner",
+      "type": "code_file",
+      "label": "Animated WebP bake adapter",
+      "defined_in": "packages/ann-studio/src/src/lib/bakeBanner.ts",
+      "hash": "780bbf9664e3",
+      "status": "partial"
+    },
+    {
+      "id": "code:ann/exportPack",
+      "type": "code_file",
+      "label": "G-Maiden pack export",
+      "defined_in": "packages/ann-studio/src/src/lib/exportGmaidenPack.ts",
+      "hash": "9b9ade9ad302",
+      "status": "current"
+    },
+    {
+      "id": "code:ann/store",
+      "type": "code_file",
+      "label": "Studio Zustand store",
+      "defined_in": "packages/ann-studio/src/src/store/useStudioStore.ts",
+      "hash": "e04f3c9479df",
+      "status": "partial",
+      "annotations": {
+        "@req": [
+          "GOE-001",
+          "GOE-002"
+        ],
+        "@spec": [
+          "SDD-001",
+          "SDD-002"
+        ],
+        "@tested": [
+          "src/store/useStudioStore.test.ts"
+        ]
+      }
+    },
+    {
+      "id": "code:ann/bannerProject",
+      "type": "code_file",
+      "label": "BannerProject v1 model",
+      "defined_in": "packages/ann-studio/src/src/lib/bannerProject.ts",
+      "hash": "9944e26483aa",
+      "status": "partial",
+      "annotations": {
+        "@req": [
+          "GOE-001"
+        ],
+        "@spec": [
+          "SDD-001",
+          "SDD-002"
+        ],
+        "@tested": [
+          "src/lib/bannerProject.test.ts"
+        ]
+      }
+    },
+    {
+      "id": "code:ann/BannerEditor",
+      "type": "code_file",
+      "label": "Layer canvas and inspector",
+      "defined_in": "packages/ann-studio/src/src/components/BannerEditor.tsx",
+      "hash": "4c87b6ecac70",
+      "status": "partial",
+      "annotations": {
+        "@req": [
+          "GOE-001",
+          "GOE-002",
+          "GOE-004"
+        ],
+        "@spec": [
+          "SDD-001",
+          "SDD-002"
+        ],
+        "@tested": [
+          "src/components/BannerEditor.test.tsx"
+        ]
+      }
+    },
+    {
+      "id": "code:ann/bannerPreflight",
+      "type": "code_file",
+      "label": "Motion export preflight",
+      "defined_in": "packages/ann-studio/src/src/lib/bannerPreflight.ts",
+      "hash": "300f0052b3ba",
+      "status": "partial",
+      "annotations": {
+        "@req": [
+          "GOE-003"
+        ],
+        "@spec": [
+          "SDD-003"
+        ],
+        "@tested": [
+          "src/lib/bannerPreflight.test.ts"
+        ]
+      }
+    },
+    {
+      "id": "code:ann/rust",
+      "type": "code_file",
+      "label": "G-Ann Tauri commands",
+      "defined_in": "packages/ann-studio/src-tauri/src/lib.rs",
+      "hash": "34e2a688935d",
+      "status": "current"
+    },
+    {
+      "id": "test:ann/bannerProject",
+      "type": "test",
+      "label": "BannerProject model tests",
+      "defined_in": "packages/ann-studio/src/src/lib/bannerProject.test.ts",
+      "hash": "be1767f85afc",
+      "status": "current"
+    },
+    {
+      "id": "test:ann/store",
+      "type": "test",
+      "label": "BannerProject store history tests",
+      "defined_in": "packages/ann-studio/src/src/store/useStudioStore.test.ts",
+      "hash": "76822f4dea4b",
+      "status": "current"
+    },
+    {
+      "id": "test:ann/BannerEditor",
+      "type": "test",
+      "label": "BannerEditor jsdom component tests",
+      "defined_in": "packages/ann-studio/src/src/components/BannerEditor.test.tsx",
+      "hash": "d9eb12e42775",
+      "status": "current"
+    },
+    {
+      "id": "test:ann/bannerPreflight",
+      "type": "test",
+      "label": "Motion export preflight tests",
+      "defined_in": "packages/ann-studio/src/src/lib/bannerPreflight.test.ts",
+      "hash": "ee51826c4131",
+      "status": "current"
+    },
+    {
+      "id": "api:tauri:sync_overlay_layout",
+      "type": "api_endpoint",
+      "label": "sync_overlay_layout",
+      "status": "current"
+    },
+    {
+      "id": "code:gmaiden/gsi",
+      "type": "code_file",
+      "label": "G-Maiden layout receiver",
+      "defined_in": "G-Maiden/src-tauri/src/gsi.rs",
+      "hash": "295a66c21eb7",
+      "status": "current"
+    },
+    {
+      "id": "api:post:/overlay/layout",
+      "type": "api_endpoint",
+      "label": "POST /overlay/layout",
+      "status": "current"
+    },
+    {
+      "id": "code:gmaiden/control",
+      "type": "code_file",
+      "label": "Command Deck layout listener",
+      "defined_in": "G-Maiden/src/src/app/Control.tsx",
+      "hash": "cc232a2041fc",
+      "status": "current"
+    },
+    {
+      "id": "code:gmaiden/overlay",
+      "type": "code_file",
+      "label": "G-Maiden banner renderer",
+      "defined_in": "G-Maiden/src/src/app/Overlay.tsx",
+      "hash": "fc31e0894873",
+      "status": "current"
+    },
+    {
+      "id": "test:gmaiden:gsi-overlay-layout",
+      "type": "test",
+      "label": "Layout receiver unit tests",
+      "defined_in": "G-Maiden/src-tauri/src/gsi.rs",
+      "status": "current"
+    },
+    {
+      "id": "comp:cloud:private-project-sync",
+      "type": "component",
+      "label": "Private project and asset sync",
+      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
+      "status": "proposed"
+    },
+    {
+      "id": "code:ann/labView",
+      "type": "code_file",
+      "label": "G-Overlay Lab view-state persistence (localStorage + IndexedDB)",
+      "defined_in": "packages/ann-studio/src/src/lib/labView.ts",
+      "hash": "a8323de70147",
+      "status": "current",
+      "last_verified": "2026-08-11T16:36:36.446642Z"
+    },
+    {
+      "id": "code:ann/OverlayModulePreview",
+      "type": "code_file",
+      "label": "True-size mock renders of G-Maiden overlay modules",
+      "defined_in": "packages/ann-studio/src/src/components/OverlayModulePreview.tsx",
+      "hash": "71448b5e4ade",
+      "status": "current",
+      "last_verified": "2026-08-11T16:36:36.471205Z"
+    }
+  ],
+  "edges": [
+    {
+      "from": "doc:PRODUCT",
+      "to": "doc:g-overlay-lab-figma-editor",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:PRODUCT",
+      "to": "doc:PRD-SDD-v0.1",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:implementation-plan",
+      "to": "req:GOE-001",
+      "type": "references",
+      "status": "current",
+      "source": "requirement-to-sprint-map"
+    },
+    {
+      "from": "doc:implementation-plan",
+      "to": "req:GOE-002",
+      "type": "references",
+      "status": "current",
+      "source": "requirement-to-sprint-map"
+    },
+    {
+      "from": "doc:implementation-plan",
+      "to": "req:GOE-003",
+      "type": "references",
+      "status": "current",
+      "source": "requirement-to-sprint-map"
+    },
+    {
+      "from": "doc:implementation-plan",
+      "to": "req:GOE-004",
+      "type": "references",
+      "status": "current",
+      "source": "requirement-to-sprint-map"
+    },
+    {
+      "from": "doc:implementation-plan",
+      "to": "req:GOE-005",
+      "type": "references",
+      "status": "current",
+      "source": "requirement-to-sprint-map"
+    },
+    {
+      "from": "doc:implementation-plan",
+      "to": "doc:rca-vite-build-timeout",
+      "type": "references",
+      "status": "current",
+      "source": "sprint-1-evidence"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:PRD-SDD-v0.1",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:ARCHITECTURE",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:frontend-design-system",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:api-index",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:g-overlay-lab",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:g-overlay-lab-figma-editor",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:motion-export-contract",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:content-taxonomy",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:appendix-A",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:appendix-B",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:traceability",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:appendix-E",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:appendix-F",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:PRD-SDD-v0.1",
+      "to": "doc:ARCHITECTURE",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:PRD-SDD-v0.1",
+      "to": "doc:g-overlay-lab-figma-editor",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:PRD-SDD-v0.1",
+      "to": "doc:g-overlay-lab",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:PRD-SDD-v0.1",
+      "to": "doc:traceability",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:CONTRIBUTING",
+      "to": "doc:PRD-SDD-v0.1",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:frontend-design-system",
+      "to": "doc:PRD-SDD-v0.1",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:api-index",
+      "to": "doc:g-overlay-lab",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:appendix-A",
+      "to": "doc:g-overlay-lab",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:appendix-B",
+      "to": "doc:g-overlay-lab-figma-editor",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:appendix-E",
+      "to": "doc:PRD-SDD-v0.1",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:appendix-F",
+      "to": "doc:PRD-SDD-v0.1",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:content-taxonomy",
+      "to": "doc:PRODUCT",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:traceability",
+      "to": "doc:g-overlay-lab-figma-editor",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:g-overlay-lab-figma-editor",
+      "to": "sec:g-overlay-lab-figma-editor:requirements",
+      "type": "references",
+      "status": "current",
+      "source": "heading"
+    },
+    {
+      "from": "doc:g-overlay-lab-figma-editor",
+      "to": "sec:g-overlay-lab-figma-editor:cloud",
+      "type": "references",
+      "status": "current",
+      "source": "heading"
+    },
+    {
+      "from": "doc:motion-export-contract",
+      "to": "req:GOE-003",
+      "type": "references",
+      "status": "candidate",
+      "source": "contract"
+    },
+    {
+      "from": "req:GOE-001",
+      "to": "sec:g-overlay-lab-figma-editor:requirements",
+      "type": "specifies",
+      "status": "current",
+      "source": "document"
+    },
+    {
+      "from": "req:GOE-002",
+      "to": "sec:g-overlay-lab-figma-editor:requirements",
+      "type": "specifies",
+      "status": "current",
+      "source": "document"
+    },
+    {
+      "from": "req:GOE-003",
+      "to": "sec:g-overlay-lab-figma-editor:requirements",
+      "type": "specifies",
+      "status": "current",
+      "source": "document"
+    },
+    {
+      "from": "req:GOE-004",
+      "to": "sec:g-overlay-lab-figma-editor:requirements",
+      "type": "specifies",
+      "status": "current",
+      "source": "document"
+    },
+    {
+      "from": "req:GOE-005",
+      "to": "sec:g-overlay-lab-figma-editor:cloud",
+      "type": "specifies",
+      "status": "current",
+      "source": "document"
+    },
+    {
+      "from": "doc:g-overlay-lab",
+      "to": "code:schema/gmaiden-overlay-layout",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "code:ann/OverlayLab",
+      "to": "req:GOE-004",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "code:ann/OverlayLab",
+      "to": "code:ann/BannerEditor",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/overlayLayout",
+      "to": "code:schema/gmaiden-overlay-layout",
+      "type": "implements",
+      "status": "current",
+      "source": "type-contract"
+    },
+    {
+      "from": "code:ann/OverlayLab",
+      "to": "code:ann/overlayLayout",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/store",
+      "to": "code:ann/overlayLayout",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/store",
+      "to": "code:ann/bannerProject",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/bannerProject",
+      "to": "req:GOE-001",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "code:ann/bannerPreflight",
+      "to": "code:ann/bannerProject",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/bannerPreflight",
+      "to": "req:GOE-003",
+      "type": "implements",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "doc:motion-export-contract",
+      "to": "code:ann/bannerPreflight",
+      "type": "designs",
+      "status": "candidate",
+      "source": "annotation"
+    },
+    {
+      "from": "code:ann/BannerEditor",
+      "to": "code:ann/bannerProject",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/BannerEditor",
+      "to": "code:ann/store",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/BannerEditor",
+      "to": "req:GOE-002",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "code:ann/BannerEditor",
+      "to": "req:GOE-004",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "test:ann/bannerProject",
+      "to": "code:ann/bannerProject",
+      "type": "tests",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/bannerProject",
+      "to": "req:GOE-001",
+      "type": "verifies",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/store",
+      "to": "code:ann/store",
+      "type": "tests",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/store",
+      "to": "req:GOE-001",
+      "type": "verifies",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/store",
+      "to": "req:GOE-002",
+      "type": "verifies",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/BannerEditor",
+      "to": "code:ann/BannerEditor",
+      "type": "tests",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/BannerEditor",
+      "to": "req:GOE-001",
+      "type": "verifies",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/BannerEditor",
+      "to": "req:GOE-002",
+      "type": "verifies",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/BannerEditor",
+      "to": "req:GOE-004",
+      "type": "verifies",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/bannerPreflight",
+      "to": "code:ann/bannerPreflight",
+      "type": "tests",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/bannerPreflight",
+      "to": "req:GOE-003",
+      "type": "verifies",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "code:ann/bakeBanner",
+      "to": "req:GOE-003",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "doc:motion-export-contract",
+      "to": "code:ann/bakeBanner",
+      "type": "references",
+      "status": "candidate",
+      "source": "existing-bake-evidence"
+    },
+    {
+      "from": "code:ann/exportPack",
+      "to": "code:ann/bakeBanner",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/rust",
+      "to": "api:tauri:sync_overlay_layout",
+      "type": "exposes",
+      "status": "current",
+      "source": "tauri-command"
+    },
+    {
+      "from": "code:ann/overlayLayout",
+      "to": "api:tauri:sync_overlay_layout",
+      "type": "depends_on",
+      "status": "current",
+      "source": "invoke"
+    },
+    {
+      "from": "api:tauri:sync_overlay_layout",
+      "to": "api:post:/overlay/layout",
+      "type": "depends_on",
+      "status": "current",
+      "source": "loopback-request"
+    },
+    {
+      "from": "code:gmaiden/gsi",
+      "to": "api:post:/overlay/layout",
+      "type": "exposes",
+      "status": "current",
+      "source": "axum-route"
+    },
+    {
+      "from": "code:gmaiden/control",
+      "to": "code:gmaiden/gsi",
+      "type": "depends_on",
+      "status": "current",
+      "source": "overlay-layout-sync-event"
+    },
+    {
+      "from": "test:gmaiden:gsi-overlay-layout",
+      "to": "code:gmaiden/gsi",
+      "type": "tests",
+      "status": "current",
+      "source": "unit-test"
+    },
+    {
+      "from": "doc:CR-014",
+      "to": "code:gmaiden/gsi",
+      "type": "designs",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "doc:g-overlay-lab",
+      "to": "doc:CR-014",
+      "type": "references",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "code:ann/exportPack",
+      "to": "code:gmaiden/overlay",
+      "type": "depends_on",
+      "status": "current",
+      "source": "pack-banner-format"
+    },
+    {
+      "from": "req:GOE-005",
+      "to": "comp:cloud:private-project-sync",
+      "type": "designs",
+      "status": "proposed",
+      "source": "document"
+    },
+    {
+      "from": "code:ann/store",
+      "to": "req:GOE-001",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "code:ann/BannerEditor",
+      "to": "req:GOE-001",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:GOE-005",
+      "to": "code:ann/rust",
+      "type": "stale",
+      "status": "planned",
+      "reason": "No approved cloud identity, authorization, storage, or conflict implementation exists.",
+      "source": "gap-analysis"
+    },
+    {
+      "from": "code:ann/OverlayLab",
+      "to": "code:ann/labView",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import-graph"
+    },
+    {
+      "from": "code:ann/OverlayLab",
+      "to": "code:ann/OverlayModulePreview",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import-graph"
+    }
+  ],
+  "updated_by": "rwang:doc-graph (incremental; original scan 2026-08-11T11:42+07:00 preserved)"
+}
