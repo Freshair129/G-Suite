@@ -20,6 +20,14 @@ import {
   type OverlayLayout,
   type OverlayModuleId,
 } from "../lib/overlayLayout";
+import {
+  labView,
+  restoreLabScreenshot,
+  setLabEventId,
+  setLabScreenshot,
+  setLabSurface,
+  type LabSurface,
+} from "../lib/labView";
 import { useStudioStore } from "../store/useStudioStore";
 
 const LABEL: Record<OverlayModuleId, string> = {
@@ -41,25 +49,9 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
  */
 const DOTA_HUD_REFERENCE = "/dota-hud-reference.webp";
 
-/**
- * View state that has to survive leaving the tab.
- *
- * App.tsx swaps tabs by conditional render, so OverlayLab unmounts and every
- * useState in it dies: you came back to the Banner editor, on the default event,
- * with your loaded screenshot gone — even though the layout itself had been kept
- * all along (it lives in the persisted store, as do banner edits). Losing your
- * place on every tab switch reads as "it forgot everything".
- *
- * Module-scoped on purpose rather than added to useStudioStore: this is view
- * state, not project data, and a blob: URL is meaningless after a reload anyway.
- * It survives tab switches — the actual complaint — while restarting the app
- * still starts clean.
- */
-const labView: { surface: "banner" | "hud"; eventId: string; screenUrl: string | null } = {
-  surface: "banner",
-  eventId: "kill",
-  screenUrl: null,
-};
+// Surface, event and screenshot live in lib/labView so they survive both a tab
+// switch (OverlayLab unmounts) and an app restart. See that file for why the
+// screenshot goes to IndexedDB rather than localStorage or the project store.
 
 export default function OverlayLab() {
   const layout = useStudioStore((s) => s.overlayLayout);
@@ -80,14 +72,18 @@ export default function OverlayLab() {
   const [screenUrl, setScreenUrlState] = useState<string | null>(labView.screenUrl);
   const [surface, setSurfaceState] = useState<"banner" | "hud">(labView.surface);
 
-  const setEventId = (value: string) => { labView.eventId = value; setEventIdState(value); };
-  const setSurface = (value: "banner" | "hud") => { labView.surface = value; setSurfaceState(value); };
-  const setScreenUrl = (value: string | null) => { labView.screenUrl = value; setScreenUrlState(value); };
+  const setEventId = (value: string) => { setLabEventId(value); setEventIdState(value); };
+  const setSurface = (value: LabSurface) => { setLabSurface(value); setSurfaceState(value); };
 
-  // No revoke-on-unmount: the object URL has to outlive this component now, or
-  // coming back to the tab would show a dead image. The previous URL is revoked
-  // when a new screenshot replaces it (loadScreenshot), which bounds this to one
-  // live URL per session.
+  // Rehydrate a screenshot saved by a previous run. No revoke-on-unmount here:
+  // the object URL has to outlive this component, or returning to the tab would
+  // show a dead image. labView owns the single live URL and revokes the old one
+  // when a new screenshot replaces it.
+  useEffect(() => {
+    let live = true;
+    void restoreLabScreenshot().then((url) => { if (live && url) setScreenUrlState(url); });
+    return () => { live = false; };
+  }, []);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -156,8 +152,8 @@ export default function OverlayLab() {
   const loadScreenshot = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (screenUrl) URL.revokeObjectURL(screenUrl);
-    setScreenUrl(URL.createObjectURL(file));
+    // labView stores the Blob and returns the new URL, revoking the previous one.
+    void setLabScreenshot(file).then((url) => setScreenUrlState(url));
   };
 
   const sync = async () => {
