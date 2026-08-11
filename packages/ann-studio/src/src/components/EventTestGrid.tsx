@@ -279,7 +279,7 @@ export default function EventTestGrid() {
   }
 
   async function fire(id: string) {
-    // banner: pop for 3.5s (same lifetime as the in-game overlay)
+    // Local authored preview only; it does not mirror G-Maiden's 4.0s show + 0.8s exit lifecycle.
     setFired(id);
     setStageWave(null);
     if (firedTimer.current) window.clearTimeout(firedTimer.current);

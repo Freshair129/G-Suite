@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "generated_by": "rwang:doc-preflight",
-  "generated_at": "2026-08-12T00:17:00+07:00",
+  "generated_at": "2026-08-12T02:13:30+07:00",
   "project": "G-AnnStudio",
   "scope": "Current G-AnnStudio documentation and the G-Overlay Lab feature slice",
   "trust_hierarchy": "Code > design specification > product requirements",
@@ -97,7 +97,7 @@
     },
     {
       "check": "internal-contradictions",
-      "details": "No direct contradiction found between the existing layout-sync contract, Figma editor specification, traceability matrix, and scanned implementation."
+      "details": "Task 3 timing-consistency refresh confirms the corrected Figma editor specification, verification records, traceability matrix, and scanned implementation agree on optional startMs/endMs timing, future keyframes, SVG rasterization before runtime handoff, pure unwired preflight, and the distinction between the 0.5-3.5 second authored-animation ceiling, local 3.5-second previews, and G-Maiden's 4.0-second show plus 0.8-second exit lifecycle. The BannerEditor test provides local-preview evidence only; GOE-004 remains partial and full runtime HUD acceptance remains open."
     },
     {
       "check": "cross-references",
@@ -105,7 +105,7 @@
     },
     {
       "check": "document-graph",
-      "details": "docs/.doc-graph.json parses and its declared counts match contents (49 nodes / 86 edges after the incremental update)."
+      "details": "Task 3 timing-consistency refresh: docs/.doc-graph.json parses; its declared counts match contents (49 nodes / 88 edges), all 38 file-backed SHA-256 prefixes match the current scoped documents and code when G-Maiden paths resolve from the sibling checkout, and its current annotation metadata explicitly traces BannerProject and BannerEditor timing metadata plus pure unwired bannerPreflight. GOE-003 remains partial and GOE-005 remains proposed."
     },
     {
       "check": "test-coverage",
@@ -121,5 +121,5 @@
     }
   ],
   "previous_run": "2026-08-11T11:42:00+07:00",
-  "refresh_note": "Re-run after the Overlay Lab session (real-size previews, z-order, view-state persistence, pre-game screen). Findings from the previous run were re-verified rather than assumed; those still true are kept verbatim."
+  "refresh_note": "Task 3 timing-consistency refresh after the authored-animation, local-preview, and G-Maiden runtime-lifecycle distinction was documented. Recomputed all 38 file-backed graph hashes and rechecked current annotation metadata without changing the 49-node/88-edge topology; retained the two existing warnings plus GOE-003 partial / GOE-005 proposed evidence boundaries and no runtime handoff claim."
 }
