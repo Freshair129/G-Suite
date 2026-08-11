@@ -102,9 +102,66 @@ export const DOTA_HUD_ZONES: HudZone[] = [
   { id: "shop", label: "Dota 2 · items / shop", left: 75, top: 74, right: 100, bottom: 100, kind: "blocked" },
 ];
 
-/** Zones a module's rect currently intrudes on. */
-export function zoneConflicts(rect: { left: number; right: number; top: number; bottom: number }): HudZone[] {
-  return DOTA_HUD_ZONES.filter(
+/**
+ * The pre-game screen: Dota lists one team down each edge with the map in the
+ * middle, and G-Maiden already paints over it — `standby` shows whenever the
+ * player is out of a match, and `vol` fires on any hotkey press.
+ *
+ * A layout is one layout: a module has a single position that has to clear BOTH
+ * screens, so this is a second set of guides for the same coordinates rather
+ * than a second layout. Checking only the in-game HUD is how a module ends up
+ * sitting on the roster for the entire loading screen.
+ *
+ * Coordinates are the standard 16:9 arrangement, not a measured capture — no
+ * pre-game screenshot is bundled. Treat them as generous rather than exact.
+ */
+export const DOTA_PREGAME_ZONES: HudZone[] = [
+  { id: "roster-left", label: "Dota 2 · team roster (left)", left: 0, top: 12, right: 24, bottom: 88, kind: "blocked" },
+  { id: "pregame-map", label: "Dota 2 · map", left: 30, top: 10, right: 70, bottom: 90, kind: "blocked" },
+  { id: "roster-right", label: "Dota 2 · team roster (right)", left: 76, top: 12, right: 100, bottom: 88, kind: "blocked" },
+];
+
+export type StageScreen = "ingame" | "pregame";
+
+export const STAGE_ZONES: Record<StageScreen, HudZone[]> = {
+  ingame: DOTA_HUD_ZONES,
+  pregame: DOTA_PREGAME_ZONES,
+};
+
+/**
+ * Modules that can actually be on screen before a match.
+ *
+ * G-Maiden's `FullOverlay` gates almost everything behind `inGame &&`. Only
+ * three survive that gate: `standby` renders exactly when `!inGame`, `vol` is
+ * hotkey-driven and ungated, and `toast` mirrors a spoken cue whenever one
+ * fires. Checking the other sixteen against the pre-game screen would report
+ * conflicts for modules that are not drawn — the same false-positive trap that
+ * made an earlier version of this tool untrustworthy.
+ *
+ * Keep aligned with the render conditions in `overlay/FullOverlay.tsx`.
+ */
+export const PREGAME_MODULES: ReadonlySet<OverlayModuleId> = new Set<OverlayModuleId>([
+  "standby",
+  "vol",
+  "toast",
+]);
+
+/** Modules worth checking on a given screen. In-game draws them all. */
+export function modulesOnScreen(screen: StageScreen): readonly OverlayModuleId[] {
+  return screen === "pregame"
+    ? OVERLAY_MODULE_IDS.filter((id) => PREGAME_MODULES.has(id))
+    : OVERLAY_MODULE_IDS;
+}
+
+/**
+ * Zones a module's rect intrudes on. Defaults to the in-game HUD so existing
+ * callers keep their behaviour; pass a set to check the pre-game screen.
+ */
+export function zoneConflicts(
+  rect: { left: number; right: number; top: number; bottom: number },
+  zones: HudZone[] = DOTA_HUD_ZONES,
+): HudZone[] {
+  return zones.filter(
     (z) => rect.left < z.right && rect.right > z.left && rect.top < z.bottom && rect.bottom > z.top,
   );
 }

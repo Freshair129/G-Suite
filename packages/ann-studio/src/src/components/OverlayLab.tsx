@@ -12,6 +12,8 @@ import {
   boxPercent,
   cloneDefaultOverlayLayout,
   DOTA_HUD_ZONES,
+  STAGE_ZONES,
+  modulesOnScreen,
   moduleCollisions,
   moduleRect,
   OVERLAY_MODULE_IDS,
@@ -19,6 +21,7 @@ import {
   zoneConflicts,
   type OverlayLayout,
   type OverlayModuleId,
+  type StageScreen,
 } from "../lib/overlayLayout";
 import {
   labView,
@@ -48,6 +51,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
  * Valve/Dota 2 artwork, used as a layout reference inside a companion tool.
  */
 const DOTA_HUD_REFERENCE = "/dota-hud-reference.webp";
+const DOTA_MINIMAP_REFERENCE = "/dota-minimap-reference.webp";
 
 // Surface, event and screenshot live in lib/labView so they survive both a tab
 // switch (OverlayLab unmounts) and an app restart. See that file for why the
@@ -62,6 +66,7 @@ export default function OverlayLab() {
   // 1920-wide screen and the stage is whatever the panel gives us.
   const [stageScale, setStageScale] = useState(0);
   const [dragging, setDragging] = useState<OverlayModuleId | null>(null);
+  const [screen, setScreen] = useState<StageScreen>("ingame");
   const [playing, setPlaying] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("Draft only. Sync when you are happy with the HUD clearance.");
@@ -99,6 +104,10 @@ export default function OverlayLab() {
     // switches to the HUD surface, stageScale stays 0, and every preview renders
     // at scale(0) — an invisible module inside a correctly-sized box.
   }, [surface]);
+
+  const zones = STAGE_ZONES[screen];
+  // Only judge (and only ring) modules that this screen actually draws.
+  const onScreen = useMemo(() => new Set(modulesOnScreen(screen)), [screen]);
 
   const update = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
@@ -197,6 +206,21 @@ export default function OverlayLab() {
             <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink" onClick={() => setLayout(cloneDefaultOverlayLayout())}>
               <RotateCcw size={14} /> Restore default
             </button>
+            {/* One layout, two screens to clear. `standby` is up whenever the
+                player is out of a match and `vol` fires on any hotkey, so a
+                position that clears the in-game HUD can still sit on the roster
+                for the whole loading screen. */}
+            <div className="inline-flex h-8 overflow-hidden rounded-lg border border-line text-xs">
+              {([["ingame", "ในเกม"], ["pregame", "ก่อนเกม"]] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => setScreen(value)}
+                  className={`px-3 ${screen === value ? "bg-lime/15 text-lime" : "text-ink-muted hover:text-ink"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -216,12 +240,21 @@ export default function OverlayLab() {
           onPointerUp={() => setDragging(null)}
           onPointerLeave={() => setDragging(null)}
           className="relative aspect-video overflow-hidden rounded-xl border border-line bg-[#111214] select-none"
-          style={{ background: `center / cover no-repeat url(${screenUrl ?? DOTA_HUD_REFERENCE})` }}
+          // In-game shows a real capture. Pre-game is drawn, not photographed:
+          // no loading-screen shot ships with the app, and a synthetic backdrop
+          // that looks obviously synthetic is honest, where a mocked-up "photo"
+          // would invite pixel-matching against something that was never real.
+          // A user-loaded screenshot always wins on the in-game screen.
+          style={
+            screen === "pregame"
+              ? { background: "#0b0d12" }
+              : { background: `center / cover no-repeat url(${screenUrl ?? DOTA_HUD_REFERENCE})` }
+          }
         >
           {/* Zones are drawn over a loaded screenshot too: the whole point is to see
               where Dota will paint, and a screenshot taken between events shows an
               EMPTY kill-feed strip — the one region that matters most at trigger time. */}
-          {DOTA_HUD_ZONES.map((zone) => (
+          {zones.map((zone) => (
             <div
               key={zone.id}
               // Outline only, never filled: there is always a real screen underneath
@@ -244,6 +277,20 @@ export default function OverlayLab() {
               Dota 2 reference — load your own capture for your aspect ratio / HUD skin
             </span>
           )}
+          {/* Pre-game backdrop: the map sits centre, one roster down each edge.
+              Drawn from the zone rectangles themselves so the picture and the
+              clearance test can never disagree. */}
+          {screen === "pregame" && (
+            <img
+              src={DOTA_MINIMAP_REFERENCE}
+              alt=""
+              draggable={false}
+              className="pointer-events-none absolute object-contain opacity-70"
+              style={{
+                left: "30%", top: "10%", width: "40%", height: "80%",
+              }}
+            />
+          )}
           {/* Grid overlay removed with the magnet: lines you cannot snap to are
               just texture over the game screenshot. */}
           {OVERLAY_MODULE_IDS.map((id) => {
@@ -256,7 +303,8 @@ export default function OverlayLab() {
             // real module clears the HUD — which was the whole complaint.
             const { w, h } = boxPercent(id, cfg.scale);
             const rect = moduleRect(id, cfg);
-            const conflicts = zoneConflicts(rect);
+            const drawn = onScreen.has(id);
+            const conflicts = drawn ? zoneConflicts(rect, zones) : [];
             const blocked = conflicts.some((z) => z.kind === "blocked");
             const transient = conflicts.some((z) => z.kind === "transient");
             // Ring ONLY when something is wrong. The permanent grey box that used
@@ -277,7 +325,7 @@ export default function OverlayLab() {
                 key={id}
                 title={conflicts.length ? `Overlaps: ${conflicts.map((z) => z.label).join(", ")}` : LABEL[id]}
                 onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setDragging(id); }}
-                className={`absolute cursor-grab active:cursor-grabbing rounded ${ring} ${visible ? "" : "opacity-35"}`}
+                className={`absolute cursor-grab active:cursor-grabbing rounded ${ring} ${visible && drawn ? "" : "opacity-35"}`}
                 style={{
                   left: `${cfg.x}%`, top: `${cfg.y}%`,
                   width: `${w}%`, height: `${h}%`,
@@ -316,8 +364,8 @@ export default function OverlayLab() {
           // pair that bites is a module sitting under Dota's own kill banner — clear
           // whenever you look at a screenshot, occupied exactly when an event fires.
           const zoneHits = OVERLAY_MODULE_IDS
-            .filter((id) => layout[id].enabled)
-            .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, layout[id])) }))
+            .filter((id) => layout[id].enabled && onScreen.has(id))
+            .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, layout[id]), zones) }))
             .filter((entry) => entry.zones.length > 0);
           const pairs = moduleCollisions(layout);
           if (!zoneHits.length && !pairs.length) {
