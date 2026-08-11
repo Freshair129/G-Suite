@@ -18,9 +18,14 @@ export const DEFAULT_OVERLAY_LAYOUT: OverlayLayout = {
   // down to keep the column clear of itself. vol left the bottom HUD (was 50,92).
   alert: module(50, 20), gmeter: module(7, 47), toast: module(50, 24), companion: module(7, 39),
   advice: module(50, 72), buyback: module(50, 63), missing: module(88, 12), banner: module(50, 34),
-  lowhp: module(50, 44), vol: module(14, 72), standby: module(50, 50), clock: module(5, 4),
-  kda: module(12, 4), gold: module(19, 4), gpm: module(26, 4), xpm: module(26, 10, false),
-  nw: module(32, 4), score: module(58, 4, false), hero: module(14, 33, false),
+  lowhp: module(50, 44), vol: module(14, 72), standby: module(50, 50),
+  // Stat strip compacted left: Dota's portrait bar really begins at ~31%, so the
+  // old strip put Net Worth (box 29.5–34.5) underneath it. Everything shifts left
+  // to end clear of 30. `score` left the bar entirely — it is disabled by default,
+  // but at its old x=58 it would have landed inside the moment anyone enabled it.
+  clock: module(4, 4), kda: module(9.5, 4), gold: module(15, 4), gpm: module(20.5, 4),
+  xpm: module(20.5, 10, false), nw: module(26, 4), score: module(75, 4, false),
+  hero: module(14, 33, false),
 };
 
 /** Reference viewport the boxes below are measured against. */
@@ -84,10 +89,12 @@ export type HudZone = {
  * before treating any edge as exact.
  */
 export const DOTA_HUD_ZONES: HudZone[] = [
-  // left edge is 35, not a rounder 30: G-Maiden's own module registry records that
-  // Dota's portrait bar "starts ≈x35", and the default stat strip is tuned to end
-  // just short of it. A wider guess here flags that deliberate clearance as a bug.
-  { id: "topbar", label: "Dota 2 · hero portraits / score", left: 35, top: 0, right: 65, bottom: 8, kind: "blocked" },
+  // Measured off the bundled reference (luminance profile across y≈3.5%): the bar
+  // is bright grass out to 30%, drops to near-black by 32%, and stays dark to
+  // ~70%. G-Maiden's module registry claimed "portraits start ≈x35" and this zone
+  // was narrowed to 35–65 to match that note — both were wrong, and the narrow
+  // zone hid a real overlap on the Net Worth chip. Trust the pixels.
+  { id: "topbar", label: "Dota 2 · hero portraits / score", left: 30, top: 0, right: 70, bottom: 8, kind: "blocked" },
   { id: "killfeed", label: "Dota 2 · kill banner / feed", left: 38, top: 8, right: 62, bottom: 17, kind: "transient" },
   { id: "scoreboard", label: "Dota 2 · scoreboard / FPS", left: 88, top: 0, right: 100, bottom: 6, kind: "blocked" },
   { id: "minimap", label: "Dota 2 · minimap", left: 0, top: 78, right: 13, bottom: 100, kind: "blocked" },
