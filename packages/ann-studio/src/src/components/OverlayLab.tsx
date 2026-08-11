@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+// @req GOE-004 — routes the event preview and preserves the existing HUD-layout surface.
+// @spec SDD-004 — keeps explicit local HUD sync separate from BannerProject authoring.
+// @designs docs/g-overlay-lab.md
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ImagePlus, RotateCcw, Send, Sparkles } from "lucide-react";
 import BannerEditor from "./BannerEditor";
 import { OverlayModulePreview } from "./OverlayModulePreview";
@@ -74,6 +77,30 @@ export default function OverlayLab() {
   const update = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
   };
+
+  /**
+   * Stacking order by footprint: the biggest boxes go to the bottom, the
+   * smallest to the top.
+   *
+   * Hit areas are MODULE_BOX-sized, and the widest are ~22% of the stage, so a
+   * small chip parked over the advice card was unreachable — you grabbed the
+   * card behind it. Ordering by area makes the smaller thing win, which is also
+   * the right answer visually: a stat chip should never hide behind a panel.
+   *
+   * Ties are broken by id so the order is stable rather than dependent on sort
+   * implementation, and the module being dragged is lifted above everything so
+   * it cannot slip underneath whatever it is dragged across.
+   */
+  const zByArea = useMemo(() => {
+    const area = (id: OverlayModuleId) => {
+      const { w, h } = boxPercent(id, layout[id].scale);
+      return w * h;
+    };
+    const ranked = [...OVERLAY_MODULE_IDS].sort(
+      (a, b) => area(b) - area(a) || a.localeCompare(b),
+    );
+    return Object.fromEntries(ranked.map((id, index) => [id, index + 1])) as Record<OverlayModuleId, number>;
+  }, [layout]);
 
   // Free positioning, no magnet. Snapping was added to fix a grid that never
   // lined up, but the real answer is that a uniform grid is the wrong tool here:
@@ -229,6 +256,7 @@ export default function OverlayLab() {
                   left: `${cfg.x}%`, top: `${cfg.y}%`,
                   width: `${w}%`, height: `${h}%`,
                   transform: "translate(-50%, -50%)",
+                  zIndex: dragging === id ? 100 : zByArea[id],
                 }}
               >
                 {/* The real component at true px, scaled by the stage. Centred with
@@ -253,9 +281,9 @@ export default function OverlayLab() {
           })}
         </div>
         <p className="mt-2 text-xs text-ink-faint">
-          Modules are drawn at their real size for a 1920&times;1080 screen. Snaps to the 5% grid and to
-          HUD edges; hold <kbd className="rounded border border-line px-1">Alt</kbd> for 1% nudges.
-          The banner previews for 3.5 seconds, matching the in-game event window.
+          Modules are drawn at their real size for a 1920&times;1080 screen and drag freely — no grid,
+          no snapping. Smaller modules sit above larger ones, so a stat chip over a card is still
+          the thing you grab. The banner previews for 3.5 seconds, matching the in-game event window.
         </p>
         {(() => {
           // Overlap is only a problem when two things are on screen together, and the
