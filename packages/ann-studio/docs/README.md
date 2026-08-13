@@ -23,6 +23,7 @@ This is the canonical documentation hub for the G-AnnStudio desktop authoring to
 
 - [G-Overlay Lab sync](g-overlay-lab.md)
 - [G-Overlay Lab Figma-grade editor](g-overlay-lab-figma-editor-spec.md)
+- [Private cloud threat model and RLS contract](gann-cloud-threat-model.md)
 - [Motion export contract draft](motion-export-contract-draft.md)
 - [Content-type taxonomy](content-taxonomy.md)
 
@@ -40,3 +41,4 @@ This is the canonical documentation hub for the G-AnnStudio desktop authoring to
 | --- | --- | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-11 | beta | Established the canonical 3-Layer + Appendix documentation hub. | pending | ATHER |
 | 0.1.1 | 2026-08-11 | beta | Indexed the candidate Sprint 2 motion export contract. | pending | ATHER |
+| 0.2.0 | 2026-08-14 | candidate | Indexed the approved private-cloud threat model and RLS contract. | pending | ATHER |

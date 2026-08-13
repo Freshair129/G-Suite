@@ -1,7 +1,7 @@
 ---
-version: "0.1.5"
+version: "0.2.0"
 created_at: "2026-08-11T00:00:00+07:00,ATHER"
-last_update: "2026-08-12T00:00:00+07:00,ATHER"
+last_update: "2026-08-14T00:00:00+07:00,ATHER"
 status: "beta"
 attributes:
   doc_type: "implementation-plan"
@@ -16,7 +16,7 @@ attributes:
 | Source docs | [PRD-SDD v0.1](PRD-SDD-v0.1.md), [Architecture](ARCHITECTURE.md), [editor spec](g-overlay-lab-figma-editor-spec.md), [risk matrix](appendices/E-risk-matrix.md) |
 | Preflight status | WARN — 0 critical, 2 warnings (content-taxonomy document control; cross-repository path-form ambiguity); see [report](.preflight-report.json) |
 | Planning defaults | 2-week sprints, 25% risk buffer, medium granularity |
-| Baseline | Local BannerProject editor and explicit 19-module layout sync exist. Sprint 2 adds optional per-layer Start/End ms authoring, pure export preflight, 18 passing focused tests, and production-build evidence. Encoded-byte measurement, bake wiring, and G-Maiden runtime handoff remain open. |
+| Baseline | Local BannerProject editor and explicit 19-module layout sync exist. Sprint 3 adds deterministic BannerProject composition, Animated WebP handoff, timing preflight, and 22 focused tests. The cloud helper/projection and schema candidate are now implemented locally; hosted migration, UI conflict flow, and live cloud evidence remain open. |
 
 ### Sprint 1 execution status
 
@@ -24,7 +24,7 @@ Completed: Vitest runner pinned to a stable single-thread pool, six model/store 
 
 ### Sprint 2 execution status
 
-Partially completed: `BannerLayer.timing` is optional and the inspector exposes Start/End ms fields; `preflightBannerProject` is pure and returns validation issues without mutating the project. The focused suite now has 18 passing tests and the production build passes. This is not export readiness: the encoded-byte budget is still unapproved, and no bake wiring, Ann Pack installation, or G-Maiden renderer smoke evidence exists.
+Partially completed: `BannerLayer.timing` is optional and the inspector exposes Start/End ms fields; `preflightBannerProject` is pure and returns validation issues without mutating the project. The cloud helper now brings the focused suite to 26 tests; the production build passes. This is not full release readiness: live bake/install, G-Maiden renderer smoke, hosted migration, cleanup retention, and signed-URL evidence remain open.
 
 ## 1. Scope summary
 
@@ -40,11 +40,11 @@ Partially completed: `BannerLayer.timing` is optional and the inspector exposes 
 | NFR-001..004 | Immutability, offline use, runtime compatibility, privacy | 10 | Cross-cutting |
 | SDD-001..004 | Project separation, history, format boundary, local sync | 8 | Cross-cutting |
 
-**Planned delivery total: 46 points.** The estimate excludes unapproved cloud implementation.
+**Planned delivery total: 58 points.** The estimate includes the approved cloud contract and bounded implementation slice, but not production operations or public sharing.
 
 ### Out of scope
 
-- Private cloud project sync implementation, provider setup, credentials, migrations, or public sharing.
+- Public sharing, collaboration, comments, marketplace, team ownership, account-security changes, cleanup-worker operation, and hosted production enablement.
 - Any upload of GSI, CV, match, G-Log, account, or recovery data.
 - Content-type taxonomy implementation (voice/sfx/banner project types) until its open owner questions are approved.
 - A raw-video player inside the G-Maiden overlay.
@@ -57,7 +57,8 @@ Partially completed: `BannerLayer.timing` is optional and the inspector exposes 
 | P1 | S2 | Motion export design and preflight | Candidate timing and read-only preflight contract | Encoded-byte measurement approved; failing-path tests retained |
 | P2 | S3 | Bake and Ann Pack handoff | Runtime-safe exported banner | G-Maiden render smoke evidence |
 | P3 | S4 | Hardening and release readiness | Release candidate evidence | All scoped tests/builds green |
-| P4 | Gate only | Private cloud C-3 design | Approved threat model or explicit deferral | Owner approval before any code |
+| P4 | Gate | Private cloud C-3 design | Approved threat model/RLS contract | Approved 2026-08-14; implementation remains gated by migration evidence |
+| P5 | S5 | Private project/asset sync | Owner-only Supabase tables, private bucket, manifest projection, revision conflict, and offline states | Local pgTAP/type/component tests; hosted deployment and cleanup evidence remain pending |
 
 ### Critical path
 
@@ -69,7 +70,7 @@ flowchart LR
   P1 -. separate approval .-> P4[P4 Cloud design gate]
 ```
 
-P0 → P1 → P2 → P3 is the release critical path. P4 is intentionally not a prerequisite for local G-Maiden authoring.
+P0 → P1 → P2 → P3 is the release critical path. P4 is intentionally not a prerequisite for local G-Maiden authoring. P5 is an additive cloud track and must not become a dependency of local authoring or runtime handoff.
 
 ## 3. Sprint detail
 
@@ -99,7 +100,7 @@ P0 → P1 → P2 → P3 is the release critical path. P4 is intentionally not a 
 | Add preflight error-path tests | FR-004 | 4 | Implemented; bake error-path tests remain dependent on bake wiring |
 
 **Total:** 17 points.  
-**Current evidence:** 18 focused tests and a production build pass; preflight does not mutate the project.  
+**Current evidence:** 26 focused tests and a production build pass; preflight and cloud projection do not mutate the last valid local project.
 **Definition of done:** unsupported or over-budget exports fail without changing the last valid local project, after the encoded-byte budget is approved and measured on the target runtime.
 
 ### Sprint 3 — Bake and G-Maiden handoff
@@ -130,6 +131,20 @@ P0 → P1 → P2 → P3 is the release critical path. P4 is intentionally not a 
 **Total:** 13 points.  
 **Definition of done:** all local-editor acceptance criteria have test/build/smoke evidence and remaining scope is explicitly deferred.
 
+### Sprint 5 — Private project and asset sync (approved C-3/HIGH slice)
+
+**Goal:** implement the approved owner-only cloud contract without changing the local-first or G-Maiden runtime boundaries.
+
+| Task | Req IDs | Points | Dependency |
+| --- | --- | ---: | --- |
+| Add the G-Maiden `gstore` migration for `ann_projects`, `ann_project_assets`, and the private `ann-project-assets` bucket with explicit grants and RLS | GOE-005, NFR-004 | 5 | Approved threat model |
+| Add recursive cloud-manifest validation and local-to-cloud projection (no paths, data URLs, GSI, CV, match, G-Log, or security data) | GOE-005, NFR-004 | 5 | Local BannerProject schema |
+| Add revision compare-and-update, conflict states, signed-out/offline fail-closed behavior, and asset upload ordering | GOE-005 | 5 | Migration contract |
+| Add pgTAP and frontend tests for anonymous/cross-account denial, forbidden JSON, path safety, conflict, and last-valid-local preservation | GOE-005, NFR-004 | 4 | Migration and client helpers |
+
+**Total:** 19 points.
+**Definition of done:** local tests and migration review prove the contract; the feature remains disabled until hosted migration, cleanup retention, signed-URL live smoke, and security-advisor evidence are recorded.
+
 ## 4. Team and milestones
 
 ### Suggested team
@@ -138,7 +153,7 @@ P0 → P1 → P2 → P3 is the release critical path. P4 is intentionally not a 
 | --- | ---: | --- |
 | Desktop engineer | 1.0 FTE | React, Tauri, bake/export, integration |
 | QA / reviewer | 0.25 FTE | Test design, smoke evidence, release gate |
-| Product/design owner | 0.25 FTE | Export budget, UX acceptance, cloud decisions |
+| Product/design owner | 0.25 FTE | Export budget, UX acceptance, cloud retention/quota and production gates |
 
 This 1.5 FTE-equivalent team can target four sprints plus the required 25% buffer: approximately **10 calendar weeks**. A single engineer should treat this as 10–12 weeks.
 
@@ -157,7 +172,8 @@ This 1.5 FTE-equivalent team can target four sprints plus the required 25% buffe
 | R-001 | Vite build timeout masks a release regression | 3 | 4 | 12 | RCA in S1; require bounded build evidence |
 | R-002 | Video export exceeds overlay budget | 3 | 5 | 15 | Measure limits before timeline/bake work |
 | R-003 | Local storage quota loses a draft | 2 | 4 | 8 | Retain 3 MB limit; move to file-backed local storage only with tests |
-| R-004 | Cloud sync leaks author or game data | 2 | 5 | 10 | Keep excluded until C-3 threat model and RLS design are approved |
+| R-004 | Cloud sync leaks author or game data | 2 | 5 | 10 | Approved threat model, recursive DB/client manifest checks, dedicated tables/bucket, and cross-account tests; production remains gated |
+| R-007 | Hosted cleanup/retention is missing after tombstone delete | 3 | 4 | 12 | Keep cloud control non-production until a separately audited service-role cleanup worker and retention interval are approved |
 | R-005 | Interaction regressions are unobserved | 4 | 3 | 12 | Add focused unit/component tests in S1 |
 | R-006 | Scope expands into content-type taxonomy | 3 | 3 | 9 | Keep taxonomy implementation out of this plan |
 
@@ -166,7 +182,7 @@ This 1.5 FTE-equivalent team can target four sprints plus the required 25% buffe
 - **Local development:** Tauri/Vite desktop workflow with explicit G-Maiden availability checks.
 - **Integration:** export/install smoke against a local G-Maiden instance.
 - **Release:** use existing repository release rules; do not add feature flags or silent compatibility shims for this scope.
-- **Cloud:** no environment or deployment is planned until P4’s C-3 gate is approved.
+- **Cloud:** use the existing shared `gstore` Supabase project only through the approved `ann_` tables and private bucket. No hosted migration, client enablement, or service-role cleanup deployment is implied by this plan.
 
 ## 7. Requirement-to-sprint mapping
 
@@ -182,7 +198,7 @@ This 1.5 FTE-equivalent team can target four sprints plus the required 25% buffe
 | NFR-003 | S2, S3 | Preflight and bake proof |
 | NFR-004 | All sprints | Privacy boundary review |
 | SDD-001..004 | S1-S4 | Traceability and architecture gates |
-| GOE-005 | P4 only | Blocked pending C-3 approval |
+| GOE-005 | P4, S5 | Approved contract; S5 implementation and hosted evidence pending |
 
 ## CHANGELOG
 
@@ -194,3 +210,4 @@ This 1.5 FTE-equivalent team can target four sprints plus the required 25% buffe
 | 0.1.3 | 2026-08-11 | beta | Stabilized Vitest on the local single-thread pool and completed the Sprint 1 component interaction coverage; 13 tests pass. | pending | ATHER |
 | 0.1.4 | 2026-08-12 | beta | Recorded the implemented Sprint 2 candidate slice: optional layer timing, read-only preflight, 18 focused tests, and production-build evidence; encoded-byte measurement and runtime handoff remain open. | pending | ATHER |
 | 0.1.5 | 2026-08-12 | beta | Corrected the preflight summary to the two recorded warnings and marked GOE-003 as a partially implemented candidate. | pending | ATHER |
+| 0.2.0 | 2026-08-14 | candidate | Approved the C-3/HIGH threat model/RLS contract and added Sprint 5 for bounded owner-only cloud sync; hosted operations remain a release gate. | pending | ATHER |

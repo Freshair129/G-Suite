@@ -24,10 +24,11 @@ The layout has all 19 known module IDs. Coordinates are screen-relative percenta
 
 ## Exclusions
 
-This API carries no banner media, raw video, game state, CV, G-Log, account data, cloud credential, or local source-file path. Banner-project cloud sync has no API specification because it is not approved for implementation.
+This local API carries no banner media, raw video, game state, CV, G-Log, account data, cloud credential, or local source-file path. The approved private-cloud contract is a separate Supabase Data API/storage surface defined in [the threat model](../gann-cloud-threat-model.md); it has no route into G-Maiden.
 
 ## CHANGELOG
 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 | --- | --- | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-11 | beta | Extracted the approved local layout sync contract into the appendix. | pending | ATHER |
+| 0.2.0 | 2026-08-14 | candidate | Linked the approved private-cloud contract without merging it into the loopback runtime API. | pending | ATHER |

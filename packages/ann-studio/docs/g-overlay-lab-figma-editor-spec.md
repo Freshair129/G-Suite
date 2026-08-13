@@ -1,7 +1,7 @@
 ---
-version: "0.1.4"
+version: "0.2.0"
 created_at: "2026-08-10T00:00:00+07:00,ATHER"
-last_update: "2026-08-12T00:00:00+07:00,ATHER"
+last_update: "2026-08-14T00:00:00+07:00,ATHER"
 status: "beta"
 attributes:
   doc_type: "feature-spec"
@@ -24,7 +24,7 @@ The existing layout sync contract remains unchanged: it sends only the 19-module
 | GOE-002 | Canvas and inspector provide equivalent, keyboard-accessible transform and styling edits. | Partially implemented: shift-select, marquee-select, drag, resize, snap-to-grid, align/distribute, numeric/text/style inspector fields, and Ctrl/Cmd undo/redo |
 | GOE-003 | Motion assets are baked into a G-Maiden-renderable image format, never sent as a raw runtime video. | Partial: existing Animated WebP bake; `BannerProject` stores optional per-layer Start/End ms timing and has a pure candidate preflight. Composition/timing bake, Ann Pack installation, and runtime handoff remain open. |
 | GOE-004 | A preview shows the selected event over a Dota HUD reference before export. | Partially implemented: current layout event preview |
-| GOE-005 | Private cloud sync protects projects and assets with revision conflict handling and no game-data egress. | Proposed, C-3/HIGH |
+| GOE-005 | Private cloud sync protects projects and assets with revision conflict handling and no game-data egress. | Partial: approved local projection/sync helper and schema candidate; hosted migration/evidence pending |
 
 ## Author workflow
 
@@ -37,7 +37,7 @@ flowchart LR
   E --> F[Preview event on Dota HUD]
   F --> G[Planned: bake animated WebP]
   G --> H[Planned: export Ann Pack]
-  C --> I[Proposed: private cloud project sync]
+  C --> I[Approved contract: private cloud project sync]
 ```
 
 ## Editor shell
@@ -108,16 +108,17 @@ All layer edits are non-destructive. The original asset path and content identit
 - Persist local draft changes atomically. Asset files remain in the local project/asset library and are referenced by stable IDs, not arbitrary remote paths.
 - Use a bounded history of patch-based commands. Drag, resize, reorder, and multi-layer alignment must not create one history record per pointer move.
 
-## Private cloud sync: C-3 / HIGH
+## Private cloud sync: C-3 / HIGH — approved contract
 
-Cloud sync is not an extension of the loopback G-Maiden layout route. It requires a separate approved backend contract before code, schema migration, provider setup, or credential storage.
+Cloud sync is not an extension of the loopback G-Maiden layout route. The threat model and RLS contract is approved in [the private cloud threat model](gann-cloud-threat-model.md). This approval authorizes only the bounded implementation described there; hosted deployment, cleanup-worker operation, and production enablement remain separate evidence gates.
 
-### In scope for a future cloud contract
+### In scope for the approved cloud contract
 
 - Authenticated owner-only banner projects, project manifest revisions, and author-uploaded assets.
 - Explicit states: local-only, syncing, synced, conflict, offline, and failed.
 - Revision-based conflict detection. A conflict must offer keep-local, use-cloud, or duplicate-project; it must never silently overwrite a draft.
-- Private object storage with least-privilege access. Assets require opaque IDs, owner checks, bounded signed URLs, and deletion/retention behavior.
+- Private Supabase `gstore` tables (`ann_projects`, `ann_project_assets`) and the private `ann-project-assets` bucket, with least-privilege owner checks, opaque UUID paths, five-minute maximum signed URLs, and tombstone deletion.
+- A cloud projection validator that strips local paths/data URLs and rejects game, identity-security, and telemetry keys before upload; the database repeats the forbidden-key check as defense in depth.
 
 ### Explicit exclusions
 
@@ -125,18 +126,18 @@ Cloud sync is not an extension of the loopback G-Maiden layout route. It require
 - No public gallery, share link, collaborative editing, comments, or third-party asset marketplace in this feature.
 - No direct cloud-to-G-Maiden runtime writes. Installation and layout sync remain local and explicit.
 
-### Required design gate before cloud implementation
+### Approved design gate and remaining implementation gates
 
-1. Select the identity provider and project/asset storage boundary.
-2. Document threat model, RLS/authorization rules, retention/deletion, signed-URL expiry, quota, and offline/conflict behavior.
-3. Define schema migration, rollback, audit evidence, and tests for cross-account access denial.
-4. Obtain explicit approval for the C-3/HIGH cloud slice.
+1. **Approved:** Google OAuth/Supabase Auth session, shared `gstore` project, dedicated tables and private bucket, and `auth.uid()` owner authorization.
+2. **Approved:** threat model, RLS/authorization rules, retention/deletion, signed-URL expiry, per-object ceiling, and offline/conflict behavior in [the threat model](gann-cloud-threat-model.md).
+3. **Required before hosted use:** schema migration and pgTAP evidence, rollback/audit runbook, cross-account denial tests, security-advisor review, and a separately approved cleanup worker/retention interval.
+4. **Still not shipped:** client sync UI, hosted migration, signed-URL live smoke, and production enablement.
 
 ## Implementation phases
 
 1. **Local editor core:** layer document, asset rail, canvas selection/transform, layers tree, inspector, grouped undo/redo, and local persistence.
 2. **Motion export:** video trim, motion timeline, preview, Animated WebP bake, and export preflight.
-3. **Private cloud sync:** only after the separate C-3 contract and threat model are approved.
+3. **Private cloud sync:** implement only the approved contract in [the threat model](gann-cloud-threat-model.md); do not expand into sharing, collaboration, or runtime sync.
 4. **G-Maiden handoff:** install the generated pack and retain the existing explicit loopback layout sync.
 
 ## Acceptance criteria
@@ -164,3 +165,4 @@ Cloud sync is not an extension of the loopback G-Maiden layout route. It require
 | 0.1.2 | 2026-08-10 | beta | Added group-aware visibility/lock, grid snapping, alignment, and distribution to the local editor. | pending | ATHER |
 | 0.1.3 | 2026-08-10 | beta | Added blank-canvas marquee selection for layer composition. | pending | ATHER |
 | 0.1.4 | 2026-08-12 | beta | Corrected timing, raster handoff, and pure-preflight status to current implementation; preserved open bake/install/runtime and cloud gates. | pending | ATHER |
+| 0.2.0 | 2026-08-14 | candidate | Approved the bounded Supabase/GID private-cloud threat model and RLS contract; implementation and hosted evidence remain open. | pending | ATHER |

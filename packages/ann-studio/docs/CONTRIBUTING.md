@@ -13,9 +13,9 @@ attributes:
 ## Change rules
 
 - Preserve the local-only boundary: never add game-data egress.
-- Keep HUD layout sync separate from banner-project persistence or future cloud sync.
+- Keep HUD layout sync separate from banner-project persistence and the approved private cloud sync.
 - Update the linked requirement, traceability matrix, and document graph for feature-boundary changes.
-- Do not add a cloud provider, credential, schema migration, or public sharing surface without an approved C-3/HIGH design gate.
+- Do not add a cloud provider, credential, or public sharing surface outside the approved [private cloud threat model](gann-cloud-threat-model.md). Schema migrations and client sync are allowed only within that contract, through the G-Maiden `gstore` migration authority and with the required RLS/pgTAP evidence.
 
 ## Validation
 
@@ -30,3 +30,4 @@ Use [PRD-SDD v0.1](PRD-SDD-v0.1.md) for requirements and design decisions. Keep 
 | Version | Date | Status | Summary | Commit Hash | Agent |
 | --- | --- | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-11 | beta | Added contribution and validation guidance for the approved document structure. | pending | ATHER |
+| 0.2.0 | 2026-08-14 | candidate | Bound cloud changes to the approved threat model/RLS contract and migration authority. | pending | ATHER |
