@@ -85,7 +85,7 @@ flowchart LR
 
 - Private project cloud storage is governed by `GOE-005` and [the approved threat model](gann-cloud-threat-model.md). The bounded migration/client slice is authorized; hosted production enablement, cleanup-worker retention, public sharing, and runtime writes are not.
 - UI failures retain the last valid local project. G-Maiden rejects invalid layout payloads atomically.
-- Current verification includes TypeScript type-check, graph/preflight review, code-doc alignment, and a configured focused Vitest suite of 26 tests across five files, including the cloud projection validator. `preflightBannerProject` is a pure candidate validator; GOE-003 remains partial because encoded-byte approval, live bake/install, and G-Maiden renderer evidence are still open. GOE-005 remains partial because hosted migration, cleanup retention, and signed-URL live evidence are still open.
+- Current verification includes TypeScript type-check, graph/preflight review, code-doc alignment, and a configured focused Vitest suite of 27 tests across five files, including the cloud projection validator. `preflightBannerProject` is a pure candidate validator; GOE-003 remains partial because encoded-byte approval, live bake/install, and G-Maiden renderer evidence are still open. GOE-005 remains partial because hosted migration, cleanup retention, and signed-URL live evidence are still open.
 - The desktop delivery surface is Tauri; no hosted runtime service or external telemetry is part of this package.
 
 ## Layer 3 — Operations and quality

@@ -37,7 +37,7 @@ attributes:
 
 ## Verification boundary
 
-TypeScript compilation validates the frontend type contract. The frontend also has a configured Vitest runner (`src/package.json`); the focused editor/project/preflight/cloud suite currently contains 26 cases after the approved cloud helper slice. `preflightBannerProject` is covered as a pure, export-plan-level check; layout receiver validation is owned by G-Maiden. Cloud sync is separately verified through manifest projection, forbidden-data, signed-out/offline, and RLS/pgTAP tests. Hosted migration, cleanup-worker retention, and live signed-URL evidence remain release-quality gates rather than evidence of production enablement.
+TypeScript compilation validates the frontend type contract. The frontend also has a configured Vitest runner (`src/package.json`); the focused editor/project/preflight/cloud suite currently contains 27 cases after the approved cloud helper slice. `preflightBannerProject` is covered as a pure, export-plan-level check; layout receiver validation is owned by G-Maiden. Cloud sync is separately verified through manifest projection, forbidden-data, signed-out/offline, and RLS/pgTAP tests. Hosted migration, cleanup-worker retention, and live signed-URL evidence remain release-quality gates rather than evidence of production enablement.
 
 ## CHANGELOG
 

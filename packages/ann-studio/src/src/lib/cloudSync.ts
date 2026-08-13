@@ -154,8 +154,23 @@ export function validateCloudManifest(manifest: unknown): manifest is CloudBanne
   const candidate = manifest as Partial<CloudBannerProject>;
   if (candidate.schemaVersion !== 1 || typeof candidate.id !== "string" || typeof candidate.title !== "string" || typeof candidate.eventId !== "string") return false;
   if (!Number.isInteger(candidate.revision) || (candidate.revision ?? 0) < 1 || !Array.isArray(candidate.assets) || !Array.isArray(candidate.layers)) return false;
+  if (!candidate.artboard || !isFiniteNumber(candidate.artboard.width) || !isFiniteNumber(candidate.artboard.height) || !["dota-hud", "none"].includes(candidate.artboard.safeZonePreset)) return false;
   if (new TextEncoder().encode(JSON.stringify(manifest)).byteLength > MANIFEST_MAX_BYTES) return false;
-  return candidate.assets.every((asset) => !validateAssetMetadata(asset));
+  if (!candidate.assets.every((asset) => !validateAssetMetadata(asset))) return false;
+  const assetIds = new Set(candidate.assets.map((asset) => asset.id));
+  return candidate.layers.every((layer) => {
+    if (!layer || typeof layer !== "object" || typeof layer.id !== "string" || typeof layer.name !== "string") return false;
+    if (!["group", "text", "shape", "image", "svg", "video"].includes(layer.kind)) return false;
+    if (!(layer.parentId === null || typeof layer.parentId === "string") || !Number.isInteger(layer.order) || typeof layer.visible !== "boolean" || typeof layer.locked !== "boolean") return false;
+    if (!layer.transform || !Object.values(layer.transform).every(isFiniteNumber)) return false;
+    if (layer.content.assetId !== undefined && !assetIds.has(layer.content.assetId)) return false;
+    return !layer.timing || (
+      isFiniteNumber(layer.timing.startMs)
+      && isFiniteNumber(layer.timing.endMs)
+      && layer.timing.startMs >= 0
+      && layer.timing.endMs >= layer.timing.startMs
+    );
+  });
 }
 
 export function decodeDataUrl(source: string): { mime: string; bytes: Uint8Array } | null {

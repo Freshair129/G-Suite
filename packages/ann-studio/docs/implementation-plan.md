@@ -24,7 +24,7 @@ Completed: Vitest runner pinned to a stable single-thread pool, six model/store 
 
 ### Sprint 2 execution status
 
-Partially completed: `BannerLayer.timing` is optional and the inspector exposes Start/End ms fields; `preflightBannerProject` is pure and returns validation issues without mutating the project. The cloud helper now brings the focused suite to 26 tests; the production build passes. This is not full release readiness: live bake/install, G-Maiden renderer smoke, hosted migration, cleanup retention, and signed-URL evidence remain open.
+Partially completed: `BannerLayer.timing` is optional and the inspector exposes Start/End ms fields; `preflightBannerProject` is pure and returns validation issues without mutating the project. The cloud helper now brings the focused suite to 27 tests; the production build passes. This is not full release readiness: live bake/install, G-Maiden renderer smoke, hosted migration, cleanup retention, and signed-URL evidence remain open.
 
 ## 1. Scope summary
 
@@ -100,7 +100,7 @@ P0 → P1 → P2 → P3 is the release critical path. P4 is intentionally not a 
 | Add preflight error-path tests | FR-004 | 4 | Implemented; bake error-path tests remain dependent on bake wiring |
 
 **Total:** 17 points.  
-**Current evidence:** 26 focused tests and a production build pass; preflight and cloud projection do not mutate the last valid local project.
+**Current evidence:** 27 focused tests and a production build pass; preflight and cloud projection do not mutate the last valid local project.
 **Definition of done:** unsupported or over-budget exports fail without changing the last valid local project, after the encoded-byte budget is approved and measured on the target runtime.
 
 ### Sprint 3 — Bake and G-Maiden handoff

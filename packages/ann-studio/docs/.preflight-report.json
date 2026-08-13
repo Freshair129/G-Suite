@@ -109,7 +109,7 @@
     },
     {
       "check": "test-coverage",
-      "details": "Vitest passes 26 tests across BannerProject, store history, BannerEditor jsdom behavior, motion export preflight, and private cloud projection/validation. G-Maiden pgTAP assertions are present but not runnable locally without Supabase CLI/Docker."
+      "details": "Vitest passes 27 tests across BannerProject, store history, BannerEditor jsdom behavior, motion export preflight, and private cloud projection/validation. G-Maiden pgTAP assertions are present but not runnable locally without Supabase CLI/Docker."
     },
     {
       "check": "build-validation",

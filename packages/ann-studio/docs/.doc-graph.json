@@ -36,7 +36,7 @@
       "type": "document",
       "label": "G-AnnStudio PRD and SDD v0.1",
       "defined_in": "packages/ann-studio/docs/PRD-SDD-v0.1.md",
-      "hash": "e1a541078ed7",
+      "hash": "ae9dfa8c7ec6",
       "status": "candidate"
     },
     {
@@ -44,7 +44,7 @@
       "type": "document",
       "label": "G-Overlay Lab Implementation Plan",
       "defined_in": "packages/ann-studio/docs/implementation-plan.md",
-      "hash": "33b4d14eb33a",
+      "hash": "0ac35feba65c",
       "status": "candidate",
       "last_verified": "2026-08-14T02:35:00+07:00"
     },
@@ -61,7 +61,7 @@
       "type": "document",
       "label": "G-AnnStudio Architecture",
       "defined_in": "packages/ann-studio/docs/ARCHITECTURE.md",
-      "hash": "35c93057247f",
+      "hash": "3be00ed63401",
       "status": "candidate"
     },
     {
@@ -165,7 +165,7 @@
       "type": "document",
       "label": "G-Overlay Lab Traceability",
       "defined_in": "packages/ann-studio/docs/appendices/D-traceability.md",
-      "hash": "bdbfdd83d665",
+      "hash": "530b80767a5e",
       "status": "candidate"
     },
     {
@@ -366,7 +366,7 @@
       "type": "code_file",
       "label": "Private cloud manifest projection and revision sync",
       "defined_in": "packages/ann-studio/src/src/lib/cloudSync.ts",
-      "hash": "83240ff90312",
+      "hash": "98fc2ca59944",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -441,7 +441,7 @@
       "type": "test",
       "label": "Private cloud projection and validation tests",
       "defined_in": "packages/ann-studio/src/src/lib/cloudSync.test.ts",
-      "hash": "de2156d26ab3",
+      "hash": "6e2c7518cd72",
       "status": "current"
     },
     {

@@ -69,6 +69,14 @@ describe("private cloud project projection", () => {
     expect(validateCloudManifest(manifest.manifest)).toBe(true);
   });
 
+  it("rejects cloud layers that reference an unknown asset", () => {
+    const manifest = projectToCloudManifest(projectWithAsset(), { [metadata.id]: metadata });
+    expect(manifest.ok).toBe(true);
+    if (!manifest.ok) return;
+    const unsafe = { ...manifest.manifest, layers: [{ ...manifest.manifest.layers[0], content: { assetId: "missing" } }] };
+    expect(validateCloudManifest(unsafe)).toBe(false);
+  });
+
   it("accepts only allowlisted base64 data URLs", () => {
     expect(decodeDataUrl("data:image/png;base64,AQID")).toEqual({ mime: "image/png", bytes: new Uint8Array([1, 2, 3]) });
     expect(decodeDataUrl("data:text/plain;base64,SGk=")).toBeNull();
