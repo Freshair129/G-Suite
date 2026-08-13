@@ -149,8 +149,8 @@
       "type": "document",
       "label": "G-AnnStudio private cloud threat model and RLS contract",
       "defined_in": "packages/ann-studio/docs/gann-cloud-threat-model.md",
-      "hash": "c8f87a60b489",
-      "status": "candidate"
+      "hash": "8ab34c6e614c",
+      "status": "beta"
     },
     {
       "id": "doc:motion-export-contract",

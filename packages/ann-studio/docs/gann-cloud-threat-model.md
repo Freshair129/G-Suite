@@ -2,7 +2,7 @@
 version: "0.1.0"
 created_at: "2026-08-14T00:00:00+07:00,ATHER"
 last_update: "2026-08-14T00:00:00+07:00,ATHER"
-status: "candidate"
+status: "beta"
 attributes:
   doc_type: "security-threat-model"
   scope: "G-AnnStudio private BannerProject and author-asset sync"
