@@ -83,6 +83,7 @@ export function createBannerLayer(kind: BannerLayerKind, order: number, partial:
     }),
     style: partial.style ?? (isText ? { fill: "#ffffff", fontSize: 34, fontWeight: 800 } : { fill: "#9dff3f" }),
     content: partial.content ?? (isText ? { text: "NEW EVENT" } : {}),
+    ...(partial.timing ? { timing: { ...partial.timing } } : {}),
   };
 }
 

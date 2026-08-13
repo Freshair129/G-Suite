@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "generated_by": "rwang:doc-preflight",
-  "generated_at": "2026-08-12T02:13:30+07:00",
+  "generated_at": "2026-08-14T00:00:00+07:00",
   "project": "G-AnnStudio",
   "scope": "Current G-AnnStudio documentation and the G-Overlay Lab feature slice",
   "trust_hierarchy": "Code > design specification > product requirements",
@@ -97,7 +97,7 @@
     },
     {
       "check": "internal-contradictions",
-      "details": "Task 3 timing-consistency refresh confirms the corrected Figma editor specification, verification records, traceability matrix, and scanned implementation agree on optional startMs/endMs timing, future keyframes, SVG rasterization before runtime handoff, pure unwired preflight, and the distinction between the 0.5-3.5 second authored-animation ceiling, local 3.5-second previews, and G-Maiden's 4.0-second show plus 0.8-second exit lifecycle. The BannerEditor test provides local-preview evidence only; GOE-004 remains partial and full runtime HUD acceptance remains open."
+      "details": "Sprint 3 refresh confirms the Figma editor specification, verification records, traceability matrix, and scanned implementation agree on optional startMs/endMs timing, future keyframes, SVG rasterization before runtime handoff, preflight wired into the local BannerProject composition adapter, and the distinction between the 0.5-3.5 second authored-animation ceiling, local 3.5-second previews, and G-Maiden's 4.0-second show plus 0.8-second exit lifecycle. The BannerEditor test provides local-preview evidence only; GOE-004 remains partial and full runtime HUD acceptance remains open."
     },
     {
       "check": "cross-references",
@@ -105,11 +105,11 @@
     },
     {
       "check": "document-graph",
-      "details": "Task 3 timing-consistency refresh: docs/.doc-graph.json parses; its declared counts match contents (49 nodes / 88 edges), all 38 file-backed SHA-256 prefixes match the current scoped documents and code when G-Maiden paths resolve from the sibling checkout, and its current annotation metadata explicitly traces BannerProject and BannerEditor timing metadata plus pure unwired bannerPreflight. GOE-003 remains partial and GOE-005 remains proposed."
+      "details": "Sprint 3 refresh: docs/.doc-graph.json parses; its declared counts match contents (52 nodes / 97 edges), all file-backed SHA-256 prefixes match the current scoped documents and code when G-Maiden paths resolve from the sibling checkout, and its annotation metadata traces BannerProject timing, bannerComposer frame planning, the existing WebP adapter, Ann Pack priority, and pure preflight. GOE-003 remains partial pending byte-budget and target-renderer smoke; GOE-005 remains proposed."
     },
     {
       "check": "test-coverage",
-      "details": "Vitest passes 18 tests across BannerProject, store history, BannerEditor jsdom behavior, and read-only motion export preflight error paths."
+      "details": "Vitest passes 22 tests across BannerProject, store history, BannerEditor jsdom behavior, motion preflight/frame planning, and authored Ann Pack priority."
     },
     {
       "check": "build-validation",
@@ -121,5 +121,5 @@
     }
   ],
   "previous_run": "2026-08-11T11:42:00+07:00",
-  "refresh_note": "Task 3 timing-consistency refresh after the authored-animation, local-preview, and G-Maiden runtime-lifecycle distinction was documented. Recomputed all 38 file-backed graph hashes and rechecked current annotation metadata without changing the 49-node/88-edge topology; retained the two existing warnings plus GOE-003 partial / GOE-005 proposed evidence boundaries and no runtime handoff claim."
+  "refresh_note": "Sprint 3 candidate frame-composition refresh after the authored-animation, local-preview, and G-Maiden runtime-lifecycle distinction was documented. Recomputed file-backed graph hashes and rechecked current annotation metadata at 52 nodes / 97 edges; retained the two existing warnings plus GOE-003 partial / GOE-005 proposed evidence boundaries and no target renderer handoff claim."
 }

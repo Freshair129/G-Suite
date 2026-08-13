@@ -1,7 +1,7 @@
 ---
-version: "0.1.5"
+version: "0.1.6"
 created_at: "2026-08-11T00:00:00+07:00,ATHER"
-last_update: "2026-08-12T00:00:00+07:00,ATHER"
+last_update: "2026-08-14T00:00:00+07:00,ATHER"
 status: "beta"
 attributes:
   doc_type: "implementation-plan"
@@ -16,7 +16,7 @@ attributes:
 | Source docs | [PRD-SDD v0.1](PRD-SDD-v0.1.md), [Architecture](ARCHITECTURE.md), [editor spec](g-overlay-lab-figma-editor-spec.md), [risk matrix](appendices/E-risk-matrix.md) |
 | Preflight status | WARN — 0 critical, 2 warnings (content-taxonomy document control; cross-repository path-form ambiguity); see [report](.preflight-report.json) |
 | Planning defaults | 2-week sprints, 25% risk buffer, medium granularity |
-| Baseline | Local BannerProject editor and explicit 19-module layout sync exist. Sprint 2 adds optional per-layer Start/End ms authoring, pure export preflight, 18 passing focused tests, and production-build evidence. Encoded-byte measurement, bake wiring, and G-Maiden runtime handoff remain open. |
+| Baseline | Local BannerProject editor and explicit 19-module layout sync exist. Sprint 3 adds deterministic layer/timing frame planning, browser-canvas raster composition, and an adapter to the existing Animated WebP bake and Ann Pack install path. Encoded-byte approval and target G-Maiden renderer smoke remain open. |
 
 ### Sprint 1 execution status
 
@@ -24,7 +24,11 @@ Completed: Vitest runner pinned to a stable single-thread pool, six model/store 
 
 ### Sprint 2 execution status
 
-Partially completed: `BannerLayer.timing` is optional and the inspector exposes Start/End ms fields; `preflightBannerProject` is pure and returns validation issues without mutating the project. The focused suite now has 18 passing tests and the production build passes. This is not export readiness: the encoded-byte budget is still unapproved, and no bake wiring, Ann Pack installation, or G-Maiden renderer smoke evidence exists.
+Completed candidate slice: `BannerLayer.timing` is optional and the inspector exposes Start/End ms fields; `preflightBannerProject` is pure and returns validation issues without mutating the project. The focused suite had 18 passing tests before Sprint 3. The encoded-byte budget remains unapproved.
+
+### Sprint 3 execution status
+
+Partially completed: `bannerComposer.ts` builds a deterministic frame plan, resolves inherited visibility and Start/End timing, and rasterises visible BannerProject layers to target-sized PNG frames. `bakeBannerProjectWebp` feeds those frames to the existing `bake_animated_webp` command, and both Ann Pack install paths prefer the authored WebP for the selected event while preserving legacy override/reactive/tone/static fallbacks. The focused suite now has 22 passing tests and type-check passes. A live Tauri bake, Ann Pack filesystem inspection, and G-Maiden target-renderer smoke are still pending.
 
 ## 1. Scope summary
 
@@ -55,7 +59,7 @@ Partially completed: `BannerLayer.timing` is optional and the inspector exposes 
 | --- | --- | --- | --- | --- |
 | P0 | S1 | Quality baseline and local-editor proof | Testable local editor core | Focused tests and build RCA recorded |
 | P1 | S2 | Motion export design and preflight | Candidate timing and read-only preflight contract | Encoded-byte measurement approved; failing-path tests retained |
-| P2 | S3 | Bake and Ann Pack handoff | Runtime-safe exported banner | G-Maiden render smoke evidence |
+| P2 | S3 | Bake and Ann Pack handoff | Candidate runtime-safe exported banner path | G-Maiden render smoke evidence |
 | P3 | S4 | Hardening and release readiness | Release candidate evidence | All scoped tests/builds green |
 | P4 | Gate only | Private cloud C-3 design | Approved threat model or explicit deferral | Owner approval before any code |
 
@@ -108,13 +112,13 @@ P0 → P1 → P2 → P3 is the release critical path. P4 is intentionally not a 
 
 | Task | Req IDs | Points | Dependency |
 | --- | --- | ---: | --- |
-| Connect visible composition and timing metadata to the existing Animated WebP bake path | FR-004, SDD-003 | 5 | S2 preflight |
-| Install/export the generated asset through the existing Ann Pack boundary | FR-004 | 4 | Bake integration |
-| Add G-Maiden renderer smoke proof for static and animated banners | FR-003, FR-004 | 4 | Install path |
-| Verify that the existing layout-sync contract remains isolated | FR-005, SDD-004 | 2 | Handoff path |
+| Connect visible composition and timing metadata to the existing Animated WebP bake path | FR-004, SDD-003 | 5 | Implemented candidate; 22 focused tests/type-check |
+| Install/export the generated asset through the existing Ann Pack boundary | FR-004 | 4 | Implemented candidate; legacy fallbacks retained |
+| Add G-Maiden renderer smoke proof for static and animated banners | FR-003, FR-004 | 4 | **open** — requires live Tauri/install target |
+| Verify that the existing layout-sync contract remains isolated | FR-005, SDD-004 | 2 | Source/doc boundary retained |
 
 **Total:** 15 points.  
-**Definition of done:** a kill event uses the exported runtime-safe asset; no raw video or game data crosses the boundary.
+**Definition of done:** the local candidate path produces authored PNG frames for the existing WebP encoder and Ann Pack boundary without raw video or game data crossing the seam. Runtime-safe asset and kill-event claims remain gated on target smoke evidence.
 
 ### Sprint 4 — Release readiness
 
@@ -194,3 +198,4 @@ This 1.5 FTE-equivalent team can target four sprints plus the required 25% buffe
 | 0.1.3 | 2026-08-11 | beta | Stabilized Vitest on the local single-thread pool and completed the Sprint 1 component interaction coverage; 13 tests pass. | pending | ATHER |
 | 0.1.4 | 2026-08-12 | beta | Recorded the implemented Sprint 2 candidate slice: optional layer timing, read-only preflight, 18 focused tests, and production-build evidence; encoded-byte measurement and runtime handoff remain open. | pending | ATHER |
 | 0.1.5 | 2026-08-12 | beta | Corrected the preflight summary to the two recorded warnings and marked GOE-003 as a partially implemented candidate. | pending | ATHER |
+| 0.1.6 | 2026-08-14 | beta | Recorded Sprint 3 candidate frame planning, browser-canvas composition, existing WebP bake adapter, Ann Pack preference path, 22 focused tests, and pending target-renderer smoke. | pending | ATHER |

@@ -8,6 +8,12 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { drawToneBanner, BANNER_W, BANNER_H } from "./toneBanner";
+import {
+  bannerProjectMotionPlan,
+  composeBannerProjectFrames,
+  type BannerProjectMotionOptions,
+} from "./bannerComposer";
+import type { BannerProject } from "./bannerProject";
 
 const FRAMES = 12; // ~0.5s entrance at 24fps
 const FPS = 24;
@@ -84,6 +90,31 @@ export async function bakeReactiveWebp(
       frames: pngs,
       fps: REACTIVE_FPS,
       loopCount: 0,
+    });
+    return webp || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Bake the selected BannerProject composition through the same Rust
+ * `bake_animated_webp` command used by the legacy tone banner. Each frame is
+ * rendered from visible layers at its authored time, so raw SVG/video inputs
+ * never cross the G-Maiden install boundary.
+ */
+export async function bakeBannerProjectWebp(
+  project: BannerProject,
+  options: BannerProjectMotionOptions = {},
+): Promise<string | null> {
+  const plan = bannerProjectMotionPlan(options);
+  try {
+    const frames = await composeBannerProjectFrames(project, plan);
+    if (!frames.length || frames.some((frame) => !frame)) return null;
+    const webp = await invoke<string>("bake_animated_webp", {
+      frames,
+      fps: plan.fps,
+      loopCount: 1,
     });
     return webp || null;
   } catch {

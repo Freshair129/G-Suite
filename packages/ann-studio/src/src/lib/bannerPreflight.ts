@@ -1,5 +1,7 @@
-// @req GOE-003 — pure candidate validator for a runtime-safe motion export plan; it is not wired into bake or install.
-// @spec SDD-003 — reports invalid candidate plans without mutating the local project or completing a runtime handoff.
+// @req GOE-003 — pure validator for a runtime-safe motion export plan used by
+// BannerProject bake before any asset is sent to the existing WebP encoder.
+// @spec SDD-003 — reports invalid plans without mutating the local project or
+// completing a runtime handoff.
 // @designs docs/motion-export-contract-draft.md
 // @tested src/lib/bannerPreflight.test.ts
 import type { BannerProject } from "./bannerProject";
@@ -48,6 +50,17 @@ export function preflightBannerProject(project: BannerProject, plan: MotionExpor
     }
     if (layer.visible && ASSET_LAYER_KINDS.has(layer.kind) && (!layer.content.assetId || !assets.has(layer.content.assetId))) {
       issues.push({ code: "missing_asset", layerId: layer.id, detail: "Visible asset layer has no local source asset." });
+    }
+    if (layer.timing) {
+      const { startMs, endMs } = layer.timing;
+      const durationMs = plan.durationSec * 1000;
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs < 0 || endMs < startMs || endMs > durationMs) {
+        issues.push({
+          code: "invalid_timing",
+          layerId: layer.id,
+          detail: `Layer timing must be finite, ordered, and within 0-${durationMs}ms.`,
+        });
+      }
     }
   }
 

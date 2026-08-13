@@ -4,8 +4,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore, type LibSound } from "../store/useStudioStore";
+import type { BannerProject } from "./bannerProject";
 import { toneBannerPngDataUrl } from "./toneBanner";
-import { bakeToneWebp, bakeReactiveWebp } from "./bakeBanner";
+import { bakeBannerProjectWebp, bakeToneWebp, bakeReactiveWebp } from "./bakeBanner";
 import { clipEnvelope } from "./peaks";
 
 interface PackInstallReport {
@@ -14,6 +15,26 @@ interface PackInstallReport {
   events: number;
   clips: number;
   banners: number;
+}
+
+/** Pure priority gate used before any browser bake or Tauri invoke. */
+export function canUseAuthoredBanner(project: BannerProject, event: string, animate: boolean) {
+  return animate && project.eventId === event;
+}
+
+/**
+ * The BannerEditor owns one local project at a time. When its event matches
+ * the pack event, prefer the composed runtime-safe WebP; all legacy override,
+ * reactive, tone-bake, and static fallbacks remain unchanged for other events.
+ */
+async function authoredBanner(
+  event: string,
+  animate: boolean,
+): Promise<{ event: string; b64: string; ext: "webp" } | null> {
+  const project = useStudioStore.getState().bannerProject;
+  if (!canUseAuthoredBanner(project, event, animate)) return null;
+  const webp = await bakeBannerProjectWebp(project);
+  return webp ? { event, b64: webp, ext: "webp" } : null;
 }
 
 export async function installGmaidenPack(
@@ -50,6 +71,8 @@ export async function installGmaidenPack(
     events.map(async (ev) => {
       const ov = overrides[ev];
       if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
+      const authored = await authoredBanner(ev, animate);
+      if (authored) return authored;
       const cap = captionOf(ev);
       if (reactive) {
         const c = firstClip(ev);
@@ -134,6 +157,8 @@ export async function installLibraryPack(
     events.map(async (ev) => {
       const ov = overrides[ev];
       if (ov) return { event: ev, b64: ov.b64, ext: ov.ext };
+      const authored = await authoredBanner(ev, animate);
+      if (authored) return authored;
       const snd = firstOf(ev);
       const cap = voiceCaption ? snd?.name_th || snd?.name_en : undefined;
       if (reactive && snd) {

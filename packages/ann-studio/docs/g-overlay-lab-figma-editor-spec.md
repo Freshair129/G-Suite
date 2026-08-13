@@ -1,7 +1,7 @@
 ---
-version: "0.1.4"
+version: "0.1.5"
 created_at: "2026-08-10T00:00:00+07:00,ATHER"
-last_update: "2026-08-12T00:00:00+07:00,ATHER"
+last_update: "2026-08-14T00:00:00+07:00,ATHER"
 status: "beta"
 attributes:
   doc_type: "feature-spec"
@@ -22,7 +22,7 @@ The existing layout sync contract remains unchanged: it sends only the 19-module
 | --- | --- | --- |
 | GOE-001 | Authors can compose a banner from a selectable, ordered, non-destructive layer tree. | Partially implemented: local `BannerProject`, ordered/nested layers, inherited visibility/lock, import, selection, group/ungroup, duplicate, reorder, and delete |
 | GOE-002 | Canvas and inspector provide equivalent, keyboard-accessible transform and styling edits. | Partially implemented: shift-select, marquee-select, drag, resize, snap-to-grid, align/distribute, numeric/text/style inspector fields, and Ctrl/Cmd undo/redo |
-| GOE-003 | Motion assets are baked into a G-Maiden-renderable image format, never sent as a raw runtime video. | Partial: existing Animated WebP bake; `BannerProject` stores optional per-layer Start/End ms timing and has a pure candidate preflight. Composition/timing bake, Ann Pack installation, and runtime handoff remain open. |
+| GOE-003 | Motion assets are baked into a G-Maiden-renderable image format, never sent as a raw runtime video. | Partial: deterministic `BannerProject` frame planning and browser-canvas rasterisation now feed the existing Animated WebP bake adapter; matching Ann Pack install paths prefer the authored output. Encoded-byte approval and live target-renderer smoke remain open. |
 | GOE-004 | A preview shows the selected event over a Dota HUD reference before export. | Partially implemented: current layout event preview |
 | GOE-005 | Private cloud sync protects projects and assets with revision conflict handling and no game-data egress. | Proposed, C-3/HIGH |
 
@@ -35,8 +35,8 @@ flowchart LR
   C --> D[Select layer or group]
   D --> E[Inspector: transform, style, timing]
   E --> F[Preview event on Dota HUD]
-  F --> G[Planned: bake animated WebP]
-  G --> H[Planned: export Ann Pack]
+  F --> G[Candidate: compose timed PNG frames]
+  G --> H[Candidate: bake animated WebP + export Ann Pack]
   C --> I[Proposed: private cloud project sync]
 ```
 
@@ -99,8 +99,8 @@ All layer edits are non-destructive. The original asset path and content identit
 
 - SVG, image, and video are authoring inputs. SVG is never a runtime handoff format: it must be rasterized into an approved runtime asset before handoff.
 - A video layer can be trimmed and composed locally, but it is not shipped as a raw video to the G-Maiden overlay.
-- Runtime handoff may use only approved raster output: static PNG/WebP or animated WebP. The existing G-AnnStudio `bake_animated_webp` command is the animation delivery path; it is not yet wired to `BannerProject` composition/timing or Ann Pack installation.
-- `preflightBannerProject` is a pure candidate validator, currently unwired from bake/install. It checks the candidate plan for unsupported layers, missing assets, decode failure, duration, frame, and dimension limits without mutating the project. The encoded-byte budget remains unapproved, so no byte-size rejection is active.
+- Runtime handoff may use only approved raster output: static PNG/WebP or animated WebP. `bannerComposer.ts` rasterises visible timed layers, `bakeBannerProjectWebp` calls the existing `bake_animated_webp` command, and the Ann Pack installers prefer the selected event's authored WebP. The encoded-byte budget and target renderer evidence remain open, so this is a candidate path rather than a production-safe claim.
+- `preflightBannerProject` is pure and is now called by the BannerProject composition adapter before bake. It checks unsupported layers, missing assets, decode failure, duration, frame, dimension, and per-layer timing limits without mutating the project. The encoded-byte budget remains unapproved, so no byte-size rejection is active.
 
 ## Local project persistence
 
@@ -150,7 +150,7 @@ Cloud sync is not an extension of the loopback G-Maiden layout route. It require
 
 ## Verification
 
-- Unit tests: layer-tree operations, transforms, selection, grouping, serialization, history, trim, and export preflight.
+- Unit tests: layer-tree operations, transforms, selection, grouping, serialization, history, trim, export preflight, deterministic frame planning, and authored-banner priority.
 - Component tests: keyboard inspector edits, layer visibility/lock, undo/redo, and conflict UI.
 - Rust tests: safe asset handling and animation bake error paths.
 - Manual smoke: import SVG + 3-second video, trim, compose, bake, preview on Dota HUD, export pack, install in G-Maiden, and verify the banner event.
@@ -164,3 +164,4 @@ Cloud sync is not an extension of the loopback G-Maiden layout route. It require
 | 0.1.2 | 2026-08-10 | beta | Added group-aware visibility/lock, grid snapping, alignment, and distribution to the local editor. | pending | ATHER |
 | 0.1.3 | 2026-08-10 | beta | Added blank-canvas marquee selection for layer composition. | pending | ATHER |
 | 0.1.4 | 2026-08-12 | beta | Corrected timing, raster handoff, and pure-preflight status to current implementation; preserved open bake/install/runtime and cloud gates. | pending | ATHER |
+| 0.1.5 | 2026-08-14 | beta | Recorded candidate BannerProject frame composition, existing WebP bake adapter, Ann Pack preference path, and pending target-renderer/byte-budget evidence. | pending | ATHER |

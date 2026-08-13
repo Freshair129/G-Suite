@@ -1,11 +1,11 @@
 {
   "version": "1.0.0",
   "generated_by": "rwang:doc-graph",
-  "generated_at": "2026-08-12T02:13:30+07:00",
+  "generated_at": "2026-08-14T00:00:00+07:00",
   "scope": "G-Overlay Lab and the G-Maiden handoff",
   "stats": {
-    "total_nodes": 49,
-    "total_edges": 88,
+    "total_nodes": 52,
+    "total_edges": 97,
     "stale_edges": 1,
     "contradiction_edges": 0,
     "coverage": {
@@ -20,7 +20,7 @@
       "type": "document",
       "label": "G-AnnStudio Product Context",
       "defined_in": "packages/ann-studio/PRODUCT.md",
-      "hash": "ef1a46d49948",
+      "hash": "cc23674b2f2b",
       "status": "beta"
     },
     {
@@ -28,7 +28,7 @@
       "type": "document",
       "label": "Documentation Hub",
       "defined_in": "packages/ann-studio/docs/README.md",
-      "hash": "ef3db332bc21",
+      "hash": "f88fc71c6aff",
       "status": "beta"
     },
     {
@@ -36,7 +36,7 @@
       "type": "document",
       "label": "G-AnnStudio PRD and SDD v0.1",
       "defined_in": "packages/ann-studio/docs/PRD-SDD-v0.1.md",
-      "hash": "af56206409f0",
+      "hash": "f6fccba88909",
       "status": "beta"
     },
     {
@@ -44,7 +44,7 @@
       "type": "document",
       "label": "G-Overlay Lab Implementation Plan",
       "defined_in": "packages/ann-studio/docs/implementation-plan.md",
-      "hash": "9bcf3f21a6f2",
+      "hash": "9edff616dbe7",
       "status": "changed",
       "last_verified": "2026-08-11T16:36:33.646324Z"
     },
@@ -53,7 +53,7 @@
       "type": "document",
       "label": "Vite Build Timeout RCA",
       "defined_in": "packages/ann-studio/docs/rca/2026-08-11-vite-build-timeout.md",
-      "hash": "43bac32220a7",
+      "hash": "f8fa212e48d4",
       "status": "beta"
     },
     {
@@ -61,7 +61,7 @@
       "type": "document",
       "label": "G-AnnStudio Architecture",
       "defined_in": "packages/ann-studio/docs/ARCHITECTURE.md",
-      "hash": "721afbad014e",
+      "hash": "9c4c2f27b3c1",
       "status": "beta"
     },
     {
@@ -69,7 +69,7 @@
       "type": "document",
       "label": "G-AnnStudio Contributing",
       "defined_in": "packages/ann-studio/docs/CONTRIBUTING.md",
-      "hash": "eeb66072dc4f",
+      "hash": "c5e0cf3c0e9b",
       "status": "beta"
     },
     {
@@ -77,7 +77,7 @@
       "type": "document",
       "label": "Frontend Design System",
       "defined_in": "packages/ann-studio/docs/frontend-design-system.md",
-      "hash": "4cbd68e9b600",
+      "hash": "f8125124d459",
       "status": "beta"
     },
     {
@@ -85,7 +85,7 @@
       "type": "document",
       "label": "G-AnnStudio API Index",
       "defined_in": "packages/ann-studio/docs/api/README.md",
-      "hash": "ec549b0697b5",
+      "hash": "58da5f1be994",
       "status": "beta"
     },
     {
@@ -93,7 +93,7 @@
       "type": "document",
       "label": "Local API Specification",
       "defined_in": "packages/ann-studio/docs/appendices/A-api-spec.md",
-      "hash": "6dc3809bea44",
+      "hash": "4ebe5eda9838",
       "status": "beta"
     },
     {
@@ -101,7 +101,7 @@
       "type": "document",
       "label": "Local Banner Project Schema",
       "defined_in": "packages/ann-studio/docs/appendices/B-local-project-schema.md",
-      "hash": "5c6700343ba6",
+      "hash": "655a9d3e1d04",
       "status": "beta"
     },
     {
@@ -109,7 +109,7 @@
       "type": "document",
       "label": "G-AnnStudio Risk Matrix",
       "defined_in": "packages/ann-studio/docs/appendices/E-risk-matrix.md",
-      "hash": "1031c4c30425",
+      "hash": "0b3768077988",
       "status": "beta"
     },
     {
@@ -117,7 +117,7 @@
       "type": "document",
       "label": "G-AnnStudio Glossary",
       "defined_in": "packages/ann-studio/docs/appendices/F-glossary.md",
-      "hash": "3e26822341b9",
+      "hash": "db1c2f569819",
       "status": "beta"
     },
     {
@@ -125,7 +125,7 @@
       "type": "document",
       "label": "Content-Type Taxonomy",
       "defined_in": "packages/ann-studio/docs/content-taxonomy.md",
-      "hash": "01bb2b7bc23c",
+      "hash": "136fa685cc1a",
       "status": "proposal"
     },
     {
@@ -133,7 +133,7 @@
       "type": "document",
       "label": "G-Overlay Lab Sync",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab.md",
-      "hash": "1aa393bd57ee",
+      "hash": "98a611284a2e",
       "status": "current"
     },
     {
@@ -141,7 +141,7 @@
       "type": "document",
       "label": "Figma-grade Banner Editor",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "hash": "bf54e3fd05b7",
+      "hash": "6241de617efe",
       "status": "beta"
     },
     {
@@ -149,7 +149,7 @@
       "type": "document",
       "label": "Motion Export Contract Draft",
       "defined_in": "packages/ann-studio/docs/motion-export-contract-draft.md",
-      "hash": "4d69a3d56b72",
+      "hash": "3d584fabf1b1",
       "status": "candidate"
     },
     {
@@ -157,7 +157,7 @@
       "type": "document",
       "label": "G-Overlay Lab Traceability",
       "defined_in": "packages/ann-studio/docs/appendices/D-traceability.md",
-      "hash": "ee60550573c7",
+      "hash": "04979517e616",
       "status": "beta"
     },
     {
@@ -222,7 +222,7 @@
       "type": "code_file",
       "label": "Overlay layout schema v1",
       "defined_in": "schemas/gmaiden-overlay-layout.schema.json",
-      "hash": "15c2a918d610",
+      "hash": "3eadcf135c6f",
       "status": "current"
     },
     {
@@ -230,7 +230,7 @@
       "type": "code_file",
       "label": "G-Overlay Lab surface router",
       "defined_in": "packages/ann-studio/src/src/components/OverlayLab.tsx",
-      "hash": "f2d1b9866163",
+      "hash": "7f9ae12110f4",
       "status": "changed",
       "annotations": {
         "@req": [
@@ -247,7 +247,7 @@
       "type": "code_file",
       "label": "Overlay layout sender",
       "defined_in": "packages/ann-studio/src/src/lib/overlayLayout.ts",
-      "hash": "d3ac8aecafa0",
+      "hash": "163876628530",
       "status": "changed",
       "last_verified": "2026-08-11T16:36:35.756718Z"
     },
@@ -256,23 +256,32 @@
       "type": "code_file",
       "label": "Animated WebP bake adapter",
       "defined_in": "packages/ann-studio/src/src/lib/bakeBanner.ts",
-      "hash": "780bbf9664e3",
-      "status": "partial"
+      "hash": "63f6f5dc2010",
+      "status": "partial",
+      "annotations": {
+        "@req": ["GOE-003"],
+        "@spec": ["SDD-003"]
+      }
     },
     {
       "id": "code:ann/exportPack",
       "type": "code_file",
       "label": "G-Maiden pack export",
       "defined_in": "packages/ann-studio/src/src/lib/exportGmaidenPack.ts",
-      "hash": "9b9ade9ad302",
-      "status": "current"
+      "hash": "2062895cc842",
+      "status": "partial",
+      "annotations": {
+        "@req": ["GOE-003"],
+        "@spec": ["SDD-003"],
+        "@tested": ["src/lib/exportGmaidenPack.test.ts"]
+      }
     },
     {
       "id": "code:ann/store",
       "type": "code_file",
       "label": "Studio Zustand store",
       "defined_in": "packages/ann-studio/src/src/store/useStudioStore.ts",
-      "hash": "e04f3c9479df",
+      "hash": "ef16b9a53d67",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -293,7 +302,7 @@
       "type": "code_file",
       "label": "BannerProject v1 model with optional per-layer timing",
       "defined_in": "packages/ann-studio/src/src/lib/bannerProject.ts",
-      "hash": "4a983d887f68",
+      "hash": "7ee6b6b0d928",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -315,7 +324,7 @@
       "type": "code_file",
       "label": "Layer canvas and inspector with Start/End timing fields",
       "defined_in": "packages/ann-studio/src/src/components/BannerEditor.tsx",
-      "hash": "56057b9f5a91",
+      "hash": "a8e099aabb81",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -339,7 +348,7 @@
       "type": "code_file",
       "label": "Pure, currently unwired motion export preflight",
       "defined_in": "packages/ann-studio/src/src/lib/bannerPreflight.ts",
-      "hash": "dd0de23e418a",
+      "hash": "0bb34b5f884d",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -354,11 +363,24 @@
       }
     },
     {
+      "id": "code:ann/bannerComposer",
+      "type": "code_file",
+      "label": "BannerProject timed frame planner and canvas compositor",
+      "defined_in": "packages/ann-studio/src/src/lib/bannerComposer.ts",
+      "hash": "a51f40eb62f8",
+      "status": "partial",
+      "annotations": {
+        "@req": ["GOE-003"],
+        "@spec": ["SDD-003"],
+        "@tested": ["src/lib/bannerComposer.test.ts"]
+      }
+    },
+    {
       "id": "code:ann/rust",
       "type": "code_file",
       "label": "G-Ann Tauri commands",
       "defined_in": "packages/ann-studio/src-tauri/src/lib.rs",
-      "hash": "34e2a688935d",
+      "hash": "38a61db0a844",
       "status": "current"
     },
     {
@@ -366,7 +388,7 @@
       "type": "test",
       "label": "BannerProject model tests",
       "defined_in": "packages/ann-studio/src/src/lib/bannerProject.test.ts",
-      "hash": "be1767f85afc",
+      "hash": "c44e653a99f9",
       "status": "current"
     },
     {
@@ -374,7 +396,7 @@
       "type": "test",
       "label": "BannerProject store history tests",
       "defined_in": "packages/ann-studio/src/src/store/useStudioStore.test.ts",
-      "hash": "76822f4dea4b",
+      "hash": "7117c51ba86b",
       "status": "current"
     },
     {
@@ -382,7 +404,7 @@
       "type": "test",
       "label": "BannerEditor jsdom component tests",
       "defined_in": "packages/ann-studio/src/src/components/BannerEditor.test.tsx",
-      "hash": "d9eb12e42775",
+      "hash": "1f7a60690504",
       "status": "current"
     },
     {
@@ -390,7 +412,23 @@
       "type": "test",
       "label": "Motion export preflight tests",
       "defined_in": "packages/ann-studio/src/src/lib/bannerPreflight.test.ts",
-      "hash": "ee51826c4131",
+      "hash": "695317d8f921",
+      "status": "current"
+    },
+    {
+      "id": "test:ann/bannerComposer",
+      "type": "test",
+      "label": "BannerProject frame composition plan tests",
+      "defined_in": "packages/ann-studio/src/src/lib/bannerComposer.test.ts",
+      "hash": "850a383c49dd",
+      "status": "current"
+    },
+    {
+      "id": "test:ann/exportGmaidenPack",
+      "type": "test",
+      "label": "Authored banner Ann Pack priority tests",
+      "defined_in": "packages/ann-studio/src/src/lib/exportGmaidenPack.test.ts",
+      "hash": "d3309b1562a1",
       "status": "current"
     },
     {
@@ -448,7 +486,7 @@
       "type": "code_file",
       "label": "G-Overlay Lab view-state persistence (localStorage + IndexedDB)",
       "defined_in": "packages/ann-studio/src/src/lib/labView.ts",
-      "hash": "a8323de70147",
+      "hash": "9c8cab777db7",
       "status": "current",
       "last_verified": "2026-08-11T16:36:36.446642Z"
     },
@@ -457,7 +495,7 @@
       "type": "code_file",
       "label": "True-size mock renders of G-Maiden overlay modules",
       "defined_in": "packages/ann-studio/src/src/components/OverlayModulePreview.tsx",
-      "hash": "71448b5e4ade",
+      "hash": "86e06eab7ca8",
       "status": "current",
       "last_verified": "2026-08-11T16:36:36.471205Z"
     }
@@ -835,8 +873,36 @@
       "source": "annotation"
     },
     {
+      "from": "code:ann/bannerComposer",
+      "to": "code:ann/bannerProject",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/bannerComposer",
+      "to": "code:ann/bannerPreflight",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/bannerComposer",
+      "to": "req:GOE-003",
+      "type": "implements",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
       "from": "doc:motion-export-contract",
       "to": "code:ann/bannerPreflight",
+      "type": "designs",
+      "status": "candidate",
+      "source": "annotation"
+    },
+    {
+      "from": "doc:motion-export-contract",
+      "to": "code:ann/bannerComposer",
       "type": "designs",
       "status": "candidate",
       "source": "annotation"
@@ -954,6 +1020,34 @@
       "source": "annotation"
     },
     {
+      "from": "test:ann/bannerComposer",
+      "to": "code:ann/bannerComposer",
+      "type": "tests",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/bannerComposer",
+      "to": "req:GOE-003",
+      "type": "verifies",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/exportGmaidenPack",
+      "to": "code:ann/exportPack",
+      "type": "tests",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/exportGmaidenPack",
+      "to": "req:GOE-003",
+      "type": "verifies",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
       "from": "code:ann/bakeBanner",
       "to": "req:GOE-003",
       "type": "implements",
@@ -970,6 +1064,13 @@
     {
       "from": "code:ann/exportPack",
       "to": "code:ann/bakeBanner",
+      "type": "depends_on",
+      "status": "current",
+      "source": "import"
+    },
+    {
+      "from": "code:ann/bakeBanner",
+      "to": "code:ann/bannerComposer",
       "type": "depends_on",
       "status": "current",
       "source": "import"
@@ -1081,5 +1182,5 @@
       "source": "import-graph"
     }
   ],
-  "updated_by": "rwang:doc-graph (Task 3 timing-consistency refresh; original scan 2026-08-11T11:42+07:00 preserved)"
+  "updated_by": "rwang:doc-graph (Sprint 3 candidate frame-composition refresh; original scan 2026-08-11T11:42+07:00 preserved)"
 }
