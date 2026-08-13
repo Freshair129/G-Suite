@@ -359,7 +359,8 @@ export default function OverlayLab() {
         <p className="mt-2 text-xs text-ink-faint">
           Modules are drawn at their real size for a 1920&times;1080 screen and drag freely — no grid,
           no snapping. Smaller modules sit above larger ones, so a stat chip over a card is still
-          the thing you grab. The banner previews for 3.5 seconds, matching the in-game event window.
+          the thing you grab. The local authored preview runs for 3.5 seconds; G-Maiden currently uses a
+          4.0-second show phase plus a 0.8-second exit phase.
         </p>
         {(() => {
           // Overlap is only a problem when two things are on screen together, and the

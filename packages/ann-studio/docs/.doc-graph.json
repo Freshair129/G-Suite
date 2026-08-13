@@ -1,17 +1,17 @@
 {
   "version": "1.0.0",
   "generated_by": "rwang:doc-graph",
-  "generated_at": "2026-08-11T16:36:36.471223Z",
+  "generated_at": "2026-08-14T02:35:00+07:00",
   "scope": "G-Overlay Lab and the G-Maiden handoff",
   "stats": {
-    "total_nodes": 49,
-    "total_edges": 86,
-    "stale_edges": 1,
+    "total_nodes": 56,
+    "total_edges": 97,
+    "stale_edges": 0,
     "contradiction_edges": 0,
     "coverage": {
-      "requirements_with_code": "80% (4/5, partial)",
-      "requirements_with_tests": "80% (4/5, partial)",
-      "code_with_docs": "100% (11/11 in scoped graph)"
+      "requirements_with_code": "100% (5/5, partial)",
+      "requirements_with_tests": "100% (5/5, partial)",
+      "code_with_docs": "100% (13/13 in scoped graph)"
     }
   },
   "nodes": [
@@ -28,25 +28,25 @@
       "type": "document",
       "label": "Documentation Hub",
       "defined_in": "packages/ann-studio/docs/README.md",
-      "hash": "ef3db332bc21",
-      "status": "beta"
+      "hash": "5b089aa269bf",
+      "status": "changed"
     },
     {
       "id": "doc:PRD-SDD-v0.1",
       "type": "document",
       "label": "G-AnnStudio PRD and SDD v0.1",
       "defined_in": "packages/ann-studio/docs/PRD-SDD-v0.1.md",
-      "hash": "1e6ec80483f9",
-      "status": "beta"
+      "hash": "ae9dfa8c7ec6",
+      "status": "candidate"
     },
     {
       "id": "doc:implementation-plan",
       "type": "document",
       "label": "G-Overlay Lab Implementation Plan",
       "defined_in": "packages/ann-studio/docs/implementation-plan.md",
-      "hash": "68274acf8037",
-      "status": "changed",
-      "last_verified": "2026-08-11T16:36:33.646324Z"
+      "hash": "0ac35feba65c",
+      "status": "candidate",
+      "last_verified": "2026-08-14T02:35:00+07:00"
     },
     {
       "id": "doc:rca-vite-build-timeout",
@@ -61,16 +61,16 @@
       "type": "document",
       "label": "G-AnnStudio Architecture",
       "defined_in": "packages/ann-studio/docs/ARCHITECTURE.md",
-      "hash": "85ee1e4fa533",
-      "status": "beta"
+      "hash": "3be00ed63401",
+      "status": "candidate"
     },
     {
       "id": "doc:CONTRIBUTING",
       "type": "document",
       "label": "G-AnnStudio Contributing",
       "defined_in": "packages/ann-studio/docs/CONTRIBUTING.md",
-      "hash": "eeb66072dc4f",
-      "status": "beta"
+      "hash": "e0a1e21087ab",
+      "status": "candidate"
     },
     {
       "id": "doc:frontend-design-system",
@@ -85,16 +85,16 @@
       "type": "document",
       "label": "G-AnnStudio API Index",
       "defined_in": "packages/ann-studio/docs/api/README.md",
-      "hash": "ec549b0697b5",
-      "status": "beta"
+      "hash": "199b5e2379e8",
+      "status": "candidate"
     },
     {
       "id": "doc:appendix-A",
       "type": "document",
       "label": "Local API Specification",
       "defined_in": "packages/ann-studio/docs/appendices/A-api-spec.md",
-      "hash": "6dc3809bea44",
-      "status": "beta"
+      "hash": "ce0123f31545",
+      "status": "candidate"
     },
     {
       "id": "doc:appendix-B",
@@ -109,8 +109,8 @@
       "type": "document",
       "label": "G-AnnStudio Risk Matrix",
       "defined_in": "packages/ann-studio/docs/appendices/E-risk-matrix.md",
-      "hash": "ed858d907548",
-      "status": "beta"
+      "hash": "69ce16f0dd08",
+      "status": "candidate"
     },
     {
       "id": "doc:appendix-F",
@@ -141,7 +141,15 @@
       "type": "document",
       "label": "Figma-grade Banner Editor",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "hash": "a67e3ef94c50",
+      "hash": "032d3684f077",
+      "status": "candidate"
+    },
+    {
+      "id": "doc:gann-cloud-threat-model",
+      "type": "document",
+      "label": "G-AnnStudio private cloud threat model and RLS contract",
+      "defined_in": "packages/ann-studio/docs/gann-cloud-threat-model.md",
+      "hash": "8ab34c6e614c",
       "status": "beta"
     },
     {
@@ -149,7 +157,7 @@
       "type": "document",
       "label": "Motion Export Contract Draft",
       "defined_in": "packages/ann-studio/docs/motion-export-contract-draft.md",
-      "hash": "7e7484dfde93",
+      "hash": "4d69a3d56b72",
       "status": "candidate"
     },
     {
@@ -157,14 +165,14 @@
       "type": "document",
       "label": "G-Overlay Lab Traceability",
       "defined_in": "packages/ann-studio/docs/appendices/D-traceability.md",
-      "hash": "e9e60f208aea",
-      "status": "beta"
+      "hash": "530b80767a5e",
+      "status": "candidate"
     },
     {
       "id": "doc:CR-014",
       "type": "document",
       "label": "G-Maiden CR-014 Sync Receiver",
-      "defined_in": "G-Maiden/docs/change request/CR-014-g-overlay-lab-sync.md",
+      "defined_in": "gmaiden:docs/change request/CR-014-g-overlay-lab-sync.md",
       "hash": "93182ed9431e",
       "status": "current"
     },
@@ -215,7 +223,7 @@
       "type": "requirement",
       "label": "Private cloud sync",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "proposed"
+      "status": "partial"
     },
     {
       "id": "code:schema/gmaiden-overlay-layout",
@@ -230,7 +238,7 @@
       "type": "code_file",
       "label": "G-Overlay Lab surface router",
       "defined_in": "packages/ann-studio/src/src/components/OverlayLab.tsx",
-      "hash": "92704b9da916",
+      "hash": "f2d1b9866163",
       "status": "changed",
       "annotations": {
         "@req": [
@@ -291,17 +299,19 @@
     {
       "id": "code:ann/bannerProject",
       "type": "code_file",
-      "label": "BannerProject v1 model",
+      "label": "BannerProject v1 model with optional per-layer timing",
       "defined_in": "packages/ann-studio/src/src/lib/bannerProject.ts",
-      "hash": "9944e26483aa",
+      "hash": "4a983d887f68",
       "status": "partial",
       "annotations": {
         "@req": [
-          "GOE-001"
+          "GOE-001",
+          "GOE-003"
         ],
         "@spec": [
           "SDD-001",
-          "SDD-002"
+          "SDD-002",
+          "SDD-003"
         ],
         "@tested": [
           "src/lib/bannerProject.test.ts"
@@ -311,19 +321,21 @@
     {
       "id": "code:ann/BannerEditor",
       "type": "code_file",
-      "label": "Layer canvas and inspector",
+      "label": "Layer canvas and inspector with Start/End timing fields",
       "defined_in": "packages/ann-studio/src/src/components/BannerEditor.tsx",
-      "hash": "4c87b6ecac70",
-      "status": "partial",
+      "hash": "129997cc0a08",
+      "status": "changed",
       "annotations": {
         "@req": [
           "GOE-001",
           "GOE-002",
+          "GOE-003",
           "GOE-004"
         ],
         "@spec": [
           "SDD-001",
-          "SDD-002"
+          "SDD-002",
+          "SDD-003"
         ],
         "@tested": [
           "src/components/BannerEditor.test.tsx"
@@ -333,9 +345,9 @@
     {
       "id": "code:ann/bannerPreflight",
       "type": "code_file",
-      "label": "Motion export preflight",
+      "label": "Pure, currently unwired motion export preflight",
       "defined_in": "packages/ann-studio/src/src/lib/bannerPreflight.ts",
-      "hash": "300f0052b3ba",
+      "hash": "dd0de23e418a",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -346,6 +358,27 @@
         ],
         "@tested": [
           "src/lib/bannerPreflight.test.ts"
+        ]
+      }
+    },
+    {
+      "id": "code:ann/cloudSync",
+      "type": "code_file",
+      "label": "Private cloud manifest projection and revision sync",
+      "defined_in": "packages/ann-studio/src/src/lib/cloudSync.ts",
+      "hash": "98fc2ca59944",
+      "status": "partial",
+      "annotations": {
+        "@req": [
+          "GOE-005",
+          "NFR-004"
+        ],
+        "@spec": [
+          "SDD-001",
+          "SDD-004"
+        ],
+        "@tested": [
+          "src/lib/cloudSync.test.ts"
         ]
       }
     },
@@ -399,9 +432,25 @@
       "id": "code:gmaiden/gsi",
       "type": "code_file",
       "label": "G-Maiden layout receiver",
-      "defined_in": "G-Maiden/src-tauri/src/gsi.rs",
+      "defined_in": "gmaiden:src-tauri/src/gsi.rs",
       "hash": "295a66c21eb7",
       "status": "current"
+    },
+    {
+      "id": "test:ann/cloudSync",
+      "type": "test",
+      "label": "Private cloud projection and validation tests",
+      "defined_in": "packages/ann-studio/src/src/lib/cloudSync.test.ts",
+      "hash": "6e2c7518cd72",
+      "status": "current"
+    },
+    {
+      "id": "code:gmaiden/goe005-migration",
+      "type": "code_file",
+      "label": "GOE-005 Supabase private project/asset migration",
+      "defined_in": "gmaiden:supabase/migrations/20260814090000_goe005_private_cloud_sync.sql",
+      "hash": "eadf5d5ed32b",
+      "status": "partial"
     },
     {
       "id": "api:post:/overlay/layout",
@@ -413,31 +462,53 @@
       "id": "code:gmaiden/control",
       "type": "code_file",
       "label": "Command Deck layout listener",
-      "defined_in": "G-Maiden/src/src/app/Control.tsx",
-      "hash": "cc232a2041fc",
+      "defined_in": "gmaiden:src/src/app/Control.tsx",
+      "hash": "03c85232633c",
       "status": "current"
     },
     {
       "id": "code:gmaiden/overlay",
       "type": "code_file",
       "label": "G-Maiden banner renderer",
-      "defined_in": "G-Maiden/src/src/app/Overlay.tsx",
-      "hash": "fc31e0894873",
+      "defined_in": "gmaiden:src/src/app/Overlay.tsx",
+      "hash": "df15e13ef3d7",
       "status": "current"
     },
     {
       "id": "test:gmaiden:gsi-overlay-layout",
       "type": "test",
       "label": "Layout receiver unit tests",
-      "defined_in": "G-Maiden/src-tauri/src/gsi.rs",
+      "defined_in": "gmaiden:src-tauri/src/gsi.rs",
       "status": "current"
+    },
+    {
+      "id": "test:gmaiden:goe005-private-cloud",
+      "type": "test",
+      "label": "GOE-005 private cloud RLS and grant tests",
+      "defined_in": "gmaiden:supabase/tests/goe005_private_cloud_sync.sql",
+      "hash": "0f5fef58339a",
+      "status": "partial"
     },
     {
       "id": "comp:cloud:private-project-sync",
       "type": "component",
       "label": "Private project and asset sync",
-      "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "proposed"
+      "defined_in": "packages/ann-studio/docs/gann-cloud-threat-model.md",
+      "status": "partial"
+    },
+    {
+      "id": "db:ann_projects",
+      "type": "db_table",
+      "label": "Owner-only BannerProject manifests",
+      "defined_in": "gmaiden:supabase/migrations/20260814090000_goe005_private_cloud_sync.sql",
+      "status": "partial"
+    },
+    {
+      "id": "db:ann_project_assets",
+      "type": "db_table",
+      "label": "Owner-only author asset metadata",
+      "defined_in": "gmaiden:supabase/migrations/20260814090000_goe005_private_cloud_sync.sql",
+      "status": "partial"
     },
     {
       "id": "code:ann/labView",
@@ -810,6 +881,13 @@
       "source": "manual"
     },
     {
+      "from": "code:ann/bannerProject",
+      "to": "req:GOE-003",
+      "type": "implements",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
       "from": "code:ann/bannerPreflight",
       "to": "code:ann/bannerProject",
       "type": "depends_on",
@@ -850,6 +928,13 @@
       "type": "implements",
       "status": "partial",
       "source": "manual"
+    },
+    {
+      "from": "code:ann/BannerEditor",
+      "to": "req:GOE-003",
+      "type": "implements",
+      "status": "partial",
+      "source": "annotation"
     },
     {
       "from": "code:ann/BannerEditor",
@@ -918,7 +1003,7 @@
       "from": "test:ann/BannerEditor",
       "to": "req:GOE-004",
       "type": "verifies",
-      "status": "current",
+      "status": "partial",
       "source": "annotation"
     },
     {
@@ -1023,8 +1108,78 @@
       "from": "req:GOE-005",
       "to": "comp:cloud:private-project-sync",
       "type": "designs",
-      "status": "proposed",
+      "status": "partial",
       "source": "document"
+    },
+    {
+      "from": "doc:g-overlay-lab-figma-editor",
+      "to": "doc:gann-cloud-threat-model",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:gann-cloud-threat-model",
+      "to": "comp:cloud:private-project-sync",
+      "type": "designs",
+      "status": "current",
+      "source": "document"
+    },
+    {
+      "from": "code:ann/cloudSync",
+      "to": "req:GOE-005",
+      "type": "implements",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/cloudSync",
+      "to": "code:ann/cloudSync",
+      "type": "tests",
+      "status": "current",
+      "source": "annotation"
+    },
+    {
+      "from": "test:ann/cloudSync",
+      "to": "req:GOE-005",
+      "type": "verifies",
+      "status": "partial",
+      "source": "annotation"
+    },
+    {
+      "from": "code:gmaiden/goe005-migration",
+      "to": "req:GOE-005",
+      "type": "implements",
+      "status": "partial",
+      "source": "migration"
+    },
+    {
+      "from": "test:gmaiden:goe005-private-cloud",
+      "to": "code:gmaiden/goe005-migration",
+      "type": "tests",
+      "status": "partial",
+      "source": "pgTAP"
+    },
+    {
+      "from": "test:gmaiden:goe005-private-cloud",
+      "to": "req:GOE-005",
+      "type": "verifies",
+      "status": "partial",
+      "source": "pgTAP"
+    },
+    {
+      "from": "comp:cloud:private-project-sync",
+      "to": "db:ann_projects",
+      "type": "persists_to",
+      "status": "partial",
+      "source": "migration"
+    },
+    {
+      "from": "comp:cloud:private-project-sync",
+      "to": "db:ann_project_assets",
+      "type": "persists_to",
+      "status": "partial",
+      "source": "migration"
     },
     {
       "from": "code:ann/store",
@@ -1041,14 +1196,6 @@
       "source": "manual"
     },
     {
-      "from": "req:GOE-005",
-      "to": "code:ann/rust",
-      "type": "stale",
-      "status": "planned",
-      "reason": "No approved cloud identity, authorization, storage, or conflict implementation exists.",
-      "source": "gap-analysis"
-    },
-    {
       "from": "code:ann/OverlayLab",
       "to": "code:ann/labView",
       "type": "depends_on",
@@ -1063,5 +1210,5 @@
       "source": "import-graph"
     }
   ],
-  "updated_by": "rwang:doc-graph (incremental; original scan 2026-08-11T11:42+07:00 preserved)"
+  "updated_by": "rwang:doc-graph (GOE-005 threat-model/RLS approval and local sync slice; original scan 2026-08-11T11:42+07:00 preserved)"
 }

@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "generated_by": "rwang:doc-preflight",
-  "generated_at": "2026-08-12T00:17:00+07:00",
+  "generated_at": "2026-08-14T02:35:00+07:00",
   "project": "G-AnnStudio",
   "scope": "Current G-AnnStudio documentation and the G-Overlay Lab feature slice",
   "trust_hierarchy": "Code > design specification > product requirements",
@@ -21,10 +21,10 @@
   },
   "summary": {
     "total_checks": 13,
-    "passed": 8,
-    "warnings": 2,
+    "passed": 9,
+    "warnings": 1,
     "critical": 0,
-    "info": 3,
+    "info": 4,
     "overall": "warning"
   },
   "findings": [
@@ -43,12 +43,12 @@
       "id": "INFO-001",
       "severity": "info",
       "check": "staleness",
-      "title": "One intentional planned graph gap remains",
-      "details": "GOE-005 points to a planned cloud-sync component with no implementation. This is an approved C-3/HIGH boundary, not a contradictory stale document claim.",
+      "title": "Hosted cloud evidence remains an intentional gate",
+      "details": "GOE-005 now has an approved threat model/RLS contract, local projection helper, migration, and tests. Hosted migration, cleanup retention, and signed-URL live evidence remain intentionally outside local proof.",
       "requirement_ids": [
         "GOE-005"
       ],
-      "action": "Retain the gap until a separate cloud threat model and contract are approved."
+      "action": "Keep the cloud control disabled for production until hosted migration and operational evidence are approved."
     },
     {
       "id": "INFO-003",
@@ -59,16 +59,16 @@
       "action": "Add Appendix C only if G-AnnStudio begins to ship or operate a model lifecycle."
     },
     {
-      "id": "WARN-003",
-      "severity": "warning",
+      "id": "INFO-005",
+      "severity": "info",
       "check": "cross-references",
-      "title": "Cross-repo graph nodes record unresolvable paths",
-      "details": "Five nodes point at G-Maiden files using paths written as 'G-Maiden/...', which cannot resolve from the G-Suite root. Any checker walking defined_in reads them as dangling. The files exist — the reference form is what is wrong.",
+      "title": "Cross-repo graph paths use explicit repo prefixes",
+      "details": "Cross-repo graph nodes now use the explicit gmaiden: prefix, so the resolver can distinguish sibling-repository files from missing paths.",
       "files": [
         "docs/.doc-graph.json"
       ],
       "requirement_ids": [],
-      "action": "Give cross-repo targets an explicit repo prefix (e.g. 'gmaiden:src-tauri/src/gsi.rs') or record the sibling checkout root, so a resolver can tell 'other repo' from 'missing'."
+      "action": "Keep the explicit repo-prefix convention for future cross-repository nodes."
     },
     {
       "id": "INFO-004",
@@ -89,7 +89,7 @@
   "passes": [
     {
       "check": "document-existence-and-structure",
-      "details": "The approved 3-Layer + Appendix core now has a docs index, PRD-SDD, architecture, contribution guide, frontend design system, API index, and appendices A, B, D, E, and F."
+      "details": "The approved 3-Layer + Appendix core now has a docs index, PRD-SDD, architecture, contribution guide, frontend design system, API index, threat model, and appendices A, B, D, E, and F."
     },
     {
       "check": "glossary",
@@ -97,19 +97,19 @@
     },
     {
       "check": "internal-contradictions",
-      "details": "No direct contradiction found between the existing layout-sync contract, Figma editor specification, traceability matrix, and scanned implementation."
+      "details": "Task 3 timing-consistency refresh confirms the corrected Figma editor specification, verification records, traceability matrix, and scanned implementation agree on optional startMs/endMs timing, future keyframes, SVG rasterization before runtime handoff, pure unwired preflight, and the distinction between the 0.5-3.5 second authored-animation ceiling, local 3.5-second previews, and G-Maiden's 4.0-second show plus 0.8-second exit lifecycle. The BannerEditor test provides local-preview evidence only; GOE-004 remains partial and full runtime HUD acceptance remains open."
     },
     {
       "check": "cross-references",
-      "details": "21 scanned documents: zero broken file://, relative or wiki links. (Cross-repo node paths are tracked separately as WARN-003.)"
+      "details": "22 scanned documents: zero broken file://, relative, wiki, or explicit sibling-repository links."
     },
     {
       "check": "document-graph",
-      "details": "docs/.doc-graph.json parses and its declared counts match contents (49 nodes / 86 edges after the incremental update)."
+      "details": "GOE-005 refresh: docs/.doc-graph.json parses; its declared counts match contents (56 nodes / 97 edges), file-backed SHA-256 prefixes match the current scoped documents and code, explicit gmaiden: paths identify sibling-repository files, and annotations trace the cloud projection plus pgTAP migration tests. GOE-003 and GOE-005 remain partial with live evidence gates."
     },
     {
       "check": "test-coverage",
-      "details": "Vitest passes 18 tests across BannerProject, store history, BannerEditor jsdom behavior, and read-only motion export preflight error paths."
+      "details": "Vitest passes 27 tests across BannerProject, store history, BannerEditor jsdom behavior, motion export preflight, and private cloud projection/validation. G-Maiden pgTAP assertions are present but not runnable locally without Supabase CLI/Docker."
     },
     {
       "check": "build-validation",
@@ -121,5 +121,5 @@
     }
   ],
   "previous_run": "2026-08-11T11:42:00+07:00",
-  "refresh_note": "Re-run after the Overlay Lab session (real-size previews, z-order, view-state persistence, pre-game screen). Findings from the previous run were re-verified rather than assumed; those still true are kept verbatim."
+  "refresh_note": "GOE-005 threat-model/RLS approval refresh. Recomputed file-backed graph hashes, added explicit sibling-repository nodes for the migration and pgTAP test, and recorded the local cloud projection/test evidence. Hosted migration, cleanup retention, signed-URL live smoke, and G-Maiden runtime handoff remain unclaimed."
 }

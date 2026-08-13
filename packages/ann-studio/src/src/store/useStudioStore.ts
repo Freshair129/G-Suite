@@ -1,6 +1,11 @@
+// @req GOE-001, GOE-002 — persists BannerProject state, selection, and history.
+// @spec SDD-001, SDD-002 — keeps the project model separate with bounded history.
+// @designs docs/g-overlay-lab-figma-editor-spec.md
+// @tested src/store/useStudioStore.test.ts
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { cloneDefaultOverlayLayout, type OverlayLayout } from "../lib/overlayLayout";
+import { cloneBannerProject, createDefaultBannerProject, type BannerProject } from "../lib/bannerProject";
 
 export interface Clip {
   id: string;
@@ -152,6 +157,10 @@ interface StudioState {
   gmaidenPath: string;
   voiceCache: VoiceCacheMap;
   overlayLayout: OverlayLayout;
+  bannerProject: BannerProject;
+  pastBannerProjects: BannerProject[];
+  futureBannerProjects: BannerProject[];
+  selectedBannerLayerIds: string[];
 
   /** event id → author banner override (unset = use the auto tone banner) */
   bannerOverrides: Record<string, BannerOverride>;
@@ -205,6 +214,12 @@ interface StudioState {
   /** set the G-Maiden install directory (where packs are written) */
   setGmaidenPath: (path: string) => void;
   setOverlayLayout: (layout: OverlayLayout) => void;
+  setBannerProject: (project: BannerProject) => void;
+  setBannerProjectSilent: (project: BannerProject) => void;
+  pushBannerProjectHistory: () => void;
+  undoBannerProject: () => void;
+  redoBannerProject: () => void;
+  setSelectedBannerLayerIds: (ids: string[]) => void;
   /** set (ov) or clear (null) the banner override for one event */
   setBannerOverride: (event: string, ov: BannerOverride | null) => void;
   /** pack builder: assign / unassign a library sound to an event */
@@ -280,6 +295,10 @@ export const useStudioStore = create<StudioState>()(
       gmaidenPath: "",
       voiceCache: {},
       overlayLayout: cloneDefaultOverlayLayout(),
+      bannerProject: createDefaultBannerProject(),
+      pastBannerProjects: [],
+      futureBannerProjects: [],
+      selectedBannerLayerIds: [],
       bannerOverrides: {},
       packBuilder: {},
 
@@ -422,6 +441,40 @@ export const useStudioStore = create<StudioState>()(
 
       setGmaidenPath: (gmaidenPath) => set({ gmaidenPath }),
       setOverlayLayout: (overlayLayout) => set({ overlayLayout }),
+      setBannerProject: (bannerProject) =>
+        set((s) => ({
+          bannerProject: { ...bannerProject, revision: s.bannerProject.revision + 1 },
+          pastBannerProjects: [...s.pastBannerProjects, cloneBannerProject(s.bannerProject)].slice(-HISTORY_MAX),
+          futureBannerProjects: [],
+        })),
+      setBannerProjectSilent: (bannerProject) =>
+        set((s) => ({ bannerProject: { ...bannerProject, revision: s.bannerProject.revision + 1 } })),
+      pushBannerProjectHistory: () =>
+        set((s) => ({
+          pastBannerProjects: [...s.pastBannerProjects, cloneBannerProject(s.bannerProject)].slice(-HISTORY_MAX),
+          futureBannerProjects: [],
+        })),
+      undoBannerProject: () =>
+        set((s) => {
+          const previous = s.pastBannerProjects[s.pastBannerProjects.length - 1];
+          if (!previous) return s;
+          return {
+            bannerProject: previous,
+            pastBannerProjects: s.pastBannerProjects.slice(0, -1),
+            futureBannerProjects: [cloneBannerProject(s.bannerProject), ...s.futureBannerProjects].slice(0, HISTORY_MAX),
+          };
+        }),
+      redoBannerProject: () =>
+        set((s) => {
+          const next = s.futureBannerProjects[0];
+          if (!next) return s;
+          return {
+            bannerProject: next,
+            pastBannerProjects: [...s.pastBannerProjects, cloneBannerProject(s.bannerProject)].slice(-HISTORY_MAX),
+            futureBannerProjects: s.futureBannerProjects.slice(1),
+          };
+        }),
+      setSelectedBannerLayerIds: (selectedBannerLayerIds) => set({ selectedBannerLayerIds }),
 
       setBannerOverride: (event, ov) =>
         set((s) => {
@@ -510,6 +563,7 @@ export const useStudioStore = create<StudioState>()(
         packBuilder: s.packBuilder,
         gmaidenPath: s.gmaidenPath,
         overlayLayout: s.overlayLayout,
+        bannerProject: s.bannerProject,
       }),
     }
   )
