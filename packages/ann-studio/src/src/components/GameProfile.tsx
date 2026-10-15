@@ -174,7 +174,7 @@ export default function GameProfile() {
         { packId: pack.id, targetDir: vcPath }
       );
       alert(
-        `ส่งไป G-Maiden สำเร็จ: ${result.total} ไฟล์ → ${result.output_dir}`
+        `ส่งออกไฟล์แพ็ก ${result.total} ไฟล์แล้ว → ${result.output_dir}\nการส่งออกนี้ยังไม่ได้ยืนยันการเปิดใช้แพ็กใน G-Maiden`
       );
       handleIntegrate();
     } catch (e) {
@@ -194,7 +194,12 @@ export default function GameProfile() {
     }
     setQuickInstalling(true);
     try {
-      const result: { installed: number; voice_cache: string; per_event: Record<string, number> } =
+      const result: {
+        installed: number;
+        voice_cache: string;
+        per_event: Record<string, number>;
+        activation: { state: string; detail: string | null };
+      } =
         await invoke("install_lib_to_gmaiden", {
           pkgId: pkg.id,
           mappings: KOM_MAPPING,
@@ -203,7 +208,7 @@ export default function GameProfile() {
       const eventSummary = Object.entries(result.per_event)
         .map(([ev, n]) => `${ev}: ${n}`)
         .join("\n");
-      alert(`ติดตั้งสำเร็จ! ${result.installed} ไฟล์ → ${result.voice_cache}\n\n${eventSummary}`);
+      alert(`เขียนไฟล์เสียง ${result.installed} ไฟล์ลง voice-cache แล้ว → ${result.voice_cache}\nแพ็กแบบ flat นี้ยังไม่ได้ยืนยันการเปิดใช้ใน G-Maiden${result.activation.detail ? `\n${result.activation.detail}` : ""}\n\n${eventSummary}`);
       handleIntegrate();
     } catch (e) {
       alert(`ติดตั้งไม่สำเร็จ: ${e}`);

@@ -69,7 +69,7 @@ export default function PackEditor({ pack }: { pack: Pack }) {
         "export_pack",
         { packId: pack.id, targetDir: dir }
       );
-      alert(`ส่งออกสำเร็จ: ${result.total} ไฟล์ → ${result.output_dir}`);
+      alert(`ส่งออกไฟล์แพ็ก ${result.total} ไฟล์แล้ว → ${result.output_dir}\nการส่งออกนี้ยังไม่ได้ยืนยันการเปิดใช้แพ็กใน G-Maiden`);
     } catch (e) {
       alert(`ส่งออกไม่สำเร็จ: ${e}`);
     } finally {

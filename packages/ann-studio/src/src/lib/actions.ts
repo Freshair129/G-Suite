@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useStudioStore, genId, type Clip } from "../store/useStudioStore";
 import { matchAnnouncerLabel } from "./honEventMap";
+import { installGmaidenPack } from "./exportGmaidenPack";
 
 const VIDEO_EXT = /\.(mp4|mkv|mov|webm|avi|m4v)$/i;
 
@@ -105,42 +106,9 @@ export async function runAutoSplit(model?: string): Promise<string> {
   }
 }
 
-interface InstallReport {
-  installed: number;
-  skipped: number;
-  voice_cache: string;
-  per_event: Record<string, number>;
-  endpoint: string | null;
-}
-
-/** Install the event-mapped clips straight into G-Maiden's voice-cache (+ ping its endpoint). */
+/** Build and ask G-Maiden to activate a manifest pack; report both outcomes. */
 export async function sendToGMaiden(): Promise<string> {
-  const s = useStudioStore.getState();
-  if (!s.wavPath) return "ยังไม่มีไฟล์เสียง";
-  const mapped = s.clips.filter((c) => c.event && c.event !== "unused");
-  if (!mapped.length) return "ยังไม่มี clip ที่ map event — กด “AI map” ก่อนนะครับ";
-  try {
-    const r = await invoke<InstallReport>("install_pack", {
-      sourcePath: s.wavPath,
-      clips: s.clips.map((c) => ({
-        name: c.name,
-        start: c.start,
-        end: c.end,
-        event: c.event,
-      })),
-      packName: "ann-pack",
-      gmaidenDir: s.gmaidenPath || null,
-      endpoint: "http://localhost:3000/announcer/install",
-    });
-    const ev = Object.entries(r.per_event)
-      .map(([k, v]) => `${k}×${v}`)
-      .join(", ");
-    return `ส่งไป G-Maiden แล้ว ✅ ติดตั้ง ${r.installed} clips (ข้าม ${r.skipped})\n${ev}\n${r.voice_cache}${
-      r.endpoint ? `\nendpoint: ${r.endpoint}` : ""
-    }`;
-  } catch (e) {
-    return `ส่งไป G-Maiden ไม่สำเร็จ: ${e}`;
-  }
+  return installGmaidenPack();
 }
 
 /** Cut every clip to WAV + write the announcer manifest. */

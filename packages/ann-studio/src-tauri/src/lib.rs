@@ -1,25 +1,43 @@
 use serde::{Deserialize, Serialize};
+use std::fs::{self, File, OpenOptions};
+use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::process::Command as StdCommand;
+use tauri::Manager;
 use tokio::process::Command;
 
 const EXE: &str = if cfg!(windows) { ".exe" } else { "" };
 
-/// Resolve the ffmpeg binary. Order: `FFMPEG_PATH` env → a bundled/global
-/// `ffmpeg-static` install → bare `ffmpeg` on `PATH`.
+/// Resolve FFmpeg. Order: explicit path → shared tools root → legacy
+/// ffmpeg-static install → PATH.
 fn ffmpeg_bin() -> String {
     resolve_bin("ffmpeg", "FFMPEG_PATH")
 }
 
 fn resolve_bin(name: &str, env_key: &str) -> String {
+    resolve_tool_path(name, env_key)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn resolve_tool_path(name: &str, env_key: &str) -> Option<PathBuf> {
     // 1. Explicit override.
     if let Ok(p) = std::env::var(env_key) {
-        if !p.is_empty() && Path::new(&p).exists() {
-            return p;
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            return Some(p);
         }
     }
-    // 2. ffmpeg-static next to the node toolchain (common on this project's
-    //    Windows setup). Probe a couple of likely roots.
+
     let file = format!("{name}{EXE}");
+    if let Some(root) = std::env::var_os("AI_STUDIO_TOOLS_DIR") {
+        if let Some(hit) = find_tool_in_root(Path::new(&root), name) {
+            return Some(hit);
+        }
+    }
+
+    // 3. Legacy ffmpeg-static locations used by older G-Suite setups.
     if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
         let home = Path::new(&home);
         for root in [
@@ -27,12 +45,39 @@ fn resolve_bin(name: &str, env_key: &str) -> String {
             home.join("AppData/Roaming/npm/node_modules"),
         ] {
             if let Some(hit) = find_ffmpeg_static(&root, &file) {
-                return hit;
+                return Some(PathBuf::from(hit));
             }
         }
     }
-    // 3. Fall back to PATH.
-    name.to_string()
+
+    find_on_path(&file)
+}
+
+/// Probe only the named tool directory and one version-directory level.
+fn find_tool_in_root(root: &Path, name: &str) -> Option<PathBuf> {
+    let file = format!("{name}{EXE}");
+    let tool_root = root.join(name);
+    for candidate in [tool_root.join(&file), tool_root.join("bin").join(&file)] {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    for entry in std::fs::read_dir(&tool_root).ok()?.flatten() {
+        let version_dir = entry.path();
+        for candidate in [version_dir.join(&file), version_dir.join("bin").join(&file)] {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn find_on_path(file: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|directory| directory.join(file))
+        .find(|candidate| candidate.is_file())
 }
 
 /// Shallow search for `node_modules/ffmpeg-static/<file>` under `root`
@@ -53,6 +98,127 @@ fn find_ffmpeg_static(root: &Path, file: &str) -> Option<String> {
         }
     }
     None
+}
+
+static STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+struct StagingDir(PathBuf);
+
+impl StagingDir {
+    fn create(parent: &Path, label: &str) -> Result<Self, String> {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("create staging parent {}: {e}", parent.display()))?;
+        for _ in 0..128 {
+            let sequence = STAGING_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let candidate = parent.join(format!(
+                ".gann-{label}-{}-{sequence}",
+                std::process::id()
+            ));
+            match fs::create_dir(&candidate) {
+                Ok(()) => return Ok(Self(candidate)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(format!("create staging directory: {error}")),
+            }
+        }
+        Err("could not allocate a unique staging directory".into())
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for StagingDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Copy one staged file into a new destination. `create_new` prevents a race
+/// from replacing a file created after an earlier collision check.
+fn copy_file_new(source: &Path, destination: &Path) -> io::Result<()> {
+    let mut input = File::open(source)?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)?;
+    let result = (|| {
+        io::copy(&mut input, &mut output)?;
+        output.sync_all()
+    })();
+    if result.is_err() {
+        drop(output);
+        let _ = fs::remove_file(destination);
+    }
+    result.map(|_| ())
+}
+
+fn rollback_created_files(paths: &[PathBuf]) {
+    for path in paths.iter().rev() {
+        let _ = fs::remove_file(path);
+    }
+}
+
+/// Create a directory tree and remember only directories that did not exist
+/// before this operation. `remove_dir` is used during rollback so any
+/// concurrent or pre-existing contents are never recursively deleted.
+fn create_dir_all_tracking(path: &Path, created: &mut Vec<PathBuf>) -> io::Result<()> {
+    let mut missing = Vec::new();
+    let mut current = Some(path);
+    while let Some(directory) = current {
+        if directory.exists() {
+            break;
+        }
+        missing.push(directory.to_path_buf());
+        current = directory.parent();
+    }
+
+    let result = fs::create_dir_all(path);
+    for directory in missing.into_iter().rev() {
+        if directory.is_dir() && !created.contains(&directory) {
+            created.push(directory);
+        }
+    }
+    result
+}
+
+fn rollback_created_dirs(paths: &[PathBuf]) {
+    for path in paths.iter().rev() {
+        // remove_dir succeeds only for an empty directory; it leaves any
+        // concurrent content in place.
+        let _ = fs::remove_dir(path);
+    }
+}
+
+fn validate_media_range(source: &Path, start: f64, end: f64) -> Result<(), String> {
+    if !source.is_file() {
+        return Err(format!("source media does not exist: {}", source.display()));
+    }
+    if !start.is_finite() || !end.is_finite() || start < 0.0 || end <= start {
+        return Err(format!("invalid media range: start={start}, end={end}"));
+    }
+    Ok(())
+}
+
+fn output_parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
+fn publish_unique_file(source: &Path, directory: &Path, prefix: &str) -> Result<PathBuf, String> {
+    for attempt in 0..256u32 {
+        let destination = directory.join(format!(
+            "{prefix}-{}-{attempt}.wav",
+            std::process::id()
+        ));
+        match copy_file_new(source, &destination) {
+            Ok(()) => return Ok(destination),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("publish {}: {error}", destination.display())),
+        }
+    }
+    Err("could not allocate a unique output filename".into())
 }
 
 #[derive(Serialize)]
@@ -90,22 +256,30 @@ struct ExportedClip {
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[tauri::command]
-async fn extract_audio(input_path: String) -> Result<AudioInfo, String> {
+async fn extract_audio(app: tauri::AppHandle, input_path: String) -> Result<AudioInfo, String> {
     let input = Path::new(&input_path);
-    let stem = input.file_stem().unwrap_or_default().to_string_lossy();
-    let out_dir = input.parent().unwrap_or(Path::new("."));
-    let wav_path = out_dir.join(format!("{stem}_extracted.wav"));
+    if !input.is_file() {
+        return Err(format!("source media does not exist: {}", input.display()));
+    }
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("resolve app cache directory: {e}"))?
+        .join("imports");
+    let staging = StagingDir::create(&cache, "import")?;
+    let staged_wav = staging.path().join("extracted.wav");
 
     let output = Command::new(ffmpeg_bin())
         .creation_flags(CREATE_NO_WINDOW)
         .args([
-            "-y",
+            "-nostdin",
+            "-n",
             "-i", &input_path,
             "-vn",
             "-acodec", "pcm_s16le",
             "-ar", "44100",
             "-ac", "1",
-            wav_path.to_str().unwrap(),
+            staged_wav.to_str().unwrap(),
         ])
         .output()
         .await
@@ -116,7 +290,8 @@ async fn extract_audio(input_path: String) -> Result<AudioInfo, String> {
         return Err(format!("ffmpeg error: {stderr}"));
     }
 
-    let duration = wav_duration(wav_path.to_str().unwrap())?;
+    let duration = wav_duration(staged_wav.to_str().unwrap())?;
+    let wav_path = publish_unique_file(&staged_wav, &cache, "imported-audio")?;
 
     Ok(AudioInfo {
         path: wav_path.to_string_lossy().into_owned(),
@@ -168,17 +343,27 @@ async fn cut_clip(
     end: f64,
     output_path: String,
 ) -> Result<String, String> {
+    let source = Path::new(&source_path);
+    let destination = PathBuf::from(&output_path);
+    validate_media_range(source, start, end)?;
     let duration = end - start;
+    let staging = StagingDir::create(output_parent(&destination), "cut")?;
+    let staged_output = staging.path().join(
+        destination
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("cut.wav")),
+    );
 
     let output = Command::new(ffmpeg_bin())
         .creation_flags(CREATE_NO_WINDOW)
         .args([
-            "-y",
+            "-nostdin",
+            "-n",
             "-i", &source_path,
             "-ss", &format!("{start:.3}"),
             "-t", &format!("{duration:.3}"),
             "-acodec", "pcm_s16le",
-            &output_path,
+            staged_output.to_str().unwrap(),
         ])
         .output()
         .await
@@ -189,7 +374,14 @@ async fn cut_clip(
         return Err(format!("ffmpeg error: {stderr}"));
     }
 
-    Ok(output_path)
+    copy_file_new(&staged_output, &destination).map_err(|error| {
+        if error.kind() == io::ErrorKind::AlreadyExists {
+            format!("refusing to replace existing output: {}", destination.display())
+        } else {
+            format!("publish clip {}: {error}", destination.display())
+        }
+    })?;
+    Ok(destination.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -201,6 +393,32 @@ async fn export_all(
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("cannot create output dir: {e}"))?;
 
+    let output_root = Path::new(&output_dir);
+    let mut filenames = std::collections::HashSet::new();
+    let manifest_path = output_root.join("announcer-manifest.json");
+    if manifest_path.exists() {
+        return Err(format!(
+            "refusing to replace existing manifest: {}",
+            manifest_path.display()
+        ));
+    }
+    for (i, clip) in clips.iter().enumerate() {
+        validate_media_range(Path::new(&source_path), clip.start, clip.end)?;
+        let filename = format!("{:02}_{}.wav", i + 1, sanitize_filename(&clip.name));
+        if !filenames.insert(filename.clone()) {
+            return Err(format!("clip filenames collide after sanitizing: {filename}"));
+        }
+        let destination = output_root.join(&filename);
+        if destination.exists() {
+            return Err(format!(
+                "refusing to replace existing output: {}",
+                destination.display()
+            ));
+        }
+    }
+
+    let staging = StagingDir::create(output_root, "export")?;
+
     let mut exported: Vec<ExportedClip> = Vec::new();
 
     for (i, clip) in clips.iter().enumerate() {
@@ -209,13 +427,14 @@ async fn export_all(
             i + 1,
             sanitize_filename(&clip.name)
         );
-        let out_path = Path::new(&output_dir).join(&filename);
+        let out_path = staging.path().join(&filename);
         let duration = clip.end - clip.start;
 
         let output = Command::new(ffmpeg_bin())
             .creation_flags(CREATE_NO_WINDOW)
             .args([
-                "-y",
+                "-nostdin",
+                "-n",
                 "-i", &source_path,
                 "-ss", &format!("{:.3}", clip.start),
                 "-t", &format!("{duration:.3}"),
@@ -245,12 +464,35 @@ async fn export_all(
         "pack_name": "announcer-pack",
         "clips": exported,
     });
-    let manifest_path = Path::new(&output_dir).join("announcer-manifest.json");
+    let staged_manifest = staging.path().join("announcer-manifest.json");
     std::fs::write(
-        &manifest_path,
+        &staged_manifest,
         serde_json::to_string_pretty(&manifest).unwrap(),
     )
     .map_err(|e| format!("failed to write manifest: {e}"))?;
+
+    let mut created = Vec::new();
+    for clip in &exported {
+        let staged = staging.path().join(&clip.path);
+        let destination = output_root.join(&clip.path);
+        if let Err(error) = copy_file_new(&staged, &destination) {
+            rollback_created_files(&created);
+            return Err(if error.kind() == io::ErrorKind::AlreadyExists {
+                format!("refusing to replace existing output: {}", destination.display())
+            } else {
+                format!("publish output {}: {error}", destination.display())
+            });
+        }
+        created.push(destination);
+    }
+    if let Err(error) = copy_file_new(&staged_manifest, &manifest_path) {
+        rollback_created_files(&created);
+        return Err(if error.kind() == io::ErrorKind::AlreadyExists {
+            format!("refusing to replace existing manifest: {}", manifest_path.display())
+        } else {
+            format!("publish manifest {}: {error}", manifest_path.display())
+        });
+    }
 
     Ok(ExportResult {
         clips: exported,
@@ -270,19 +512,27 @@ fn sanitize_filename(name: &str) -> String {
         .collect()
 }
 
-/// Locate the speech sidecar directory: `SIDECAR_DIR` env → `<exe>/sidecar`
-/// (bundled) → the compile-time crate's `sidecar/` (dev).
-fn sidecar_dir() -> PathBuf {
+/// Locate scripts from an explicit override, Tauri bundle resources, the
+/// executable-adjacent resource directory, or the development crate.
+fn sidecar_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("SIDECAR_DIR") {
         let p = PathBuf::from(d);
-        if p.exists() {
+        if p.is_dir() {
+            return p;
+        }
+    }
+    if let Ok(p) = app
+        .path()
+        .resolve("sidecar", tauri::path::BaseDirectory::Resource)
+    {
+        if p.is_dir() {
             return p;
         }
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let p = dir.join("sidecar");
-            if p.exists() {
+            if p.is_dir() {
                 return p;
             }
         }
@@ -290,11 +540,12 @@ fn sidecar_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("sidecar")
 }
 
-/// Resolve the sidecar Python: `PYTHON_PATH` env → the sidecar venv → `python`.
-fn python_bin(sidecar: &Path) -> String {
+/// Resolve Python: explicit path → sidecar/app environment → shared tools root → PATH.
+fn python_bin(sidecar: &Path, app_local_data: Option<&Path>) -> String {
     if let Ok(p) = std::env::var("PYTHON_PATH") {
-        if !p.is_empty() && Path::new(&p).exists() {
-            return p;
+        let path = PathBuf::from(p);
+        if path.is_file() {
+            return path.to_string_lossy().into_owned();
         }
     }
     let venv = if cfg!(windows) {
@@ -302,10 +553,198 @@ fn python_bin(sidecar: &Path) -> String {
     } else {
         sidecar.join(".venv/bin/python")
     };
-    if venv.exists() {
+    if venv.is_file() {
         return venv.to_string_lossy().into_owned();
     }
+    if let Some(root) = app_local_data {
+        let app_venv = if cfg!(windows) {
+            root.join("sidecar-python/Scripts/python.exe")
+        } else {
+            root.join("sidecar-python/bin/python")
+        };
+        if app_venv.is_file() {
+            return app_venv.to_string_lossy().into_owned();
+        }
+    }
+    if let Some(root) = std::env::var_os("AI_STUDIO_TOOLS_DIR") {
+        if let Some(path) = find_tool_in_root(Path::new(&root), "python") {
+            return path.to_string_lossy().into_owned();
+        }
+    }
+    for file in [format!("python{EXE}"), "python3".to_string()] {
+        if let Some(path) = find_on_path(&file) {
+            return path.to_string_lossy().into_owned();
+        }
+    }
     "python".to_string()
+}
+
+fn load_runtime_tools_dir(app: &tauri::AppHandle) {
+    if std::env::var_os("AI_STUDIO_TOOLS_DIR").is_some() {
+        return;
+    }
+    let Ok(app_data) = app.path().app_local_data_dir() else {
+        return;
+    };
+    let Ok(contents) = fs::read_to_string(app_data.join("runtime-tools-dir.txt")) else {
+        return;
+    };
+    let path = contents.trim();
+    if !path.is_empty() && Path::new(path).is_dir() {
+        std::env::set_var("AI_STUDIO_TOOLS_DIR", path);
+    }
+}
+
+#[tauri::command]
+fn set_runtime_tools_dir(app: tauri::AppHandle, path: Option<String>) -> Result<String, String> {
+    let app_data = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("resolve app data directory: {e}"))?;
+    fs::create_dir_all(&app_data).map_err(|e| format!("create app data directory: {e}"))?;
+    let config = app_data.join("runtime-tools-dir.txt");
+    match path.map(|path| path.trim().to_string()).filter(|path| !path.is_empty()) {
+        Some(path) => {
+            if !Path::new(&path).is_dir() {
+                return Err(format!("tools directory does not exist: {path}"));
+            }
+            fs::write(&config, &path).map_err(|e| format!("save tools directory: {e}"))?;
+            std::env::set_var("AI_STUDIO_TOOLS_DIR", &path);
+            Ok(path)
+        }
+        None => {
+            match fs::remove_file(&config) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("remove tools directory setting: {error}")),
+            }
+            std::env::remove_var("AI_STUDIO_TOOLS_DIR");
+            Ok(String::new())
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct RuntimeToolStatus {
+    available: bool,
+    path: String,
+    version: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RuntimeDiagnostics {
+    tools_dir: String,
+    ffmpeg: RuntimeToolStatus,
+    python: RuntimeToolStatus,
+    sidecar_path: String,
+    scripts: std::collections::BTreeMap<String, bool>,
+    python_modules: std::collections::BTreeMap<String, bool>,
+    ready_for_media: bool,
+    ready_for_speech: bool,
+    ready_for_video_analysis: bool,
+}
+
+#[cfg(windows)]
+fn hide_console(command: &mut StdCommand) {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_console(_command: &mut StdCommand) {}
+
+fn probe_tool_version(path: &str, arguments: &[&str]) -> RuntimeToolStatus {
+    let mut command = StdCommand::new(path);
+    hide_console(&mut command);
+    match command.args(arguments).output() {
+        Ok(output) if output.status.success() => {
+            let text = String::from_utf8_lossy(&output.stdout);
+            let version = text.lines().next().unwrap_or_default().trim().to_string();
+            RuntimeToolStatus {
+                available: !version.is_empty(),
+                path: path.to_string(),
+                version: (!version.is_empty()).then_some(version),
+                error: None,
+            }
+        }
+        Ok(output) => RuntimeToolStatus {
+            available: false,
+            path: path.to_string(),
+            version: None,
+            error: Some(format!("version command exited with {}", output.status)),
+        },
+        Err(error) => RuntimeToolStatus {
+            available: false,
+            path: path.to_string(),
+            version: None,
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+#[tauri::command]
+fn video_prerequisites_present(
+    python_modules: &std::collections::BTreeMap<String, bool>,
+    scripts: &std::collections::BTreeMap<String, bool>,
+) -> bool {
+    ["av", "cv2", "rapidocr_onnxruntime"]
+        .iter()
+        .all(|name| python_modules.get(*name) == Some(&true))
+        && ["detect_boundaries.py", "detect_buttons.py"]
+            .iter()
+            .all(|name| scripts.get(*name) == Some(&true))
+}
+
+#[tauri::command]
+fn runtime_diagnostics(app: tauri::AppHandle) -> RuntimeDiagnostics {
+    let ffmpeg = resolve_tool_path("ffmpeg", "FFMPEG_PATH")
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "ffmpeg".to_string());
+    let sidecar = sidecar_dir(&app);
+    let app_local_data = app.path().app_local_data_dir().ok();
+    let python = python_bin(&sidecar, app_local_data.as_deref());
+    let ffmpeg_status = probe_tool_version(&ffmpeg, &["-version"]);
+    let python_version = probe_tool_version(&python, &["--version"]);
+    let scripts: std::collections::BTreeMap<String, bool> = [
+        "transcribe.py",
+        "detect_boundaries.py",
+        "detect_buttons.py",
+    ]
+    .into_iter()
+    .map(|name| (name.to_string(), sidecar.join(name).is_file()))
+    .collect();
+
+    let python_modules: std::collections::BTreeMap<String, bool> = if python_version.available {
+        let script = "import importlib.util,json; print(json.dumps({m: importlib.util.find_spec(m) is not None for m in ['faster_whisper','av','cv2','rapidocr_onnxruntime']}))";
+        let mut command = StdCommand::new(&python);
+        hide_console(&mut command);
+        command.args(["-c", script]);
+        match command.output() {
+            Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
+                .unwrap_or_default(),
+            _ => Default::default(),
+        }
+    } else {
+        Default::default()
+    };
+
+    let speech_ready = python_version.available
+        && python_modules.get("faster_whisper") == Some(&true)
+        && scripts.get("transcribe.py") == Some(&true);
+    let video_ready = speech_ready && video_prerequisites_present(&python_modules, &scripts);
+
+    RuntimeDiagnostics {
+        tools_dir: std::env::var("AI_STUDIO_TOOLS_DIR").unwrap_or_default(),
+        ready_for_media: ffmpeg_status.available,
+        ready_for_speech: speech_ready,
+        ready_for_video_analysis: video_ready,
+        ffmpeg: ffmpeg_status,
+        python: python_version,
+        sidecar_path: sidecar.to_string_lossy().into_owned(),
+        scripts,
+        python_modules,
+    }
 }
 
 /// Transcribe a WAV via the faster-whisper sidecar and return its raw JSON
@@ -313,16 +752,17 @@ fn python_bin(sidecar: &Path) -> String {
 /// turns segments into regions.
 #[tauri::command]
 async fn transcribe_audio(
+    app: tauri::AppHandle,
     wav_path: String,
     model: Option<String>,
     lang: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let sidecar = sidecar_dir();
+    let sidecar = sidecar_dir(&app);
     let script = sidecar.join("transcribe.py");
     if !script.exists() {
         return Err(format!("sidecar script not found at {}", script.display()));
     }
-    let py = python_bin(&sidecar);
+    let py = python_bin(&sidecar, app.path().app_local_data_dir().ok().as_deref());
     let model = model.unwrap_or_else(|| "medium".into());
     let lang = lang.unwrap_or_else(|| "th".into());
 
@@ -335,6 +775,8 @@ async fn transcribe_audio(
             &model,
             "--lang",
             &lang,
+            "--device",
+            "cpu",
         ])
         .output()
         .await
@@ -386,18 +828,25 @@ struct AnalyzedClip {
 /// (e.g. rapidocr not installed) degrades to empty labels, not an error.
 #[tauri::command]
 async fn analyze_video(
+    app: tauri::AppHandle,
     video_path: String,
     wav_path: String,
     model: Option<String>,
     lang: Option<String>,
 ) -> Result<Vec<AnalyzedClip>, String> {
-    let sidecar = sidecar_dir();
-    let py = python_bin(&sidecar);
+    let sidecar = sidecar_dir(&app);
+    let py = python_bin(&sidecar, app.path().app_local_data_dir().ok().as_deref());
     let model = model.unwrap_or_else(|| "medium".into());
     let lang = lang.unwrap_or_else(|| "th".into());
 
     // 1. W1 — vision line boundaries from the video
     let b = spawn_sidecar(&py, sidecar.join("detect_boundaries.py"), vec![video_path.clone()]).await?;
+    if !b.status.success() {
+        return Err(format!(
+            "detect_boundaries failed: {}",
+            String::from_utf8_lossy(&b.stderr)
+        ));
+    }
     let b_json: serde_json::Value = serde_json::from_str(String::from_utf8_lossy(&b.stdout).trim())
         .map_err(|e| format!("detect_boundaries: {e}\n{}", String::from_utf8_lossy(&b.stderr)))?;
     let lines = b_json["lines"].as_array().cloned().unwrap_or_default();
@@ -413,9 +862,23 @@ async fn analyze_video(
     let t = spawn_sidecar(
         &py,
         sidecar.join("transcribe.py"),
-        vec![wav_path, "--model".into(), model, "--lang".into(), lang],
+        vec![
+            wav_path,
+            "--model".into(),
+            model,
+            "--lang".into(),
+            lang,
+            "--device".into(),
+            "cpu".into(),
+        ],
     )
     .await?;
+    if !t.status.success() {
+        return Err(format!(
+            "transcribe failed: {}",
+            String::from_utf8_lossy(&t.stderr)
+        ));
+    }
     let t_json: serde_json::Value = serde_json::from_str(String::from_utf8_lossy(&t.stdout).trim())
         .map_err(|e| format!("transcribe: {e}\n{}", String::from_utf8_lossy(&t.stderr)))?;
     let segments = t_json["segments"].as_array().cloned().unwrap_or_default();
@@ -589,12 +1052,80 @@ fn clip_audio_filter(c: &InstallClip, dur: f64) -> Option<String> {
 }
 
 #[derive(Serialize)]
+struct ActivationReport {
+    state: String,
+    endpoint: Option<String>,
+    http_status: Option<u16>,
+    detail: Option<String>,
+}
+
+fn activation_unavailable(endpoint: Option<&str>, detail: impl Into<String>) -> ActivationReport {
+    ActivationReport {
+        state: "unavailable".into(),
+        endpoint: endpoint.map(str::to_string),
+        http_status: None,
+        detail: Some(detail.into()),
+    }
+}
+
+async fn request_pack_activation(
+    endpoint: Option<&str>,
+    pack_id: &str,
+) -> ActivationReport {
+    let Some(endpoint) = endpoint.filter(|endpoint| !endpoint.trim().is_empty()) else {
+        return activation_unavailable(None, "No G-Maiden activation endpoint was configured.");
+    };
+    let result = reqwest::Client::new()
+        .post(endpoint)
+        .timeout(std::time::Duration::from_secs(8))
+        .json(&serde_json::json!({ "packId": pack_id }))
+        .send()
+        .await;
+    let response = match result {
+        Ok(response) => response,
+        Err(error) => return activation_unavailable(Some(endpoint), error.to_string()),
+    };
+    let status = response.status();
+    let response_text = response.text().await.unwrap_or_default();
+    let payload: serde_json::Value = serde_json::from_str(&response_text).unwrap_or_default();
+    let confirmed = status.is_success()
+        && payload.get("ok").and_then(serde_json::Value::as_bool) == Some(true)
+        && payload
+            .get("activated")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true);
+    if confirmed {
+        ActivationReport {
+            state: "accepted".into(),
+            endpoint: Some(endpoint.to_string()),
+            http_status: Some(status.as_u16()),
+            detail: Some("G-Maiden confirmed pack activation.".into()),
+        }
+    } else {
+        let detail = payload
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                (!response_text.trim().is_empty()).then_some(response_text.clone())
+            })
+            .unwrap_or_else(|| "G-Maiden did not confirm pack activation.".into());
+        ActivationReport {
+            state: "rejected".into(),
+            endpoint: Some(endpoint.to_string()),
+            http_status: Some(status.as_u16()),
+            detail: Some(detail),
+        }
+    }
+}
+
+#[derive(Serialize)]
 struct InstallReport {
     installed: usize,
     skipped: usize,
     voice_cache: String,
     per_event: std::collections::BTreeMap<String, usize>,
-    endpoint: Option<String>,
+    activation: ActivationReport,
 }
 
 /// Locate the G-Maiden repo: arg → `GMAIDEN_DIR` env → sibling of the G-Suite repo.
@@ -719,8 +1250,9 @@ async fn install_pack(
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
     let vc = voice_cache_root(&base);
 
+    let staging = StagingDir::create(&vc, "flat-install")?;
     let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
-    let mut installed = 0usize;
+    let mut staged_files: Vec<(PathBuf, PathBuf)> = Vec::new();
     let mut skipped = 0usize;
 
     for clip in &clips {
@@ -728,18 +1260,30 @@ async fn install_pack(
             skipped += 1;
             continue;
         }
-        let dir = vc.join(&clip.event);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+        validate_media_range(Path::new(&source_path), clip.start, clip.end)?;
+        let event_dir = sanitize_filename(&clip.event);
+        if event_dir.is_empty() {
+            return Err(format!("invalid event name: {}", clip.event));
+        }
+        let dir = vc.join(&event_dir);
         let n = per_event.entry(clip.event.clone()).or_insert(0);
         *n += 1;
         let fname = format!("{}_{:02}.wav", sanitize_filename(&pack_name), *n);
         let out_path = dir.join(&fname);
+        if out_path.exists() {
+            return Err(format!(
+                "refusing to replace existing voice-cache file: {}",
+                out_path.display()
+            ));
+        }
         let duration = clip.end - clip.start;
+        let staged_path = staging.path().join(format!("clip_{:04}.wav", staged_files.len() + 1));
 
         let output = Command::new(ffmpeg_bin())
             .creation_flags(CREATE_NO_WINDOW)
             .args([
-                "-y",
+                "-nostdin",
+                "-n",
                 "-i",
                 &source_path,
                 "-ss",
@@ -748,7 +1292,7 @@ async fn install_pack(
                 &format!("{duration:.3}"),
                 "-acodec",
                 "pcm_s16le",
-                out_path.to_str().unwrap(),
+                staged_path.to_str().unwrap(),
             ])
             .output()
             .await
@@ -760,31 +1304,49 @@ async fn install_pack(
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
-        installed += 1;
+        staged_files.push((staged_path, out_path));
     }
 
-    // Notify G-Maiden's install endpoint (best-effort — works once Phase 3 lands).
-    let mut endpoint_result = None;
-    if let Some(ep) = endpoint {
-        if !ep.is_empty() {
-            let body = serde_json::json!({
-                "pack": pack_name,
-                "installed": installed,
-                "voice_cache": vc.to_string_lossy(),
-            });
-            match reqwest::Client::new().post(&ep).json(&body).send().await {
-                Ok(r) => endpoint_result = Some(format!("{ep} → {}", r.status())),
-                Err(e) => endpoint_result = Some(format!("{ep} (POST ไม่ติด: {e})")),
+    let mut created_directories = Vec::new();
+    for (_, destination) in &staged_files {
+        if let Some(parent) = destination.parent() {
+            if let Err(error) = create_dir_all_tracking(parent, &mut created_directories) {
+                rollback_created_dirs(&created_directories);
+                return Err(format!(
+                    "create voice-cache directory {}: {error}",
+                    parent.display()
+                ));
             }
         }
     }
 
+    let mut created = Vec::new();
+    for (staged, destination) in &staged_files {
+        if let Err(error) = copy_file_new(staged, destination) {
+            rollback_created_files(&created);
+            rollback_created_dirs(&created_directories);
+            return Err(if error.kind() == io::ErrorKind::AlreadyExists {
+                format!("refusing to replace existing voice-cache file: {}", destination.display())
+            } else {
+                format!("write voice-cache file {}: {error}", destination.display())
+            });
+        }
+        created.push(destination.clone());
+    }
+
+    // This legacy flat voice-cache path has no manifest for G-Maiden's current
+    // pack activation endpoint. Report local output without claiming reload.
+    let activation = activation_unavailable(
+        endpoint.as_deref(),
+        "Flat voice-cache clips were written locally; G-Maiden's activation endpoint accepts manifest packs only.",
+    );
+
     Ok(InstallReport {
-        installed,
+        installed: staged_files.len(),
         skipped,
         voice_cache: vc.to_string_lossy().into_owned(),
         per_event,
-        endpoint: endpoint_result,
+        activation,
     })
 }
 
@@ -811,6 +1373,51 @@ struct PackInstallReport {
     events: usize,
     clips: usize,
     banners: usize,
+    activation: ActivationReport,
+}
+
+/// Promote a fully built staging pack only after claiming a previously unused
+/// destination directory. `manifest.json` is copied last so pack discovery
+/// cannot observe a half-written pack.
+fn commit_staged_pack(staging: &Path, pack_dir: &Path) -> Result<(), String> {
+    if let Some(parent) = pack_dir.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("create pack parent {}: {e}", parent.display()))?;
+    }
+    fs::create_dir(pack_dir).map_err(|error| {
+        if error.kind() == io::ErrorKind::AlreadyExists {
+            format!("refusing to replace existing pack: {}", pack_dir.display())
+        } else {
+            format!("create pack {}: {error}", pack_dir.display())
+        }
+    })?;
+
+    let result = (|| {
+        for child in ["clips", "banners"] {
+            let source_dir = staging.join(child);
+            let destination_dir = pack_dir.join(child);
+            fs::create_dir(&destination_dir)
+                .map_err(|e| format!("create pack {child} directory: {e}"))?;
+            for entry in fs::read_dir(&source_dir)
+                .map_err(|e| format!("read staged {child}: {e}"))?
+            {
+                let source = entry.map_err(|e| format!("read staged {child} entry: {e}"))?.path();
+                let filename = source
+                    .file_name()
+                    .ok_or_else(|| format!("invalid staged filename: {}", source.display()))?;
+                copy_file_new(&source, &destination_dir.join(filename))
+                    .map_err(|e| format!("copy staged {child} file: {e}"))?;
+            }
+        }
+        copy_file_new(&staging.join("manifest.json"), &pack_dir.join("manifest.json"))
+            .map_err(|e| format!("publish pack manifest: {e}"))
+    })();
+
+    if let Err(error) = result {
+        let _ = fs::remove_dir_all(pack_dir);
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Build a G-Maiden **manifest-based** pack (clips/ + banners/ + manifest.json in
@@ -837,9 +1444,17 @@ async fn install_gmaiden_pack(
     let base = resolve_gmaiden_dir(&gmaiden_dir)
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
     let id = sanitize_filename(&pack_id);
-    let pack_dir = voice_cache_root(&base).join("packs").join(&id);
-    let clips_dir = pack_dir.join("clips");
-    let banners_dir = pack_dir.join("banners");
+    if id.is_empty() {
+        return Err("pack id is empty after sanitizing".into());
+    }
+    let packs_root = voice_cache_root(&base).join("packs");
+    let pack_dir = packs_root.join(&id);
+    if pack_dir.exists() {
+        return Err(format!("refusing to replace existing pack: {}", pack_dir.display()));
+    }
+    let staging = StagingDir::create(&packs_root, "pack")?;
+    let clips_dir = staging.path().join("clips");
+    let banners_dir = staging.path().join("banners");
     std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
     std::fs::create_dir_all(&banners_dir).map_err(|e| format!("mkdir banners: {e}"))?;
 
@@ -851,9 +1466,13 @@ async fn install_gmaiden_pack(
         if clip.event.is_empty() || clip.event == "unused" {
             continue;
         }
+        let event_component = sanitize_filename(&clip.event);
+        if event_component.is_empty() {
+            return Err(format!("invalid event name: {}", clip.event));
+        }
         let n = per_event.entry(clip.event.clone()).or_insert(0);
         *n += 1;
-        let fname = format!("{}_{:02}.wav", sanitize_filename(&clip.event), *n);
+        let fname = format!("{}_{:02}.wav", event_component, *n);
         let out_path = clips_dir.join(&fname);
         let dur = clip.end - clip.start;
         // a file-clip is cut from its own library wav (contained under sounds_dir);
@@ -870,8 +1489,10 @@ async fn install_gmaiden_pack(
             }
             canon.to_string_lossy().into_owned()
         };
+        validate_media_range(Path::new(&input), clip.start, clip.end)?;
         let mut args: Vec<String> = vec![
-            "-y".into(),
+            "-nostdin".into(),
+            "-n".into(),
             "-i".into(),
             input,
             "-ss".into(),
@@ -951,21 +1572,13 @@ async fn install_gmaiden_pack(
         manifest["authorGid"] = json!(gid);
     }
     std::fs::write(
-        pack_dir.join("manifest.json"),
+        staging.path().join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap(),
     )
     .map_err(|e| format!("write manifest: {e}"))?;
+    commit_staged_pack(staging.path(), &pack_dir)?;
 
-    // tell G-Maiden to activate the pack (same file-write path as the UI action)
-    if let Some(ep) = &endpoint {
-        if !ep.is_empty() {
-            let _ = reqwest::Client::new()
-                .post(ep)
-                .json(&json!({ "packId": id }))
-                .send()
-                .await;
-        }
-    }
+    let activation = request_pack_activation(endpoint.as_deref(), &id).await;
 
     Ok(PackInstallReport {
         pack_id: id,
@@ -973,6 +1586,7 @@ async fn install_gmaiden_pack(
         events: mappings.len(),
         clips: clip_total,
         banners: banner_total,
+        activation,
     })
 }
 
@@ -1005,13 +1619,23 @@ async fn install_library_pack(
     let base = resolve_gmaiden_dir(&gmaiden_dir)
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
     let id = sanitize_filename(&pack_id);
-    let pack_dir = voice_cache_root(&base).join("packs").join(&id);
-    let clips_dir = pack_dir.join("clips");
-    let banners_dir = pack_dir.join("banners");
+    if id.is_empty() {
+        return Err("pack id is empty after sanitizing".into());
+    }
+    let packs_root = voice_cache_root(&base).join("packs");
+    let pack_dir = packs_root.join(&id);
+    if pack_dir.exists() {
+        return Err(format!("refusing to replace existing pack: {}", pack_dir.display()));
+    }
+    let staging = StagingDir::create(&packs_root, "library-pack")?;
+    let clips_dir = staging.path().join("clips");
+    let banners_dir = staging.path().join("banners");
     std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
     std::fs::create_dir_all(&banners_dir).map_err(|e| format!("mkdir banners: {e}"))?;
 
-    let snd_root = sounds_dir();
+    let snd_root = sounds_dir()
+        .canonicalize()
+        .map_err(|e| format!("resolve sound library: {e}"))?;
     let mut mappings: Map<String, Value> = Map::new();
     let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
     let mut clip_total = 0usize;
@@ -1027,9 +1651,13 @@ async fn install_library_pack(
         if !canon.starts_with(&snd_root) {
             return Err(format!("ไฟล์อยู่นอกคลัง: {}", clip.file_path));
         }
+        let event_component = sanitize_filename(&clip.event);
+        if event_component.is_empty() {
+            return Err(format!("invalid event name: {}", clip.event));
+        }
         let n = per_event.entry(clip.event.clone()).or_insert(0);
         *n += 1;
-        let fname = format!("{}_{:02}.wav", sanitize_filename(&clip.event), *n);
+        let fname = format!("{}_{:02}.wav", event_component, *n);
         std::fs::copy(&canon, clips_dir.join(&fname))
             .map_err(|e| format!("copy {}: {e}", clip.file_path))?;
         let entry = mappings.entry(clip.event.clone()).or_insert_with(|| {
@@ -1078,20 +1706,13 @@ async fn install_library_pack(
         manifest["authorGid"] = json!(gid);
     }
     std::fs::write(
-        pack_dir.join("manifest.json"),
+        staging.path().join("manifest.json"),
         serde_json::to_string_pretty(&manifest).unwrap(),
     )
     .map_err(|e| format!("write manifest: {e}"))?;
 
-    if let Some(ep) = &endpoint {
-        if !ep.is_empty() {
-            let _ = reqwest::Client::new()
-                .post(ep)
-                .json(&json!({ "packId": id }))
-                .send()
-                .await;
-        }
-    }
+    commit_staged_pack(staging.path(), &pack_dir)?;
+    let activation = request_pack_activation(endpoint.as_deref(), &id).await;
 
     Ok(PackInstallReport {
         pack_id: id,
@@ -1099,6 +1720,7 @@ async fn install_library_pack(
         events: mappings.len(),
         clips: clip_total,
         banners: banner_total,
+        activation,
     })
 }
 
@@ -1934,27 +2556,49 @@ async fn export_pack(
         .map_err(|e| format!("pack not found: {e}"))?
     };
 
-    let snd_root = sounds_dir();
-    let out = Path::new(&target_dir).join(&manifest.name);
-    std::fs::create_dir_all(&out).map_err(|e| format!("mkdir output: {e}"))?;
+    let snd_root = sounds_dir()
+        .canonicalize()
+        .map_err(|e| format!("resolve sound library: {e}"))?;
+    let output_root = Path::new(&target_dir);
+    std::fs::create_dir_all(output_root).map_err(|e| format!("mkdir output: {e}"))?;
+    let folder_name = sanitize_filename(&manifest.name);
+    if folder_name.is_empty() {
+        return Err("pack name is empty after sanitizing".into());
+    }
+    let out = output_root.join(&folder_name);
+    if out.exists() {
+        return Err(format!("refusing to replace existing export: {}", out.display()));
+    }
+    let staging = StagingDir::create(output_root, "pack-export")?;
+    let staged_out = staging.path().join(&folder_name);
+    std::fs::create_dir(&staged_out).map_err(|e| format!("create staged export: {e}"))?;
 
     let mut files = Vec::new();
+    let mut destinations = std::collections::HashSet::new();
 
     for (event, mapping) in &manifest.mappings {
-        let src = snd_root.join(&mapping.sound_path);
-        if !src.exists() {
-            continue;
+        let src = match snd_root.join(&mapping.sound_path).canonicalize() {
+            Ok(path) if path.starts_with(&snd_root) && path.is_file() => path,
+            Ok(_) => return Err(format!("sound path escapes library: {}", mapping.sound_path)),
+            Err(_) => continue,
+        };
+        let event_dir_name = sanitize_filename(event);
+        if event_dir_name.is_empty() {
+            return Err(format!("event name is empty after sanitizing: {event}"));
         }
-        let event_dir = out.join(event);
-        std::fs::create_dir_all(&event_dir)
-            .map_err(|e| format!("mkdir {event}: {e}"))?;
-
         let fname = src
             .file_name()
-            .unwrap()
+            .ok_or_else(|| format!("invalid sound filename: {}", src.display()))?
             .to_string_lossy()
             .into_owned();
-        let dest = event_dir.join(&fname);
+        let relative = PathBuf::from(&event_dir_name).join(&fname);
+        if !destinations.insert(relative.clone()) {
+            return Err(format!("export paths collide after sanitizing: {}", relative.display()));
+        }
+        let staged_event_dir = staged_out.join(&event_dir_name);
+        std::fs::create_dir_all(&staged_event_dir)
+            .map_err(|e| format!("create staged event directory {event}: {e}"))?;
+        let staged_dest = staged_out.join(&relative);
 
         let needs_filter =
             (mapping.volume - 1.0).abs() > 0.01 || (mapping.speed - 1.0).abs() > 0.01;
@@ -1971,14 +2615,15 @@ async fn export_pack(
             let output = Command::new(ffmpeg_bin())
                 .creation_flags(CREATE_NO_WINDOW)
                 .args([
-                    "-y",
+                    "-nostdin",
+                    "-n",
                     "-i",
                     src.to_str().unwrap(),
                     "-af",
                     &filter_str,
                     "-acodec",
                     "pcm_s16le",
-                    dest.to_str().unwrap(),
+                    staged_dest.to_str().unwrap(),
                 ])
                 .output()
                 .await
@@ -1990,9 +2635,10 @@ async fn export_pack(
                 ));
             }
         } else {
-            std::fs::copy(&src, &dest).map_err(|e| format!("copy {fname}: {e}"))?;
+            copy_file_new(&src, &staged_dest)
+                .map_err(|e| format!("copy {fname}: {e}"))?;
         }
-        files.push(format!("{event}/{fname}"));
+        files.push(relative.to_string_lossy().replace('\\', "/"));
     }
 
     let out_manifest = serde_json::json!({
@@ -2002,11 +2648,56 @@ async fn export_pack(
         "events": manifest.events,
         "mappings": manifest.mappings,
     });
+    let staged_manifest = staged_out.join("manifest.json");
     std::fs::write(
-        out.join("manifest.json"),
+        &staged_manifest,
         serde_json::to_string_pretty(&out_manifest).unwrap(),
     )
-    .map_err(|e| format!("write manifest: {e}"))?;
+    .map_err(|e| format!("write staged manifest: {e}"))?;
+
+    std::fs::create_dir(&out).map_err(|error| {
+        if error.kind() == io::ErrorKind::AlreadyExists {
+            format!("refusing to replace existing export: {}", out.display())
+        } else {
+            format!("create export {}: {error}", out.display())
+        }
+    })?;
+    let mut created_files = Vec::new();
+    let mut created_dirs = Vec::new();
+    let publication = (|| -> Result<(), String> {
+        for relative in &files {
+            let relative = Path::new(relative);
+            let file_name = relative
+                .file_name()
+                .ok_or_else(|| format!("invalid staged path: {}", relative.display()))?;
+            let event_dir = relative
+                .parent()
+                .ok_or_else(|| format!("invalid staged path: {}", relative.display()))?;
+            let destination_dir = out.join(event_dir);
+            if !destination_dir.exists() {
+                std::fs::create_dir(&destination_dir)
+                    .map_err(|e| format!("create export event directory: {e}"))?;
+                created_dirs.push(destination_dir.clone());
+            }
+            let destination = destination_dir.join(file_name);
+            copy_file_new(&staged_out.join(relative), &destination)
+                .map_err(|e| format!("publish export {}: {e}", destination.display()))?;
+            created_files.push(destination);
+        }
+        let manifest_path = out.join("manifest.json");
+        copy_file_new(&staged_manifest, &manifest_path)
+            .map_err(|e| format!("publish export manifest: {e}"))?;
+        created_files.push(manifest_path);
+        Ok(())
+    })();
+    if let Err(error) = publication {
+        rollback_created_files(&created_files);
+        for directory in created_dirs.iter().rev() {
+            let _ = std::fs::remove_dir(directory);
+        }
+        let _ = std::fs::remove_dir(&out);
+        return Err(error);
+    }
 
     let total = files.len();
     Ok(ExportPackResult {
@@ -2023,6 +2714,7 @@ struct QuickInstallResult {
     installed: usize,
     voice_cache: String,
     per_event: std::collections::BTreeMap<String, usize>,
+    activation: ActivationReport,
 }
 
 #[tauri::command]
@@ -2033,8 +2725,10 @@ fn install_lib_to_gmaiden(
 ) -> Result<QuickInstallResult, String> {
     let base = resolve_gmaiden_dir(&gmaiden_dir)
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือวาง repo ข้าง G-Suite")?;
-    let vc = base.join("assets/voice-cache");
-    let snd_root = sounds_dir();
+    let vc = voice_cache_root(&base);
+    let snd_root = sounds_dir()
+        .canonicalize()
+        .map_err(|e| format!("resolve sound library: {e}"))?;
 
     let conn = open_db()?;
     let mut stmt = conn
@@ -2048,6 +2742,7 @@ fn install_lib_to_gmaiden(
 
     let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
     let mut installed = 0usize;
+    let mut created = Vec::new();
 
     for (idx, file_path, _name) in &sounds {
         let key = format!("{:03}", idx);
@@ -2055,24 +2750,46 @@ fn install_lib_to_gmaiden(
             Some(ev) if !ev.is_empty() && ev != "unused" => ev.clone(),
             _ => continue,
         };
-        let src = snd_root.join(file_path);
-        if !src.exists() {
-            continue;
+        let event_component = sanitize_filename(&event);
+        if event_component.is_empty() {
+            rollback_created_files(&created);
+            return Err(format!("invalid event name: {event}"));
         }
-        let dir = vc.join(&event);
+        let src = match snd_root.join(file_path).canonicalize() {
+            Ok(path) if path.starts_with(&snd_root) && path.is_file() => path,
+            Ok(_) => {
+                rollback_created_files(&created);
+                return Err(format!("sound path escapes library: {file_path}"));
+            }
+            Err(_) => continue,
+        };
+        let dir = vc.join(&event_component);
         std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
         let n = per_event.entry(event.clone()).or_insert(0);
         *n += 1;
         let fname = format!("kom_{:02}.wav", *n);
         let dest = dir.join(&fname);
-        std::fs::copy(&src, &dest).map_err(|e| format!("copy: {e}"))?;
+        if let Err(error) = copy_file_new(&src, &dest) {
+            rollback_created_files(&created);
+            return Err(if error.kind() == io::ErrorKind::AlreadyExists {
+                format!("refusing to replace existing voice-cache file: {}", dest.display())
+            } else {
+                format!("copy {}: {error}", dest.display())
+            });
+        }
+        created.push(dest);
         installed += 1;
     }
 
+    let activation = activation_unavailable(
+        None,
+        "Legacy flat voice-cache files were written; no manifest-pack activation was requested.",
+    );
     Ok(QuickInstallResult {
         installed,
         voice_cache: vc.to_string_lossy().into_owned(),
         per_event,
+        activation,
     })
 }
 
@@ -2316,10 +3033,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            load_runtime_tools_dir(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             extract_audio,
             cut_clip,
             export_all,
+            runtime_diagnostics,
+            set_runtime_tools_dir,
             transcribe_audio,
             analyze_video,
             read_audio_bytes,
@@ -2352,4 +3075,140 @@ pub fn run() {
         .manage(SysInfoState(std::sync::Mutex::new(sysinfo::System::new_all())))
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");
+}
+
+#[cfg(test)]
+mod runtime_safety_tests {
+    use super::*;
+
+    #[test]
+    fn video_prerequisites_require_opencv_script_dependency() {
+        let mut modules = std::collections::BTreeMap::from([
+            ("av".to_string(), true),
+            ("rapidocr_onnxruntime".to_string(), true),
+        ]);
+        let scripts = std::collections::BTreeMap::from([
+            ("detect_boundaries.py".to_string(), true),
+            ("detect_buttons.py".to_string(), true),
+        ]);
+        assert!(!video_prerequisites_present(&modules, &scripts));
+        modules.insert("cv2".to_string(), true);
+        assert!(video_prerequisites_present(&modules, &scripts));
+    }
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new(label: &str) -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "gann-test-{label}-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn fixture_endpoint(status: u16, body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request);
+                let reason = if (200..300).contains(&status) { "OK" } else { "Service Unavailable" };
+                let response = format!(
+                    "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        format!("http://{address}/announcer/install")
+    }
+
+    fn request_fixture(endpoint: &str) -> ActivationReport {
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(request_pack_activation(Some(endpoint), "pack_fixture"))
+    }
+
+    #[test]
+    fn tools_root_finds_versioned_ffmpeg_and_python_binaries() {
+        let root = TestDirectory::new("tools");
+        let ffmpeg = root.0.join("ffmpeg/ffmpeg-fixture/bin/ffmpeg.exe");
+        let python = root.0.join("python/cpython-fixture/python.exe");
+        std::fs::create_dir_all(ffmpeg.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(python.parent().unwrap()).unwrap();
+        std::fs::write(&ffmpeg, b"fixture").unwrap();
+        std::fs::write(&python, b"fixture").unwrap();
+
+        assert_eq!(find_tool_in_root(&root.0, "ffmpeg"), Some(ffmpeg));
+        assert_eq!(find_tool_in_root(&root.0, "python"), Some(python));
+    }
+
+    #[test]
+    fn new_file_publication_preserves_existing_destination_bytes() {
+        let root = TestDirectory::new("collision");
+        let source = root.0.join("source.wav");
+        let destination = root.0.join("existing.wav");
+        std::fs::write(&source, b"new bytes").unwrap();
+        std::fs::write(&destination, b"existing bytes").unwrap();
+
+        let error = copy_file_new(&source, &destination).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(destination).unwrap(), b"existing bytes");
+    }
+
+    #[test]
+    fn directory_rollback_removes_only_empty_directories_created_by_operation() {
+        let root = TestDirectory::new("directory-rollback");
+        let existing = root.0.join("existing");
+        let created_parent = existing.join("new");
+        let created_child = created_parent.join("nested");
+        std::fs::create_dir(&existing).unwrap();
+
+        let mut created = Vec::new();
+        create_dir_all_tracking(&created_child, &mut created).unwrap();
+        rollback_created_dirs(&created);
+
+        assert!(existing.is_dir());
+        assert!(!created_parent.exists());
+        assert!(!created_child.exists());
+    }
+
+    #[test]
+    fn gmaiden_activation_requires_http_success_and_positive_acknowledgment() {
+        let accepted = fixture_endpoint(200, r#"{"ok":true,"packId":"pack_fixture","activated":true}"#);
+        assert_eq!(request_fixture(&accepted).state, "accepted");
+
+        let app_error = fixture_endpoint(200, r#"{"ok":false,"error":"pack not found"}"#);
+        assert_eq!(request_fixture(&app_error).state, "rejected");
+
+        let not_activated = fixture_endpoint(200, r#"{"ok":true,"activated":false}"#);
+        assert_eq!(request_fixture(&not_activated).state, "rejected");
+
+        let http_error = fixture_endpoint(503, r#"{"ok":false,"error":"offline"}"#);
+        assert_eq!(request_fixture(&http_error).state, "rejected");
+    }
+
+    #[test]
+    fn missing_gmaiden_endpoint_is_reported_as_unavailable() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let report = request_fixture(&format!("http://{address}/announcer/install"));
+        assert_eq!(report.state, "unavailable");
+    }
 }

@@ -62,14 +62,15 @@ def main() -> int:
         except (AttributeError, ValueError):
             pass
 
-    register_cuda_dlls()
-
     ap = argparse.ArgumentParser()
     ap.add_argument("wav")
     ap.add_argument("--model", default="medium")
     ap.add_argument("--lang", default=None, help="language code, e.g. 'th'; auto-detect if omitted")
-    ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    ap.add_argument("--device", default="cpu", choices=["auto", "cpu", "cuda"])
     args = ap.parse_args()
+
+    if args.device != "cpu":
+        register_cuda_dlls()
 
     try:
         from faster_whisper import WhisperModel
@@ -77,10 +78,8 @@ def main() -> int:
         print(json.dumps({"error": f"faster-whisper not installed: {e}"}))
         return 1
 
-    # Pick device/compute. The NVIDIA CUDA libs are provided by pip wheels and
-    # registered above, so `auto` prefers GPU (float16) and falls back to CPU
-    # int8 if init or the first GEMM fails (e.g. no GPU / missing libs). Force
-    # `cpu` to skip CUDA entirely.
+    # CPU is the safe default. `auto` may use the optional NVIDIA wheels and
+    # falls back to CPU if initialization or the first GEMM fails.
     if args.device == "cpu":
         attempts = [("cpu", "int8")]
     else:  # auto | cuda

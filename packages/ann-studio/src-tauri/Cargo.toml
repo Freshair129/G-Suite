@@ -23,3 +23,8 @@ sysinfo    = "0.30"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
+
+[features]
+# Required by Tauri CLI release builds and for standalone acceptance builds
+# that serve the staged frontend through the app's custom protocol.
+custom-protocol = ["tauri/custom-protocol"]

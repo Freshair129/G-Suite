@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Settings as SettingsIcon,
@@ -9,15 +9,20 @@ import {
   Gamepad2,
   Info,
   ChevronRight,
+  RefreshCw,
+  Wrench,
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useStudioStore } from "../store/useStudioStore";
+import { GMAIDEN_INSTALL_ENDPOINT } from "../lib/gmaidenEndpoint";
 
-type Section = "general" | "audio" | "ai" | "gmaiden" | "about";
+type Section = "general" | "audio" | "ai" | "runtime" | "gmaiden" | "about";
 
 const SECTIONS: { id: Section; icon: typeof Cpu; label: string }[] = [
   { id: "general", icon: SettingsIcon, label: "ทั่วไป" },
   { id: "audio", icon: Music, label: "เสียง" },
   { id: "ai", icon: Sparkles, label: "AI Provider" },
+  { id: "runtime", icon: Wrench, label: "Media Runtime" },
   { id: "gmaiden", icon: Gamepad2, label: "G-Maiden" },
   { id: "about", icon: Info, label: "เกี่ยวกับ" },
 ];
@@ -70,6 +75,7 @@ export default function Settings() {
           {section === "general" && <GeneralSection libraryRoot={libraryRoot} />}
           {section === "audio" && <AudioSection />}
           {section === "ai" && <AISection provider={provider} llmModel={llmModel} ollamaModels={ollamaModels} />}
+          {section === "runtime" && <RuntimeSection />}
           {section === "gmaiden" && <GMaidenSection path={gmaidenPath} connected={gmaidenConnected} />}
           {section === "about" && <AboutSection />}
         </div>
@@ -95,6 +101,164 @@ function FieldGroup({ label, description, children }: { label: string; descripti
         {description && <p className="text-[10px] text-ink-faint mt-0.5">{description}</p>}
       </div>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+type RuntimeToolStatus = {
+  available: boolean;
+  path: string;
+  version: string | null;
+  error: string | null;
+};
+
+type RuntimeDiagnostics = {
+  tools_dir: string;
+  ffmpeg: RuntimeToolStatus;
+  python: RuntimeToolStatus;
+  sidecar_path: string;
+  scripts: Record<string, boolean>;
+  python_modules: Record<string, boolean>;
+  ready_for_media: boolean;
+  ready_for_speech: boolean;
+  ready_for_video_analysis: boolean;
+};
+
+function RuntimeSection() {
+  const [report, setReport] = useState<RuntimeDiagnostics | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const refresh = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setReport(await invoke<RuntimeDiagnostics>("runtime_diagnostics"));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function chooseToolsDirectory() {
+    const selected = await open({
+      title: "เลือก AI-Studio tools directory",
+      directory: true,
+      multiple: false,
+    });
+    if (typeof selected !== "string") return;
+    setNotice("");
+    setError("");
+    try {
+      await invoke("set_runtime_tools_dir", { path: selected });
+      setNotice("บันทึกตำแหน่ง tools แล้ว");
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function clearToolsDirectory() {
+    setNotice("");
+    setError("");
+    try {
+      await invoke("set_runtime_tools_dir", { path: null });
+      setNotice("ล้างตำแหน่ง tools ที่กำหนดเองแล้ว");
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  return (
+    <>
+      <SectionTitle title="Media Runtime" subtitle="ตรวจ FFmpeg, Python และ sidecar ก่อนเริ่มงานเสียงหรือวิดีโอ" />
+      <div className="rounded-xl border border-line/40 bg-panel/40 p-4 space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-ink">AI-Studio tools directory</div>
+            <p className="text-[10px] text-ink-faint mt-1 break-all">
+              {report?.tools_dir || "ยังไม่ได้กำหนด — ใช้ PATH และตำแหน่งมาตรฐาน"}
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button onClick={() => void chooseToolsDirectory()} className="px-2.5 py-1.5 rounded-lg border border-line text-[10px] text-ink-muted hover:text-ink hover:bg-panel-hover">
+              เลือกโฟลเดอร์
+            </button>
+            {report?.tools_dir && (
+              <button onClick={() => void clearToolsDirectory()} className="px-2.5 py-1.5 rounded-lg border border-line text-[10px] text-ink-muted hover:text-ink hover:bg-panel-hover">
+                ล้าง
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => void refresh()} disabled={busy} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line text-[10px] text-ink-muted hover:text-ink hover:bg-panel-hover disabled:opacity-50">
+            <RefreshCw size={12} className={busy ? "animate-spin" : ""} />
+            ตรวจอีกครั้ง
+          </button>
+          {notice && <span role="status" className="text-[10px] text-lime">{notice}</span>}
+          {error && <span role="alert" className="text-[10px] text-red-300 break-all">{error}</span>}
+        </div>
+      </div>
+
+      {report ? (
+        <div className="space-y-3">
+          <RuntimeToolRow label="FFmpeg · import / cut / export" tool={report.ffmpeg} />
+          <RuntimeToolRow label="Python · sidecar runner" tool={report.python} />
+          <div className="rounded-xl border border-line/40 bg-panel/40 p-4 space-y-2">
+            <div className="text-[10px] text-ink-faint">Sidecar files · {report.sidecar_path}</div>
+            {Object.entries(report.scripts).map(([name, available]) => (
+              <RuntimeCheck key={name} label={name} available={available} />
+            ))}
+          </div>
+          <div className="rounded-xl border border-line/40 bg-panel/40 p-4 space-y-2">
+            <div className="text-[10px] text-ink-faint">Python modules</div>
+            {Object.entries(report.python_modules).map(([name, available]) => (
+              <RuntimeCheck key={name} label={name} available={available} />
+            ))}
+          </div>
+          <div className="rounded-xl border border-line/40 bg-panel/40 p-4 space-y-2 text-[11px]">
+            <RuntimeCheck label="Media import and export" available={report.ready_for_media} />
+            <RuntimeCheck label="Whisper runner prerequisites" available={report.ready_for_speech} />
+            <RuntimeCheck label="Video OCR and event mapping prerequisites" available={report.ready_for_video_analysis} />
+            <p className="pt-1 text-[10px] text-ink-faint">การตรวจนี้ตรวจ executable, เวอร์ชัน, ไฟล์ sidecar และ prerequisites ที่ติดตั้งแล้วเท่านั้น ไม่ได้ตรวจไฟล์โมเดลหรือทดสอบการถอดเสียงและวิเคราะห์ภาพ</p>
+            <p className="pt-1 text-[10px] text-ink-faint">
+              หากไม่พบ FFmpeg/Python ให้กำหนด tools directory หรือ path override; หากขาด Python modules ให้รัน `sidecar/setup-sidecar.ps1` ด้วย Python 3.11 ขึ้นไป; หากขาดสคริปต์ ให้ติดตั้งแอปใหม่หรือกำหนด `SIDECAR_DIR`
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-ink-faint">{busy ? "กำลังตรวจ runtime…" : "ยังไม่มีผลตรวจ"}</p>
+      )}
+    </>
+  );
+}
+
+function RuntimeToolRow({ label, tool }: { label: string; tool: RuntimeToolStatus }) {
+  return (
+    <div className="rounded-xl border border-line/40 bg-panel/40 p-4">
+      <RuntimeCheck label={label} available={tool.available} />
+      <p className="mt-2 text-[10px] font-mono text-ink-faint break-all">{tool.path}</p>
+      {tool.version && <p className="mt-1 text-[10px] text-ink-muted break-all">{tool.version}</p>}
+      {tool.error && <p className="mt-1 text-[10px] text-red-300 break-all">{tool.error}</p>}
+    </div>
+  );
+}
+
+function RuntimeCheck({ label, available }: { label: string; available: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-[11px]">
+      <span className="text-ink-muted">{label}</span>
+      <span className={available ? "text-lime" : "text-amber-300"}>
+        {available ? "พบ" : "ไม่พบ / ยังไม่พร้อม"}
+      </span>
     </div>
   );
 }
@@ -291,11 +455,12 @@ function GMaidenSection({ path, connected }: { path: string; connected: boolean 
         </div>
       </FieldGroup>
 
-      <FieldGroup label="Install Endpoint" description="URL ของ G-Maiden server สำหรับ install pack">
+      <FieldGroup label="G-Maiden install endpoint" description="ตัวรับแพ็กบน loopback ที่แอปเรียกเพื่อยืนยันการเปิดใช้">
         <input
           type="text"
-          defaultValue="localhost:3000"
-          className="w-40 bg-panel border border-line rounded-lg px-2 py-1.5 text-xs text-ink font-mono outline-none"
+          readOnly
+          value={GMAIDEN_INSTALL_ENDPOINT}
+          className="w-64 bg-panel border border-line rounded-lg px-2 py-1.5 text-[10px] text-ink font-mono outline-none"
         />
       </FieldGroup>
 

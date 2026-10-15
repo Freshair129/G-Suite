@@ -6,26 +6,49 @@ no PyTorch). The Rust backend spawns `transcribe.py` and reads JSON from stdout.
 
 ## Setup
 
-```bash
-# from packages/ann-studio/src-tauri/sidecar
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt   # Windows
+The application uses Python only for local speech/video sidecars. In Settings,
+select the shared `AI-Studio/tools` directory if FFmpeg or Python is outside
+`PATH`. The selected directory is saved in app-local settings. Explicit
+`FFMPEG_PATH`, `PYTHON_PATH`, and `SIDECAR_DIR` environment overrides still
+take precedence.
+
+Run the setup helper in PowerShell to create an app-local CPU environment:
+
+```powershell
+./setup-sidecar.ps1 -PythonPath "G:\AI-Studio\tools\python\cpython-3.11-windows-x86_64-none\python.exe" `
+  -VenvPath "$env:LOCALAPPDATA\com.gmaiden.ann-studio\sidecar-python"
 ```
 
-The Rust side looks for Python in this order:
-1. `PYTHON_PATH` env var
-2. `sidecar/.venv/Scripts/python.exe` (this venv)
-3. `python` / `python3` on `PATH`
+The desktop app discovers that default app-data environment automatically. If
+you choose a different `-VenvPath`, set `PYTHON_PATH` to that environment's
+`Scripts\python.exe` before launching the app so diagnostics and sidecar
+commands use the installed modules.
+
+Use `-PlanOnly` to inspect the selected interpreter, environment path, and
+requirements without changing files. The helper installs Python packages from
+`requirements.txt`; it does not select CUDA, download Whisper model weights, or
+run inference. Model files are fetched only when a user explicitly starts a
+transcription and they are not already cached.
+
+Python resolution order is `PYTHON_PATH`, a development `sidecar/.venv`, the
+app-local `sidecar-python` environment, Python under `AI_STUDIO_TOOLS_DIR`, then
+`PATH`. FFmpeg and packaged sidecar scripts have their own diagnostics in
+Settings. Tauri bundles the scripts and requirements; it does not bundle a
+Python interpreter.
 
 ## GPU (optional, big win for large-v3)
 
-CPU is the default and needs nothing extra. To transcribe on an NVIDIA GPU:
+G-AnnStudio sends `--device cpu` for transcription, and CPU is also the
+sidecar's default. The desktop app does not expose GPU inference. For an
+explicit manual CLI run on a supported NVIDIA machine, install the optional
+GPU wheels:
 
 ```bash
 .venv\Scripts\python -m pip install -r requirements-gpu.txt   # ~1.7 GB, CUDA 12 + cuDNN 9
 ```
 
-Then pass `--device cuda` (or `auto`, which prefers GPU and falls back to CPU).
+Then pass `--device cuda` (or `auto`, which prefers GPU and falls back to CPU)
+when invoking `transcribe.py` manually.
 `transcribe.py` registers the wheels' DLL dirs itself — no system CUDA Toolkit
 needed. Needs `cublas`, `cudnn`, **and** `cuda-runtime` (cublas depends on
 `cudart64_12.dll`); add_dll_directory alone isn't enough, the bin dirs are also

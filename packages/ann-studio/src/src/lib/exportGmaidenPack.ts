@@ -7,6 +7,7 @@ import { useStudioStore, type LibSound } from "../store/useStudioStore";
 import { toneBannerPngDataUrl } from "./toneBanner";
 import { bakeToneWebp, bakeReactiveWebp } from "./bakeBanner";
 import { clipEnvelope } from "./peaks";
+import { GMAIDEN_INSTALL_ENDPOINT } from "./gmaidenEndpoint";
 
 interface PackInstallReport {
   pack_id: string;
@@ -14,6 +15,23 @@ interface PackInstallReport {
   events: number;
   clips: number;
   banners: number;
+  activation: {
+    state: "accepted" | "rejected" | "unavailable";
+    endpoint: string | null;
+    http_status: number | null;
+    detail: string | null;
+  };
+}
+
+function installResultText(r: PackInstallReport): string {
+  const activation = r.activation;
+  const state = activation.state === "accepted"
+    ? "G-Maiden ยืนยันการเปิดใช้แพ็กแล้ว ✅"
+    : activation.state === "rejected"
+      ? `เขียนไฟล์แพ็กแล้ว แต่ G-Maiden ปฏิเสธการเปิดใช้${activation.http_status ? ` (HTTP ${activation.http_status})` : ""}`
+      : "เขียนไฟล์แพ็กแล้ว แต่ยังยืนยันการเปิดใช้จาก G-Maiden ไม่ได้";
+  const detail = activation.detail ? `\n${activation.detail}` : "";
+  return `${state}\n${r.events} events · ${r.clips} clips · ${r.banners} banners\n${r.pack_dir}${detail}`;
 }
 
 export async function installGmaidenPack(
@@ -95,9 +113,9 @@ export async function installGmaidenPack(
       })),
       banners,
       gmaidenDir: s.gmaidenPath || null,
-      endpoint: "http://localhost:3000/announcer/install",
+      endpoint: GMAIDEN_INSTALL_ENDPOINT,
     });
-    return `ติดตั้งลง G-Maiden ✅  ${r.events} events · ${r.clips} clips · ${r.banners} banners\n${r.pack_dir}`;
+    return installResultText(r);
   } catch (e) {
     return `ติดตั้งไม่สำเร็จ: ${e}`;
   }
@@ -159,9 +177,9 @@ export async function installLibraryPack(
       clips,
       banners,
       gmaidenDir: s.gmaidenPath || null,
-      endpoint: "http://localhost:3000/announcer/install",
+      endpoint: GMAIDEN_INSTALL_ENDPOINT,
     });
-    return `ติดตั้งจากคลังลง G-Maiden ✅  ${r.events} events · ${r.clips} clips · ${r.banners} banners\n${r.pack_dir}`;
+    return installResultText(r);
   } catch (e) {
     return `ติดตั้งไม่สำเร็จ: ${e}`;
   }

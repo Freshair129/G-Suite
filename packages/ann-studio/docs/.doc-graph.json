@@ -1,17 +1,17 @@
 {
   "version": "1.0.0",
   "generated_by": "rwang:doc-graph",
-  "generated_at": "2026-08-14T02:35:00+07:00",
+  "generated_at": "2026-10-15T05:27:35+07:00",
   "scope": "G-Overlay Lab and the G-Maiden handoff",
   "stats": {
-    "total_nodes": 56,
-    "total_edges": 97,
+    "total_nodes": 73,
+    "total_edges": 132,
     "stale_edges": 0,
     "contradiction_edges": 0,
     "coverage": {
-      "requirements_with_code": "100% (5/5, partial)",
-      "requirements_with_tests": "100% (5/5, partial)",
-      "code_with_docs": "100% (13/13 in scoped graph)"
+      "requirements_with_code": "100% (9/9 requirements mapped; runtime readiness remains partial)",
+      "requirements_with_tests": "100% (9/9 requirements mapped; release and live integration gates remain)",
+      "code_with_docs": "23 code nodes represented in the scoped graph; evidence detail is in Appendix D"
     }
   },
   "nodes": [
@@ -20,7 +20,7 @@
       "type": "document",
       "label": "G-AnnStudio Product Context",
       "defined_in": "packages/ann-studio/PRODUCT.md",
-      "hash": "ef1a46d49948",
+      "hash": "cc23674b2f2b",
       "status": "beta"
     },
     {
@@ -28,7 +28,7 @@
       "type": "document",
       "label": "Documentation Hub",
       "defined_in": "packages/ann-studio/docs/README.md",
-      "hash": "5b089aa269bf",
+      "hash": "8546553176be",
       "status": "changed"
     },
     {
@@ -36,7 +36,7 @@
       "type": "document",
       "label": "G-AnnStudio PRD and SDD v0.1",
       "defined_in": "packages/ann-studio/docs/PRD-SDD-v0.1.md",
-      "hash": "ae9dfa8c7ec6",
+      "hash": "324f67011c4a",
       "status": "candidate"
     },
     {
@@ -44,7 +44,7 @@
       "type": "document",
       "label": "G-Overlay Lab Implementation Plan",
       "defined_in": "packages/ann-studio/docs/implementation-plan.md",
-      "hash": "0ac35feba65c",
+      "hash": "dfd3dc79478a",
       "status": "candidate",
       "last_verified": "2026-08-14T02:35:00+07:00"
     },
@@ -53,7 +53,7 @@
       "type": "document",
       "label": "Vite Build Timeout RCA",
       "defined_in": "packages/ann-studio/docs/rca/2026-08-11-vite-build-timeout.md",
-      "hash": "43bac32220a7",
+      "hash": "f8fa212e48d4",
       "status": "beta"
     },
     {
@@ -61,7 +61,7 @@
       "type": "document",
       "label": "G-AnnStudio Architecture",
       "defined_in": "packages/ann-studio/docs/ARCHITECTURE.md",
-      "hash": "3be00ed63401",
+      "hash": "5142026a8333",
       "status": "candidate"
     },
     {
@@ -69,7 +69,7 @@
       "type": "document",
       "label": "G-AnnStudio Contributing",
       "defined_in": "packages/ann-studio/docs/CONTRIBUTING.md",
-      "hash": "e0a1e21087ab",
+      "hash": "dc44cce37324",
       "status": "candidate"
     },
     {
@@ -77,7 +77,7 @@
       "type": "document",
       "label": "Frontend Design System",
       "defined_in": "packages/ann-studio/docs/frontend-design-system.md",
-      "hash": "4cbd68e9b600",
+      "hash": "f8125124d459",
       "status": "beta"
     },
     {
@@ -85,7 +85,7 @@
       "type": "document",
       "label": "G-AnnStudio API Index",
       "defined_in": "packages/ann-studio/docs/api/README.md",
-      "hash": "199b5e2379e8",
+      "hash": "b3dde736582b",
       "status": "candidate"
     },
     {
@@ -93,7 +93,7 @@
       "type": "document",
       "label": "Local API Specification",
       "defined_in": "packages/ann-studio/docs/appendices/A-api-spec.md",
-      "hash": "ce0123f31545",
+      "hash": "c6c6572a3049",
       "status": "candidate"
     },
     {
@@ -101,7 +101,7 @@
       "type": "document",
       "label": "Local Banner Project Schema",
       "defined_in": "packages/ann-studio/docs/appendices/B-local-project-schema.md",
-      "hash": "5c6700343ba6",
+      "hash": "655a9d3e1d04",
       "status": "beta"
     },
     {
@@ -109,7 +109,7 @@
       "type": "document",
       "label": "G-AnnStudio Risk Matrix",
       "defined_in": "packages/ann-studio/docs/appendices/E-risk-matrix.md",
-      "hash": "69ce16f0dd08",
+      "hash": "7c2a289d8ec0",
       "status": "candidate"
     },
     {
@@ -117,7 +117,7 @@
       "type": "document",
       "label": "G-AnnStudio Glossary",
       "defined_in": "packages/ann-studio/docs/appendices/F-glossary.md",
-      "hash": "3e26822341b9",
+      "hash": "db1c2f569819",
       "status": "beta"
     },
     {
@@ -125,7 +125,7 @@
       "type": "document",
       "label": "Content-Type Taxonomy",
       "defined_in": "packages/ann-studio/docs/content-taxonomy.md",
-      "hash": "01bb2b7bc23c",
+      "hash": "136fa685cc1a",
       "status": "proposal"
     },
     {
@@ -133,7 +133,7 @@
       "type": "document",
       "label": "G-Overlay Lab Sync",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab.md",
-      "hash": "1aa393bd57ee",
+      "hash": "98a611284a2e",
       "status": "current"
     },
     {
@@ -141,7 +141,7 @@
       "type": "document",
       "label": "Figma-grade Banner Editor",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "hash": "032d3684f077",
+      "hash": "da66e35a143f",
       "status": "candidate"
     },
     {
@@ -149,7 +149,7 @@
       "type": "document",
       "label": "G-AnnStudio private cloud threat model and RLS contract",
       "defined_in": "packages/ann-studio/docs/gann-cloud-threat-model.md",
-      "hash": "8ab34c6e614c",
+      "hash": "a2bcd238057a",
       "status": "beta"
     },
     {
@@ -157,7 +157,7 @@
       "type": "document",
       "label": "Motion Export Contract Draft",
       "defined_in": "packages/ann-studio/docs/motion-export-contract-draft.md",
-      "hash": "4d69a3d56b72",
+      "hash": "e3d0cd3d0dc6",
       "status": "candidate"
     },
     {
@@ -165,7 +165,7 @@
       "type": "document",
       "label": "G-Overlay Lab Traceability",
       "defined_in": "packages/ann-studio/docs/appendices/D-traceability.md",
-      "hash": "530b80767a5e",
+      "hash": "1b34582c20f0",
       "status": "candidate"
     },
     {
@@ -181,56 +181,63 @@
       "type": "section",
       "label": "Requirement map",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "beta"
+      "status": "beta",
+      "hash": "da66e35a143f"
     },
     {
       "id": "sec:g-overlay-lab-figma-editor:cloud",
       "type": "section",
       "label": "Private cloud sync C-3/HIGH",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "beta"
+      "status": "beta",
+      "hash": "da66e35a143f"
     },
     {
       "id": "req:GOE-001",
       "type": "requirement",
       "label": "Layer tree composition",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "partial"
+      "status": "partial",
+      "hash": "da66e35a143f"
     },
     {
       "id": "req:GOE-002",
       "type": "requirement",
       "label": "Canvas and inspector editing",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "partial"
+      "status": "partial",
+      "hash": "da66e35a143f"
     },
     {
       "id": "req:GOE-003",
       "type": "requirement",
       "label": "Runtime-safe motion export",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "partial"
+      "status": "partial",
+      "hash": "da66e35a143f"
     },
     {
       "id": "req:GOE-004",
       "type": "requirement",
       "label": "HUD event preview",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "partial"
+      "status": "partial",
+      "hash": "da66e35a143f"
     },
     {
       "id": "req:GOE-005",
       "type": "requirement",
       "label": "Private cloud sync",
       "defined_in": "packages/ann-studio/docs/g-overlay-lab-figma-editor-spec.md",
-      "status": "partial"
+      "status": "partial",
+      "hash": "da66e35a143f"
     },
     {
       "id": "code:schema/gmaiden-overlay-layout",
       "type": "code_file",
       "label": "Overlay layout schema v1",
       "defined_in": "schemas/gmaiden-overlay-layout.schema.json",
-      "hash": "15c2a918d610",
+      "hash": "3eadcf135c6f",
       "status": "current"
     },
     {
@@ -238,7 +245,7 @@
       "type": "code_file",
       "label": "G-Overlay Lab surface router",
       "defined_in": "packages/ann-studio/src/src/components/OverlayLab.tsx",
-      "hash": "f2d1b9866163",
+      "hash": "7f9ae12110f4",
       "status": "changed",
       "annotations": {
         "@req": [
@@ -255,7 +262,7 @@
       "type": "code_file",
       "label": "Overlay layout sender",
       "defined_in": "packages/ann-studio/src/src/lib/overlayLayout.ts",
-      "hash": "d3ac8aecafa0",
+      "hash": "163876628530",
       "status": "changed",
       "last_verified": "2026-08-11T16:36:35.756718Z"
     },
@@ -264,7 +271,7 @@
       "type": "code_file",
       "label": "Animated WebP bake adapter",
       "defined_in": "packages/ann-studio/src/src/lib/bakeBanner.ts",
-      "hash": "780bbf9664e3",
+      "hash": "0704ad8bd5a6",
       "status": "partial"
     },
     {
@@ -272,7 +279,7 @@
       "type": "code_file",
       "label": "G-Maiden pack export",
       "defined_in": "packages/ann-studio/src/src/lib/exportGmaidenPack.ts",
-      "hash": "9b9ade9ad302",
+      "hash": "fe6e40f36b9b",
       "status": "current"
     },
     {
@@ -280,7 +287,7 @@
       "type": "code_file",
       "label": "Studio Zustand store",
       "defined_in": "packages/ann-studio/src/src/store/useStudioStore.ts",
-      "hash": "e04f3c9479df",
+      "hash": "ef16b9a53d67",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -301,7 +308,7 @@
       "type": "code_file",
       "label": "BannerProject v1 model with optional per-layer timing",
       "defined_in": "packages/ann-studio/src/src/lib/bannerProject.ts",
-      "hash": "4a983d887f68",
+      "hash": "be1900aedebb",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -323,7 +330,7 @@
       "type": "code_file",
       "label": "Layer canvas and inspector with Start/End timing fields",
       "defined_in": "packages/ann-studio/src/src/components/BannerEditor.tsx",
-      "hash": "129997cc0a08",
+      "hash": "dd4975d7c858",
       "status": "changed",
       "annotations": {
         "@req": [
@@ -347,7 +354,7 @@
       "type": "code_file",
       "label": "Pure, currently unwired motion export preflight",
       "defined_in": "packages/ann-studio/src/src/lib/bannerPreflight.ts",
-      "hash": "dd0de23e418a",
+      "hash": "c8d8a01ceb40",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -366,7 +373,7 @@
       "type": "code_file",
       "label": "Private cloud manifest projection and revision sync",
       "defined_in": "packages/ann-studio/src/src/lib/cloudSync.ts",
-      "hash": "98fc2ca59944",
+      "hash": "167dd39d249d",
       "status": "partial",
       "annotations": {
         "@req": [
@@ -387,7 +394,7 @@
       "type": "code_file",
       "label": "G-Ann Tauri commands",
       "defined_in": "packages/ann-studio/src-tauri/src/lib.rs",
-      "hash": "34e2a688935d",
+      "hash": "4a4181e667f4",
       "status": "current"
     },
     {
@@ -395,7 +402,7 @@
       "type": "test",
       "label": "BannerProject model tests",
       "defined_in": "packages/ann-studio/src/src/lib/bannerProject.test.ts",
-      "hash": "be1767f85afc",
+      "hash": "c44e653a99f9",
       "status": "current"
     },
     {
@@ -403,7 +410,7 @@
       "type": "test",
       "label": "BannerProject store history tests",
       "defined_in": "packages/ann-studio/src/src/store/useStudioStore.test.ts",
-      "hash": "76822f4dea4b",
+      "hash": "7117c51ba86b",
       "status": "current"
     },
     {
@@ -411,7 +418,7 @@
       "type": "test",
       "label": "BannerEditor jsdom component tests",
       "defined_in": "packages/ann-studio/src/src/components/BannerEditor.test.tsx",
-      "hash": "d9eb12e42775",
+      "hash": "1f7a60690504",
       "status": "current"
     },
     {
@@ -419,7 +426,7 @@
       "type": "test",
       "label": "Motion export preflight tests",
       "defined_in": "packages/ann-studio/src/src/lib/bannerPreflight.test.ts",
-      "hash": "ee51826c4131",
+      "hash": "695317d8f921",
       "status": "current"
     },
     {
@@ -441,7 +448,7 @@
       "type": "test",
       "label": "Private cloud projection and validation tests",
       "defined_in": "packages/ann-studio/src/src/lib/cloudSync.test.ts",
-      "hash": "6e2c7518cd72",
+      "hash": "53d506e9d8e2",
       "status": "current"
     },
     {
@@ -494,7 +501,8 @@
       "type": "component",
       "label": "Private project and asset sync",
       "defined_in": "packages/ann-studio/docs/gann-cloud-threat-model.md",
-      "status": "partial"
+      "status": "partial",
+      "hash": "a2bcd238057a"
     },
     {
       "id": "db:ann_projects",
@@ -515,7 +523,7 @@
       "type": "code_file",
       "label": "G-Overlay Lab view-state persistence (localStorage + IndexedDB)",
       "defined_in": "packages/ann-studio/src/src/lib/labView.ts",
-      "hash": "a8323de70147",
+      "hash": "9c8cab777db7",
       "status": "current",
       "last_verified": "2026-08-11T16:36:36.446642Z"
     },
@@ -524,9 +532,145 @@
       "type": "code_file",
       "label": "True-size mock renders of G-Maiden overlay modules",
       "defined_in": "packages/ann-studio/src/src/components/OverlayModulePreview.tsx",
-      "hash": "71448b5e4ade",
+      "hash": "86e06eab7ca8",
       "status": "current",
       "last_verified": "2026-08-11T16:36:36.471205Z"
+    },
+    {
+      "id": "doc:ann-runtime-spec",
+      "type": "document",
+      "label": "Standalone runtime safety specification",
+      "defined_in": "packages/ann-studio/docs/g-annstudio-runtime-safety-spec.md",
+      "hash": "63c05c9be17c",
+      "status": "candidate"
+    },
+    {
+      "id": "doc:ann-runtime-rca",
+      "type": "document",
+      "label": "Standalone runtime readiness RCA",
+      "defined_in": "packages/ann-studio/docs/rca/2026-10-15-standalone-runtime-readiness.md",
+      "hash": "c1a512940e98",
+      "status": "candidate"
+    },
+    {
+      "id": "req:ANN-RUNTIME-001",
+      "type": "requirement",
+      "label": "Runtime resolution and health",
+      "defined_in": "packages/ann-studio/docs/g-annstudio-runtime-safety-spec.md",
+      "hash": "63c05c9be17c",
+      "status": "partial"
+    },
+    {
+      "id": "req:ANN-RUNTIME-002",
+      "type": "requirement",
+      "label": "Non-destructive media I/O",
+      "defined_in": "packages/ann-studio/docs/g-annstudio-runtime-safety-spec.md",
+      "hash": "63c05c9be17c",
+      "status": "partial"
+    },
+    {
+      "id": "req:ANN-RUNTIME-003",
+      "type": "requirement",
+      "label": "Installation acknowledgment",
+      "defined_in": "packages/ann-studio/docs/g-annstudio-runtime-safety-spec.md",
+      "hash": "63c05c9be17c",
+      "status": "partial"
+    },
+    {
+      "id": "req:ANN-RUNTIME-004",
+      "type": "requirement",
+      "label": "Packaged sidecars and CPU setup",
+      "defined_in": "packages/ann-studio/docs/g-annstudio-runtime-safety-spec.md",
+      "hash": "63c05c9be17c",
+      "status": "partial"
+    },
+    {
+      "id": "code:ann:runtime-settings",
+      "type": "code_file",
+      "label": "Runtime discovery and health settings UI",
+      "defined_in": "packages/ann-studio/src/src/components/Settings.tsx",
+      "hash": "24c32466c969",
+      "status": "candidate"
+    },
+    {
+      "id": "code:ann:install-flow",
+      "type": "code_file",
+      "label": "G-Maiden pack handoff status UI",
+      "defined_in": "packages/ann-studio/src/src/lib/exportGmaidenPack.ts",
+      "hash": "fe6e40f36b9b",
+      "status": "candidate"
+    },
+    {
+      "id": "code:ann:sidecar",
+      "type": "code_file",
+      "label": "CPU-default Whisper sidecar",
+      "defined_in": "packages/ann-studio/src-tauri/sidecar/transcribe.py",
+      "hash": "fff6ee3e5eaf",
+      "status": "candidate"
+    },
+    {
+      "id": "code:ann:sidecar-setup",
+      "type": "code_file",
+      "label": "CPU sidecar environment setup",
+      "defined_in": "packages/ann-studio/src-tauri/sidecar/setup-sidecar.ps1",
+      "hash": "79416618035c",
+      "status": "candidate"
+    },
+    {
+      "id": "code:ann:tauri-bundle",
+      "type": "code_file",
+      "label": "Packaged Python sidecar resources",
+      "defined_in": "packages/ann-studio/src-tauri/tauri.conf.json",
+      "hash": "dfab15a012da",
+      "status": "candidate"
+    },
+    {
+      "id": "test:ann:runtime-safety",
+      "type": "test",
+      "label": "Tauri runtime resolution, safe publication, and install acknowledgment unit tests",
+      "defined_in": "packages/ann-studio/src-tauri/src/lib.rs",
+      "hash": "4a4181e667f4",
+      "status": "partial"
+    },
+    {
+      "id": "test:ann:setup-sidecar-plan",
+      "type": "test",
+      "label": "Sidecar setup plan-only verification",
+      "defined_in": "packages/ann-studio/src-tauri/sidecar/setup-sidecar.ps1",
+      "hash": "79416618035c",
+      "status": "partial"
+    },
+    {
+      "id": "code:ann:gmaiden-endpoint",
+      "type": "code_file",
+      "label": "Loopback-only G-Maiden install endpoint resolver",
+      "defined_in": "packages/ann-studio/src/src/lib/gmaidenEndpoint.ts",
+      "hash": "d4b26327308a",
+      "status": "candidate"
+    },
+    {
+      "id": "test:ann:gmaiden-endpoint",
+      "type": "test",
+      "label": "Loopback-only install endpoint tests",
+      "defined_in": "packages/ann-studio/src/src/lib/gmaidenEndpoint.test.ts",
+      "hash": "ab2393ac592a",
+      "status": "current"
+    },
+    {
+      "id": "test:ann:install-flow-ui",
+      "type": "test",
+      "label": "ClipList install accepted/rejected/unavailable status tests",
+      "defined_in": "packages/ann-studio/src/src/components/ClipList.install.test.tsx",
+      "hash": "e3e07c31f2c2",
+      "status": "current"
+    },
+    {
+      "id": "test:ann:native-acceptance",
+      "type": "test",
+      "label": "Native debug IPC, media, activation, and SQLite restart persistence acceptance",
+      "defined_in": "packages/ann-studio/docs/rca/2026-10-15-standalone-runtime-readiness.md",
+      "hash": "c1a512940e98",
+      "status": "partial"
     }
   ],
   "edges": [
@@ -1208,7 +1352,252 @@
       "type": "depends_on",
       "status": "current",
       "source": "import-graph"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:ann-runtime-spec",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:README",
+      "to": "doc:ann-runtime-rca",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:PRD-SDD-v0.1",
+      "to": "doc:ann-runtime-spec",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:ARCHITECTURE",
+      "to": "doc:ann-runtime-spec",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:traceability",
+      "to": "doc:ann-runtime-spec",
+      "type": "references",
+      "status": "current",
+      "source": "markdown-link"
+    },
+    {
+      "from": "doc:ann-runtime-rca",
+      "to": "doc:ann-runtime-spec",
+      "type": "references",
+      "status": "current",
+      "source": "analysis"
+    },
+    {
+      "from": "doc:ann-runtime-spec",
+      "to": "req:ANN-RUNTIME-001",
+      "type": "specifies",
+      "status": "current",
+      "source": "requirement-table"
+    },
+    {
+      "from": "doc:ann-runtime-spec",
+      "to": "req:ANN-RUNTIME-002",
+      "type": "specifies",
+      "status": "current",
+      "source": "requirement-table"
+    },
+    {
+      "from": "doc:ann-runtime-spec",
+      "to": "req:ANN-RUNTIME-003",
+      "type": "specifies",
+      "status": "current",
+      "source": "requirement-table"
+    },
+    {
+      "from": "doc:ann-runtime-spec",
+      "to": "req:ANN-RUNTIME-004",
+      "type": "specifies",
+      "status": "current",
+      "source": "requirement-table"
+    },
+    {
+      "from": "req:ANN-RUNTIME-001",
+      "to": "code:ann/rust",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-001",
+      "to": "code:ann:runtime-settings",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-002",
+      "to": "code:ann/rust",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-003",
+      "to": "code:ann/rust",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-003",
+      "to": "code:ann:install-flow",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-004",
+      "to": "code:ann/rust",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-004",
+      "to": "code:ann:sidecar",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-004",
+      "to": "code:ann:sidecar-setup",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "req:ANN-RUNTIME-004",
+      "to": "code:ann:tauri-bundle",
+      "type": "implements",
+      "status": "partial",
+      "source": "manual"
+    },
+    {
+      "from": "test:ann:runtime-safety",
+      "to": "code:ann/rust",
+      "type": "tests",
+      "status": "current",
+      "source": "cfg-test"
+    },
+    {
+      "from": "test:ann:runtime-safety",
+      "to": "req:ANN-RUNTIME-001",
+      "type": "verifies",
+      "status": "partial",
+      "source": "unit-test"
+    },
+    {
+      "from": "test:ann:runtime-safety",
+      "to": "req:ANN-RUNTIME-002",
+      "type": "verifies",
+      "status": "partial",
+      "source": "unit-test"
+    },
+    {
+      "from": "test:ann:runtime-safety",
+      "to": "req:ANN-RUNTIME-003",
+      "type": "verifies",
+      "status": "partial",
+      "source": "unit-test"
+    },
+    {
+      "from": "test:ann:setup-sidecar-plan",
+      "to": "code:ann:sidecar-setup",
+      "type": "tests",
+      "status": "partial",
+      "source": "plan-only"
+    },
+    {
+      "from": "test:ann:setup-sidecar-plan",
+      "to": "req:ANN-RUNTIME-004",
+      "type": "verifies",
+      "status": "partial",
+      "source": "plan-only"
+    },
+    {
+      "from": "req:ANN-RUNTIME-003",
+      "to": "code:ann:gmaiden-endpoint",
+      "type": "implements",
+      "status": "current",
+      "source": "manual"
+    },
+    {
+      "from": "test:ann:gmaiden-endpoint",
+      "to": "code:ann:gmaiden-endpoint",
+      "type": "tests",
+      "status": "current",
+      "source": "vitest"
+    },
+    {
+      "from": "test:ann:gmaiden-endpoint",
+      "to": "req:ANN-RUNTIME-003",
+      "type": "verifies",
+      "status": "partial",
+      "source": "vitest"
+    },
+    {
+      "from": "test:ann:install-flow-ui",
+      "to": "code:ann:install-flow",
+      "type": "tests",
+      "status": "current",
+      "source": "vitest"
+    },
+    {
+      "from": "test:ann:install-flow-ui",
+      "to": "req:ANN-RUNTIME-003",
+      "type": "verifies",
+      "status": "partial",
+      "source": "vitest"
+    },
+    {
+      "from": "test:ann:native-acceptance",
+      "to": "code:ann/rust",
+      "type": "tests",
+      "status": "current",
+      "source": "tauri-webdriver-ipc"
+    },
+    {
+      "from": "test:ann:native-acceptance",
+      "to": "req:ANN-RUNTIME-001",
+      "type": "verifies",
+      "status": "partial",
+      "source": "tauri-webdriver-ipc"
+    },
+    {
+      "from": "test:ann:native-acceptance",
+      "to": "req:ANN-RUNTIME-002",
+      "type": "verifies",
+      "status": "partial",
+      "source": "tauri-webdriver-ipc"
+    },
+    {
+      "from": "test:ann:native-acceptance",
+      "to": "req:ANN-RUNTIME-003",
+      "type": "verifies",
+      "status": "partial",
+      "source": "tauri-webdriver-ipc"
+    },
+    {
+      "from": "test:ann:native-acceptance",
+      "to": "req:ANN-RUNTIME-004",
+      "type": "verifies",
+      "status": "partial",
+      "source": "tauri-webdriver-ipc"
     }
   ],
-  "updated_by": "rwang:doc-graph (GOE-005 threat-model/RLS approval and local sync slice; original scan 2026-08-11T11:42+07:00 preserved)"
+  "updated_by": "Codex (ANN-RUNTIME-001..004 issue #5; frontend/Rust/native evidence recorded 2026-10-15)"
 }

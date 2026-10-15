@@ -9,6 +9,14 @@
     "devUrl": "http://localhost:5174",
     "frontendDist": "gen/web"
   },
+  "bundle": {
+    "resources": {
+      "sidecar/*.py": "sidecar/",
+      "sidecar/requirements.txt": "sidecar/requirements.txt",
+      "sidecar/requirements-gpu.txt": "sidecar/requirements-gpu.txt",
+      "sidecar/setup-sidecar.ps1": "sidecar/setup-sidecar.ps1"
+    }
+  },
   "app": {
     "windows": [
       {
