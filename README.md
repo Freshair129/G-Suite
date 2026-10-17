@@ -1,6 +1,19 @@
 # G-Suite
 
 Monorepo of developer tools for the **G-Maiden** ecosystem (the real-time Dota 2 AI companion).
+
+## G-AnnStudio access
+
+G-AnnStudio is restricted to authorized developers and collaborators. Sign-in uses the shared
+Google/GID account, and the G-Maiden Supabase Edge Function `g-annstudio-access` checks the
+verified Google email against the server secret `G_ANNSTUDIO_ALLOWED_EMAILS` (comma-separated).
+The function fails closed when the allowlist is missing. Configure that secret and deploy the
+function before distributing a Studio build; the Rust command layer refreshes the authorization
+every five minutes and denies authoring commands when the grant expires.
+
+G-AnnStudio is the team authoring path. Consumer G-Maiden release builds do not expose audio
+import or upload; users install announcer packs through G-Store after purchase. Studio-generated
+packs must be published through the Store pipeline before consumer installation.
 Each tool ships as an independent package but shares contracts and conventions here.
 
 Where this is headed: [`ROADMAP.md`](ROADMAP.md).

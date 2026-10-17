@@ -243,12 +243,14 @@ interface StudioState {
   setTrackCount: (n: number) => void;
   setMasterVolume: (v: number) => void;
 
-  // optional Google sign-in (gstore GID hub) — fills authorGid/display-name
-  // for exported packs; every authoring flow works signed-out
+  // Google sign-in is required; server access is limited to the studio team.
   gid: string;
   gidDisplayName: string;
   gidSignedIn: boolean;
   setGidAuth: (p: { gid: string; displayName: string; signedIn: boolean }) => void;
+  studioAccess: "checking" | "denied" | "authorized";
+  studioAccessError: string;
+  setStudioAccess: (status: "checking" | "denied" | "authorized", error?: string) => void;
 }
 
 const COLORS = [
@@ -549,6 +551,9 @@ export const useStudioStore = create<StudioState>()(
       gidDisplayName: "",
       gidSignedIn: false,
       setGidAuth: (p) => set({ gid: p.gid, gidDisplayName: p.displayName, gidSignedIn: p.signedIn }),
+      studioAccess: "checking",
+      studioAccessError: "",
+      setStudioAccess: (studioAccess, studioAccessError = "") => set({ studioAccess, studioAccessError }),
     }),
     {
       name: "gann-project",

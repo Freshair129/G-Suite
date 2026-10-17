@@ -3,11 +3,71 @@ use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::process::Command as StdCommand;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 use tokio::process::Command;
 
 const EXE: &str = if cfg!(windows) { ".exe" } else { "" };
+const GSTORE_URL: &str = "https://wsseitulmcgnolgsrxgh.supabase.co";
+const GSTORE_PUBLISHABLE_KEY: &str = "sb_publishable__vr0-aNdudlq3aPbH8OMXw_0rr0JScZ";
+
+static STUDIO_AUTHORIZATION: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+
+fn studio_authorization() -> &'static Mutex<Option<Instant>> {
+    STUDIO_AUTHORIZATION.get_or_init(|| Mutex::new(None))
+}
+
+fn ensure_studio_access() -> Result<(), String> {
+    let access = studio_authorization()
+        .lock()
+        .map_err(|_| "ล็อกสถานะสิทธิ์ G-AnnStudio ไม่สำเร็จ".to_string())?;
+    if access.as_ref().is_some_and(|expires| expires > &Instant::now()) {
+        Ok(())
+    } else {
+        Err("ต้องเข้าสู่ระบบด้วยบัญชีผู้พัฒนาหรือผู้ร่วมงานที่ได้รับอนุญาตก่อนใช้ G-AnnStudio".into())
+    }
+}
+
+#[tauri::command]
+async fn studio_authorize(access_token: String) -> Result<(), String> {
+    if access_token.trim().is_empty() || access_token.len() > 16 * 1024 {
+        return Err("เซสชันไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่".into());
+    }
+    let response = reqwest::Client::new()
+        .post(format!("{GSTORE_URL}/functions/v1/g-annstudio-access"))
+        .header("apikey", GSTORE_PUBLISHABLE_KEY)
+        .bearer_auth(&access_token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|_| "ตรวจสอบสิทธิ์ G-AnnStudio ไม่ได้ กรุณาลองอีกครั้ง".to_string())?;
+    let status = response.status();
+    let payload: serde_json::Value = response.json().await.unwrap_or(serde_json::Value::Null);
+    if !status.is_success() || payload["authorized"] != true {
+        if let Ok(mut access) = studio_authorization().lock() {
+            *access = None;
+        }
+        return Err(if status.as_u16() == 403 {
+            "บัญชีนี้ยังไม่ได้รับสิทธิ์ผู้พัฒนาหรือผู้ร่วมงานของ G-AnnStudio".into()
+        } else {
+            "ยืนยันสิทธิ์ G-AnnStudio ไม่สำเร็จ กรุณาเข้าสู่ระบบใหม่".into()
+        });
+    }
+    let mut access = studio_authorization()
+        .lock()
+        .map_err(|_| "ล็อกสถานะสิทธิ์ G-AnnStudio ไม่สำเร็จ".to_string())?;
+    *access = Some(Instant::now() + Duration::from_secs(600));
+    Ok(())
+}
+
+#[tauri::command]
+fn studio_access_clear() {
+    if let Ok(mut access) = studio_authorization().lock() {
+        *access = None;
+    }
+}
 
 /// Resolve FFmpeg. Order: explicit path → shared tools root → legacy
 /// ffmpeg-static install → PATH.
@@ -257,6 +317,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[tauri::command]
 async fn extract_audio(app: tauri::AppHandle, input_path: String) -> Result<AudioInfo, String> {
+    ensure_studio_access()?;
     let input = Path::new(&input_path);
     if !input.is_file() {
         return Err(format!("source media does not exist: {}", input.display()));
@@ -343,6 +404,7 @@ async fn cut_clip(
     end: f64,
     output_path: String,
 ) -> Result<String, String> {
+    ensure_studio_access()?;
     let source = Path::new(&source_path);
     let destination = PathBuf::from(&output_path);
     validate_media_range(source, start, end)?;
@@ -390,6 +452,7 @@ async fn export_all(
     clips: Vec<ClipRegion>,
     output_dir: String,
 ) -> Result<ExportResult, String> {
+    ensure_studio_access()?;
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("cannot create output dir: {e}"))?;
 
@@ -597,6 +660,7 @@ fn load_runtime_tools_dir(app: &tauri::AppHandle) {
 
 #[tauri::command]
 fn set_runtime_tools_dir(app: tauri::AppHandle, path: Option<String>) -> Result<String, String> {
+    ensure_studio_access()?;
     let app_data = app
         .path()
         .app_local_data_dir()
@@ -757,6 +821,7 @@ async fn transcribe_audio(
     model: Option<String>,
     lang: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    ensure_studio_access()?;
     let sidecar = sidecar_dir(&app);
     let script = sidecar.join("transcribe.py");
     if !script.exists() {
@@ -834,6 +899,7 @@ async fn analyze_video(
     model: Option<String>,
     lang: Option<String>,
 ) -> Result<Vec<AnalyzedClip>, String> {
+    ensure_studio_access()?;
     let sidecar = sidecar_dir(&app);
     let py = python_bin(&sidecar, app.path().app_local_data_dir().ok().as_deref());
     let model = model.unwrap_or_else(|| "medium".into());
@@ -934,6 +1000,7 @@ async fn analyze_video(
 /// CSP/CORS issues with wavesurfer's fetch.
 #[tauri::command]
 fn read_audio_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    ensure_studio_access()?;
     let bytes = std::fs::read(&path).map_err(|e| format!("read {path}: {e}"))?;
     Ok(tauri::ipc::Response::new(bytes))
 }
@@ -1246,6 +1313,7 @@ async fn install_pack(
     gmaiden_dir: Option<String>,
     endpoint: Option<String>,
 ) -> Result<InstallReport, String> {
+    ensure_studio_access()?;
     let base = resolve_gmaiden_dir(&gmaiden_dir)
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
     let vc = voice_cache_root(&base);
@@ -1438,6 +1506,7 @@ async fn install_gmaiden_pack(
     gmaiden_dir: Option<String>,
     endpoint: Option<String>,
 ) -> Result<PackInstallReport, String> {
+    ensure_studio_access()?;
     use base64::Engine;
     use serde_json::{json, Map, Value};
 
@@ -1613,6 +1682,7 @@ async fn install_library_pack(
     gmaiden_dir: Option<String>,
     endpoint: Option<String>,
 ) -> Result<PackInstallReport, String> {
+    ensure_studio_access()?;
     use base64::Engine;
     use serde_json::{json, Map, Value};
 
@@ -1734,6 +1804,7 @@ async fn bake_animated_webp(
     fps: Option<u32>,
     loop_count: Option<u32>,
 ) -> Result<String, String> {
+    ensure_studio_access()?;
     use base64::Engine;
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -1817,6 +1888,7 @@ async fn generate_banner_image(
     height: Option<u32>,
     steps: Option<u32>,
 ) -> Result<String, String> {
+    ensure_studio_access()?;
     use serde_json::{json, Value};
 
     let ep = endpoint.trim().trim_end_matches('/');
@@ -1888,6 +1960,7 @@ struct OverlayLayoutSyncReport {
 /// asset, or other settings field can cross this seam.
 #[tauri::command]
 async fn sync_overlay_layout(layout: serde_json::Value) -> Result<OverlayLayoutSyncReport, String> {
+    ensure_studio_access()?;
     let response = reqwest::Client::new()
         .post("http://127.0.0.1:3000/overlay/layout")
         .json(&serde_json::json!({ "schemaVersion": 1, "layout": layout }))
@@ -1923,6 +1996,7 @@ struct VoiceCacheScan {
 /// so the frontend can show which events have audio installed.
 #[tauri::command]
 fn scan_voice_cache(gmaiden_dir: Option<String>) -> Result<VoiceCacheScan, String> {
+    ensure_studio_access()?;
     let base = resolve_gmaiden_dir(&gmaiden_dir)
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
     let vc = voice_cache_root(&base);
@@ -2115,6 +2189,7 @@ struct LibraryInfo {
 
 #[tauri::command]
 fn init_library() -> Result<LibraryInfo, String> {
+    ensure_studio_access()?;
     let conn = open_db()?;
     std::fs::create_dir_all(sounds_dir()).map_err(|e| format!("mkdir sounds: {e}"))?;
     let mut stmt = conn
@@ -2143,6 +2218,7 @@ fn init_library() -> Result<LibraryInfo, String> {
 
 #[tauri::command]
 fn query_sounds(pkg_id: String) -> Result<Vec<LibSound>, String> {
+    ensure_studio_access()?;
     let conn = open_db()?;
     let mut stmt = conn
         .prepare("SELECT id, pkg_id, idx, name_th, name_en, file_path, source_path, duration, events FROM sounds WHERE pkg_id = ?1 ORDER BY idx")
@@ -2232,6 +2308,7 @@ async fn save_clips_to_library(
     opts: SaveToLibOpts,
     total_duration: f64,
 ) -> Result<SaveToLibResult, String> {
+    ensure_studio_access()?;
     let pkg_id = format!(
         "pkg_{}_{}",
         std::time::SystemTime::now()
@@ -2366,6 +2443,7 @@ async fn save_clips_to_library(
 
 #[tauri::command]
 fn delete_library_pkg(pkg_id: String) -> Result<(), String> {
+    ensure_studio_access()?;
     let conn = open_db()?;
     let pkg_dir = sounds_dir().join(&pkg_id);
     if pkg_dir.exists() && pkg_dir.starts_with(sounds_dir()) {
@@ -2417,6 +2495,7 @@ struct PackManifest {
 
 #[tauri::command]
 fn save_pack(manifest: PackManifest) -> Result<String, String> {
+    ensure_studio_access()?;
     let conn = open_db()?;
     let events_json =
         serde_json::to_string(&manifest.events).map_err(|e| format!("json: {e}"))?;
@@ -2469,6 +2548,7 @@ struct SoundUsage {
 /// sound_usage — never scans packs.mappings.
 #[tauri::command]
 fn sound_usage(sound_id: i64) -> Result<Vec<SoundUsage>, String> {
+    ensure_studio_access()?;
     let conn = open_db()?;
     let mut stmt = conn
         .prepare(
@@ -2489,6 +2569,7 @@ fn sound_usage(sound_id: i64) -> Result<Vec<SoundUsage>, String> {
 
 #[tauri::command]
 fn load_packs() -> Result<Vec<PackManifest>, String> {
+    ensure_studio_access()?;
     let conn = open_db()?;
     let mut stmt = conn
         .prepare("SELECT id, name, pack_type, events, mappings, created_at, updated_at FROM packs ORDER BY updated_at DESC")
@@ -2515,6 +2596,7 @@ fn load_packs() -> Result<Vec<PackManifest>, String> {
 
 #[tauri::command]
 fn delete_pack(pack_id: String) -> Result<(), String> {
+    ensure_studio_access()?;
     let conn = open_db()?;
     conn.execute("DELETE FROM packs WHERE id = ?1", [&pack_id])
         .map_err(|e| format!("delete pack: {e}"))?;
@@ -2535,6 +2617,7 @@ async fn export_pack(
     pack_id: String,
     target_dir: String,
 ) -> Result<ExportPackResult, String> {
+    ensure_studio_access()?;
     let manifest = {
         let conn = open_db()?;
         let mut stmt = conn
@@ -2723,6 +2806,7 @@ fn install_lib_to_gmaiden(
     mappings: std::collections::HashMap<String, String>,
     gmaiden_dir: Option<String>,
 ) -> Result<QuickInstallResult, String> {
+    ensure_studio_access()?;
     let base = resolve_gmaiden_dir(&gmaiden_dir)
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือวาง repo ข้าง G-Suite")?;
     let vc = voice_cache_root(&base);
@@ -2877,6 +2961,7 @@ struct SysInfoState(std::sync::Mutex<sysinfo::System>);
 /// List locally installed Ollama models (short — only when the daemon is up).
 #[tauri::command]
 async fn list_ollama_models() -> Result<Vec<String>, String> {
+    ensure_studio_access()?;
     let resp = reqwest::Client::new()
         .get("http://localhost:11434/api/tags")
         .send()
@@ -2902,6 +2987,7 @@ async fn llm_complete(
     system: String,
     prompt: String,
 ) -> Result<String, String> {
+    ensure_studio_access()?;
     match provider.as_str() {
         "ollama" => ollama_chat(model.unwrap_or_else(|| "llama3".into()), system, prompt).await,
         "claude" => claude_cli(system, prompt).await,
@@ -2965,11 +3051,13 @@ async fn claude_cli(system: String, prompt: String) -> Result<String, String> {
 
 #[tauri::command]
 fn save_text_file(path: String, content: String) -> Result<(), String> {
+    ensure_studio_access()?;
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
+    ensure_studio_access()?;
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
@@ -3038,6 +3126,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            studio_authorize,
+            studio_access_clear,
             extract_audio,
             cut_clip,
             export_all,

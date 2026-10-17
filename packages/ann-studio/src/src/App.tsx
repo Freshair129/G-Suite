@@ -8,15 +8,19 @@ import EventTestGrid from "./components/EventTestGrid";
 import SourceView from "./components/SourceView";
 import OverlayLab from "./components/OverlayLab";
 import { useStudioStore } from "./store/useStudioStore";
-import { restoreGidSession } from "./lib/gidAuth";
+import { restoreGidSession, signInWithGoogle, signOutGid } from "./lib/gidAuth";
 import { useEffect, useState } from "react";
 
 export default function App() {
   const view = useStudioStore((s) => s.view);
+  const studioAccess = useStudioStore((s) => s.studioAccess);
+  const studioAccessError = useStudioStore((s) => s.studioAccessError);
   const undoClips = useStudioStore((s) => s.undoClips);
   const redoClips = useStudioStore((s) => s.redoClips);
   const [leftW, setLeftW] = useState(220);
   const [rightW, setRightW] = useState(340);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   function startLeftResize(e: React.PointerEvent) {
     e.preventDefault();
@@ -39,6 +43,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (studioAccess !== "authorized") return;
+    const timer = window.setInterval(() => { void restoreGidSession(); }, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [studioAccess]);
+
+  useEffect(() => {
+    if (studioAccess !== "authorized") return;
     function onKey(e: KeyboardEvent) {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod || e.key.toLowerCase() !== "z") return;
@@ -50,7 +61,52 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undoClips, redoClips]);
+  }, [studioAccess, undoClips, redoClips]);
+
+  async function handleStudioSignIn() {
+    setAuthBusy(true);
+    setAuthError("");
+    const error = await signInWithGoogle();
+    setAuthError(error ?? "");
+    setAuthBusy(false);
+  }
+
+  if (studioAccess !== "authorized") {
+    return (
+      <main className="h-screen grid place-items-center bg-base text-ink p-6">
+        <section className="w-full max-w-md rounded-2xl border border-line bg-panel p-7 shadow-2xl">
+          <h1 className="text-xl font-bold">G-AnnStudio</h1>
+          <p className="mt-3 text-sm text-ink-muted">
+            เครื่องมือสำหรับผู้พัฒนาและผู้ร่วมงานที่ได้รับอนุญาต ใช้บัญชี Google ที่อยู่ในรายชื่อทีมเพื่อเข้าใช้งาน
+          </p>
+          {studioAccess === "checking" ? (
+            <p role="status" className="mt-5 text-sm text-ink-muted">กำลังตรวจสอบสิทธิ์…</p>
+          ) : (
+            <p role="alert" className="mt-5 text-sm text-red-300">
+              {authError || studioAccessError || "บัญชีนี้ยังไม่มีสิทธิ์ใช้งาน G-AnnStudio"}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleStudioSignIn()}
+            disabled={authBusy || studioAccess === "checking"}
+            className="mt-5 w-full rounded-xl border border-lime/40 bg-lime/10 px-4 py-3 text-sm font-semibold text-lime hover:bg-lime/20 disabled:opacity-50"
+          >
+            {authBusy ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบด้วย Google"}
+          </button>
+          {studioAccess === "denied" ? (
+            <button
+              type="button"
+              onClick={() => void signOutGid()}
+              className="mt-3 w-full rounded-xl border border-line px-4 py-2.5 text-sm text-ink-muted hover:bg-panel-hover"
+            >
+              ออกจากบัญชีนี้ / เปลี่ยนบัญชี
+            </button>
+          ) : null}
+        </section>
+      </main>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-base text-ink overflow-hidden">
