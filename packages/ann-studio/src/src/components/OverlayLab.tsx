@@ -4,6 +4,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImagePlus, RotateCcw, Send, Sparkles } from "lucide-react";
 import BannerEditor from "./BannerEditor";
+import { OverlayInspector } from "./OverlayInspector";
+import { OverlayModuleShelf } from "./OverlayModuleShelf";
 import { OverlayModulePreview } from "./OverlayModulePreview";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { toneBannerPngDataUrl } from "../lib/toneBanner";
@@ -18,6 +20,7 @@ import {
   moduleCollisions,
   moduleRect,
   OVERLAY_MODULE_IDS,
+  OVERLAY_MODULE_LABELS,
   syncOverlayLayout,
   zoneConflicts,
   type OverlayLayout,
@@ -33,13 +36,6 @@ import {
   type LabSurface,
 } from "../lib/labView";
 import { useStudioStore } from "../store/useStudioStore";
-
-const LABEL: Record<OverlayModuleId, string> = {
-  alert: "Danger alert", gmeter: "G-Meter", toast: "Voice notice", companion: "Maiden", advice: "Advice",
-  buyback: "Buyback", missing: "Enemy missing", banner: "Event banner", lowhp: "Low HP", vol: "Volume",
-  standby: "Standby", clock: "Clock", kda: "K/D/A", gold: "Gold", gpm: "GPM", xpm: "XPM", nw: "Net worth",
-  score: "Score", hero: "HP / Mana",
-};
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -63,6 +59,10 @@ export default function OverlayLab() {
   const setLayout = useStudioStore((s) => s.setOverlayLayout);
   const bannerOverrides = useStudioStore((s) => s.bannerOverrides);
   const stageRef = useRef<HTMLDivElement>(null);
+  const [selectedId, setSelectedId] = useState<OverlayModuleId | null>("alert");
+  const [previewLayout, setPreviewLayout] = useState<OverlayLayout | null>(null);
+  const gestureStartLayout = useRef<OverlayLayout | null>(null);
+  const gesturePreviewLayout = useRef<OverlayLayout | null>(null);
   // Previews are real px, so they must shrink with the stage: the reference is a
   // 1920-wide screen and the stage is whatever the panel gives us.
   const [stageScale, setStageScale] = useState(0);
@@ -71,6 +71,7 @@ export default function OverlayLab() {
   const [playing, setPlaying] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("Draft only. Sync when you are happy with the HUD clearance.");
+  const viewLayout = previewLayout ?? layout;
 
   // Seed from the cache above and write back on every change, so a tab switch
   // returns you to the surface, event and screenshot you left.
@@ -114,6 +115,28 @@ export default function OverlayLab() {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
   };
 
+  const beginLayoutGesture = () => {
+    gestureStartLayout.current = layout;
+    gesturePreviewLayout.current = layout;
+    setPreviewLayout(layout);
+  };
+
+  const previewLayoutPatch = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
+    const current = gesturePreviewLayout.current ?? layout;
+    const next = { ...current, [id]: { ...current[id], ...patch } };
+    gesturePreviewLayout.current = next;
+    setPreviewLayout(next);
+  };
+
+  const endLayoutGesture = () => {
+    const start = gestureStartLayout.current;
+    const next = gesturePreviewLayout.current;
+    if (start && next) setLayout(next);
+    gestureStartLayout.current = null;
+    gesturePreviewLayout.current = null;
+    setPreviewLayout(null);
+  };
+
   /**
    * Stacking order by footprint: the biggest boxes go to the bottom, the
    * smallest to the top.
@@ -129,14 +152,14 @@ export default function OverlayLab() {
    */
   const zByArea = useMemo(() => {
     const area = (id: OverlayModuleId) => {
-      const { w, h } = boxPercent(id, layout[id].scale);
+      const { w, h } = boxPercent(id, viewLayout[id].scale);
       return w * h;
     };
     const ranked = [...OVERLAY_MODULE_IDS].sort(
       (a, b) => area(b) - area(a) || a.localeCompare(b),
     );
     return Object.fromEntries(ranked.map((id, index) => [id, index + 1])) as Record<OverlayModuleId, number>;
-  }, [layout]);
+  }, [viewLayout]);
 
   // Free positioning, no magnet. Snapping was added to fix a grid that never
   // lined up, but the real answer is that a uniform grid is the wrong tool here:
@@ -188,7 +211,16 @@ export default function OverlayLab() {
   }
 
   return (
-    <main className="flex-1 min-w-0 grid grid-cols-[minmax(0,1fr)_280px] overflow-hidden bg-base">
+    <main className="flex-1 min-w-0 grid grid-cols-[228px_minmax(0,1fr)_272px] overflow-hidden bg-base">
+      <aside aria-label="HUD module shelf" className="min-w-0 overflow-y-auto border-r border-line bg-panel/25 p-3">
+        <OverlayModuleShelf
+          layout={viewLayout}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onToggle={(id, enabled) => update(id, { enabled })}
+        />
+      </aside>
+
       <section className="min-w-0 overflow-y-auto p-5">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
@@ -295,7 +327,7 @@ export default function OverlayLab() {
           {/* Grid overlay removed with the magnet: lines you cannot snap to are
               just texture over the game screenshot. */}
           {OVERLAY_MODULE_IDS.map((id) => {
-            const cfg = layout[id];
+            const cfg = viewLayout[id];
             if (!cfg.enabled) return null;
             const isBanner = id === "banner";
             const visible = !isBanner || playing;
@@ -315,18 +347,20 @@ export default function OverlayLab() {
             // nominal MODULE_BOX — the advice and buyback cards lost their last
             // line. The box still drives hit-testing and the overlap maths; it is
             // just no longer painted.
-            const ring = blocked
-              ? "ring-1 ring-red-400"
-              : transient
-                ? "ring-1 ring-amber-400"
-                : dragging === id
-                  ? "ring-1 ring-lime/70"
-                  : "";
+            const ring = dragging === id
+              ? "ring-1 ring-lime/70"
+              : selectedId === id
+                ? "ring-2 ring-sky-300"
+                : blocked
+                  ? "ring-1 ring-red-400"
+                  : transient
+                    ? "ring-1 ring-amber-400"
+                    : "";
             return (
               <div
                 key={id}
-                title={conflicts.length ? `Overlaps: ${conflicts.map((z) => z.label).join(", ")}` : LABEL[id]}
-                onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setDragging(id); }}
+                title={conflicts.length ? `Overlaps: ${conflicts.map((z) => z.label).join(", ")}` : OVERLAY_MODULE_LABELS[id]}
+                onPointerDown={(event) => { setSelectedId(id); event.currentTarget.setPointerCapture(event.pointerId); setDragging(id); }}
                 className={`absolute cursor-grab active:cursor-grabbing rounded ${ring} ${visible && drawn ? "" : "opacity-35"}`}
                 style={{
                   left: `${cfg.x}%`, top: `${cfg.y}%`,
@@ -349,7 +383,7 @@ export default function OverlayLab() {
                     like themselves, so they no longer need naming to be identified. */}
                 {dragging === id && (
                   <span className="pointer-events-none absolute -top-4 left-0 whitespace-nowrap rounded bg-black/80 px-1 text-[10px] font-semibold leading-tight text-lime">
-                    {LABEL[id]} · {cfg.x},{cfg.y}
+                    {OVERLAY_MODULE_LABELS[id]} · {cfg.x},{cfg.y}
                   </span>
                 )}
               </div>
@@ -367,10 +401,10 @@ export default function OverlayLab() {
           // pair that bites is a module sitting under Dota's own kill banner — clear
           // whenever you look at a screenshot, occupied exactly when an event fires.
           const zoneHits = OVERLAY_MODULE_IDS
-            .filter((id) => layout[id].enabled && onScreen.has(id) && ACCEPTED_OVERLAPS[id] === undefined)
-            .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, layout[id]), zones) }))
+            .filter((id) => viewLayout[id].enabled && onScreen.has(id) && ACCEPTED_OVERLAPS[id] === undefined)
+            .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, viewLayout[id]), zones) }))
             .filter((entry) => entry.zones.length > 0);
-          const pairs = moduleCollisions(layout);
+          const pairs = moduleCollisions(viewLayout);
           if (!zoneHits.length && !pairs.length) {
             return <p className="mt-1 text-xs text-lime">No overlaps: every enabled module clears the HUD and each other.</p>;
           }
@@ -378,40 +412,31 @@ export default function OverlayLab() {
             <div className="mt-1 space-y-0.5 text-xs">
               {zoneHits.map(({ id, zones }) => (
                 <p key={id} className={zones.some((z) => z.kind === "blocked") ? "text-red-400" : "text-amber-400"}>
-                  {LABEL[id]} overlaps {zones.map((z) => z.label).join(", ")}
+                  {OVERLAY_MODULE_LABELS[id]} overlaps {zones.map((z) => z.label).join(", ")}
                   {zones.every((z) => z.kind === "transient") && " — clear now, covered when the event fires"}
                 </p>
               ))}
               {pairs.map(([a, b]) => (
-                <p key={`${a}-${b}`} className="text-amber-400">{LABEL[a]} and {LABEL[b]} overlap each other</p>
+                <p key={`${a}-${b}`} className="text-amber-400">{OVERLAY_MODULE_LABELS[a]} and {OVERLAY_MODULE_LABELS[b]} overlap each other</p>
               ))}
             </div>
           );
         })()}
       </section>
 
-      <aside className="border-l border-line overflow-y-auto p-4 bg-panel/25">
-        <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold">Components</h3><span className="text-[10px] text-ink-faint">{OVERLAY_MODULE_IDS.length} modules</span></div>
-        <div className="space-y-2">
-          {OVERLAY_MODULE_IDS.map((id) => {
-            const cfg = layout[id];
-            // Accent the row for the module being dragged. With 19 rows and no
-            // labels on the stage, there was nothing tying the thing under the
-            // cursor to its entry here — and the live x,y readout is in this row,
-            // so it is exactly where you look while positioning.
-            const active = dragging === id;
-            return <div
-              key={id}
-              ref={(node) => { if (active && node) node.scrollIntoView({ block: "nearest" }); }}
-              className={`rounded-lg border p-2 transition-colors ${active ? "border-lime bg-lime/10" : "border-line bg-black/15"}`}
-            >
-              <div className="flex items-center justify-between gap-2"><label className="flex items-center gap-2 text-xs text-ink-muted"><input className="accent-lime" type="checkbox" checked={cfg.enabled} onChange={(event) => update(id, { enabled: event.target.checked })} />{LABEL[id]}</label><span className="text-[10px] text-ink-faint">{cfg.x},{cfg.y}</span></div>
-              <div className="mt-1.5 flex items-center gap-2"><span className="text-[10px] text-ink-faint">Scale</span><input className="flex-1" type="range" min="0.6" max="1.6" step="0.05" value={cfg.scale} disabled={!cfg.enabled} onChange={(event) => update(id, { scale: Number(event.target.value) })} /><span className="w-7 text-right text-[10px] text-ink-muted">{cfg.scale.toFixed(2)}</span></div>
-            </div>;
-          })}
+      <aside className="min-w-0 overflow-y-auto border-l border-line bg-panel/25 p-4">
+        <OverlayInspector
+          selectedId={selectedId}
+          layout={viewLayout}
+          onCommit={update}
+          onPreview={previewLayoutPatch}
+          onGestureStart={beginLayoutGesture}
+          onGestureEnd={endLayoutGesture}
+        />
+        <div className="mt-5 border-t border-line pt-4">
+          <button disabled={syncing} onClick={sync} className="w-full inline-flex justify-center items-center gap-2 h-10 rounded-lg bg-white text-black text-xs font-bold hover:bg-zinc-200 disabled:opacity-50"><Send size={14} />{syncing ? "Syncing…" : "Sync to G-Maiden"}</button>
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">{notice}</p>
         </div>
-        <button disabled={syncing} onClick={sync} className="mt-4 w-full inline-flex justify-center items-center gap-2 h-10 rounded-lg bg-white text-black text-xs font-bold hover:bg-zinc-200 disabled:opacity-50"><Send size={14} />{syncing ? "Syncing…" : "Sync to G-Maiden"}</button>
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">{notice}</p>
       </aside>
     </main>
   );

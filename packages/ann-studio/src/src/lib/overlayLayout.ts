@@ -9,6 +9,20 @@ export type OverlayModuleId = (typeof OVERLAY_MODULE_IDS)[number];
 export type OverlayModuleLayout = { x: number; y: number; scale: number; enabled: boolean };
 export type OverlayLayout = Record<OverlayModuleId, OverlayModuleLayout>;
 
+export const OVERLAY_MODULE_LABELS: Record<OverlayModuleId, string> = {
+  alert: "Danger alert", gmeter: "G-Meter", toast: "Voice notice", companion: "Maiden", advice: "Advice",
+  buyback: "Buyback", missing: "Enemy missing", banner: "Event banner", lowhp: "Low HP", vol: "Volume",
+  standby: "Standby", clock: "Clock", kda: "K/D/A", gold: "Gold", gpm: "GPM", xpm: "XPM", nw: "Net worth",
+  score: "Score", hero: "HP / Mana",
+};
+
+/** Parse a finite number inside the inclusive bounds used by the v1 layout. */
+export function parseLayoutNumber(raw: string, min: number, max: number): number | null {
+  if (!raw.trim()) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= min && value <= max ? value : null;
+}
+
 const module = (x: number, y: number, enabled = true): OverlayModuleLayout => ({ x, y, scale: 1, enabled });
 
 /** Mirrors G-Maiden `overlay/modules.ts::DEFAULT_LAYOUT`. Keep in sync with the v1 schema. */
