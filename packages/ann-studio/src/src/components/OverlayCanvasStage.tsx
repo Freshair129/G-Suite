@@ -17,7 +17,7 @@ import {
 import { pointerToLayoutPercent, scaleFromPointerDrag, type ClientPoint, type StageRect } from "../lib/overlayCanvasGeometry";
 import { OverlayModulePreview } from "./OverlayModulePreview";
 
-const DOTA_HUD_REFERENCE = "/dota-hud-reference.webp";
+const DOTA_HUD_REFERENCE = "/dota-hud-gameplay-default.jpg";
 const DOTA_MINIMAP_REFERENCE = "/dota-minimap-reference.webp";
 type GestureKind = "move" | "resize";
 
@@ -192,7 +192,7 @@ export function OverlayCanvasStage({
 
       {!screenshotUrl && (
         <span className="absolute bottom-1 right-2 text-[9px] text-white/50">
-          Dota 2 reference — load your own capture for your aspect ratio / HUD skin
+          Bundled 1920×1080 Dota gameplay capture — importing another screenshot is optional
         </span>
       )}
 

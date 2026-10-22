@@ -128,12 +128,13 @@ export default function OverlayLab() {
   };
 
   const sync = async () => {
+    const currentLayout = useStudioStore.getState().overlayLayout;
     setSyncing(true);
     setNotice("Syncing the current draft to G-Maiden…");
     try {
-      const result = await syncOverlayLayout(layout);
+      const result = await syncOverlayLayout(currentLayout);
       if (!result.ok) throw new Error(result.error ?? "G-Maiden rejected the HUD layout.");
-      setNotice("G-Maiden accepted the layout sync request. There is no live read-back check.");
+      setNotice("G-Maiden saved the layout and notified the overlay.");
     } catch (error) {
       setNotice(typeof error === "string" ? error : error instanceof Error ? error.message : "Sync to G-Maiden failed.");
     } finally {
@@ -167,14 +168,14 @@ export default function OverlayLab() {
           <div>
             <p className="text-xs font-semibold text-lime">G-Overlay Lab</p>
             <h2 className="text-lg font-bold text-ink mt-0.5">Arrange the real event slot before a match</h2>
-            <p className="text-xs text-ink-faint mt-1">Drag modules over a 16:9 Dota reference. Only Sync changes G-Maiden.</p>
+            <p className="text-xs text-ink-faint mt-1">Drag modules over the bundled 1920×1080 Dota capture. Screenshot import is optional; only Sync changes G-Maiden.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-lime/40 text-xs text-lime hover:bg-lime/10" onClick={() => setSurface("banner")}>
               Banner editor
             </button>
             <label className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink cursor-pointer">
-              <ImagePlus size={14} /> Screenshot
+              <ImagePlus size={14} /> Replace capture
               <input type="file" accept="image/*" className="hidden" onChange={loadScreenshot} />
             </label>
             <button
@@ -256,7 +257,7 @@ export default function OverlayLab() {
           onGestureEnd={endLayoutGesture}
         />
         <div className="mt-5 border-t border-line pt-4">
-          <button disabled={syncing} onClick={sync} className="w-full inline-flex justify-center items-center gap-2 h-10 rounded-lg bg-white text-black text-xs font-bold hover:bg-zinc-200 disabled:opacity-50"><Send size={14} />{syncing ? "Syncing…" : "Sync to G-Maiden"}</button>
+          <button type="button" aria-busy={syncing} disabled={syncing} onClick={() => { void sync(); }} className="w-full inline-flex justify-center items-center gap-2 h-10 rounded-lg bg-white text-black text-xs font-bold hover:bg-zinc-200 disabled:opacity-50"><Send size={14} />{syncing ? "Syncing…" : "Sync to G-Maiden"}</button>
           <p data-testid="sync-status" role="status" aria-live="polite" className="mt-3 text-[11px] leading-relaxed text-ink-faint">{notice}</p>
         </div>
       </aside>

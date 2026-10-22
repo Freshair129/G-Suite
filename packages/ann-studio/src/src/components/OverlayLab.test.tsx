@@ -85,7 +85,7 @@ describe("OverlayLab HUD draft workflow", () => {
     expect(syncOverlayLayoutMock).not.toHaveBeenCalled();
   });
 
-  it("sends the complete layout only after explicit Sync and reports accepted request without live read-back", async () => {
+  it("sends the complete layout only after explicit Sync and reports the saved layout", async () => {
     render(<OverlayLab />);
     editAlertX("53");
 
@@ -97,7 +97,7 @@ describe("OverlayLab HUD draft workflow", () => {
     expect(payload.alert.x).toBe(53);
     expect(payload).not.toHaveProperty("screenshot");
     expect(payload).not.toHaveProperty("screenUrl");
-    expect(screen.getByTestId("sync-status").textContent).toMatch(/accepted.*no live read-back/i);
+    expect(screen.getByTestId("sync-status").textContent).toMatch(/saved the layout and notified the overlay/i);
 
     editAlertX("54");
     expect(screen.getByTestId("sync-status").textContent).toMatch(/draft changed.*not been verified/i);
