@@ -9,6 +9,20 @@ export type OverlayModuleId = (typeof OVERLAY_MODULE_IDS)[number];
 export type OverlayModuleLayout = { x: number; y: number; scale: number; enabled: boolean };
 export type OverlayLayout = Record<OverlayModuleId, OverlayModuleLayout>;
 
+export const OVERLAY_MODULE_LABELS: Record<OverlayModuleId, string> = {
+  alert: "Danger alert", gmeter: "G-Meter", toast: "Voice notice", companion: "Maiden", advice: "Advice",
+  buyback: "Buyback", missing: "Enemy missing", banner: "Event banner", lowhp: "Low HP", vol: "Volume",
+  standby: "Standby", clock: "Clock", kda: "K/D/A", gold: "Gold", gpm: "GPM", xpm: "XPM", nw: "Net worth",
+  score: "Score", hero: "HP / Mana",
+};
+
+/** Parse a finite number inside the inclusive bounds used by the v1 layout. */
+export function parseLayoutNumber(raw: string, min: number, max: number): number | null {
+  if (!raw.trim()) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= min && value <= max ? value : null;
+}
+
 const module = (x: number, y: number, enabled = true): OverlayModuleLayout => ({ x, y, scale: 1, enabled });
 
 /** Mirrors G-Maiden `overlay/modules.ts::DEFAULT_LAYOUT`. Keep in sync with the v1 schema. */
@@ -165,10 +179,10 @@ export const INGAME_HIDDEN: ReadonlySet<OverlayModuleId> = new Set<OverlayModule
  * to ignore it, which costs more than the overlap does. Recording the reason
  * here keeps the red list strictly actionable while leaving the fact visible.
  */
-export const ACCEPTED_OVERLAPS: Partial<Record<OverlayModuleId, string>> = {
-  toast:
-    "in-game it belongs to the alert → toast → banner column, which is where it fires " +
-    "almost always; pre-game it is a ≤3s notification passing over the map",
+export const ACCEPTED_OVERLAPS: Partial<Record<OverlayModuleId, Readonly<Record<string, string>>>> = {
+  toast: {
+    "pregame-map": "it is a brief notification that passes over the map before a match",
+  },
 };
 
 /** Modules a given screen actually draws — the only ones worth judging on it. */
@@ -220,6 +234,62 @@ export function moduleCollisions(layout: OverlayLayout): [OverlayModuleId, Overl
     }
   }
   return hits;
+}
+
+export type OverlayConflictKind = HudZone["kind"] | "accepted" | "module";
+
+export interface OverlayConflictItem {
+  id: string;
+  moduleId: OverlayModuleId;
+  otherModuleId?: OverlayModuleId;
+  kind: OverlayConflictKind;
+  message: string;
+}
+
+/** Actionable, screen-aware warnings shared by the canvas, shelf and inspector. */
+export function getOverlayConflictItems(layout: OverlayLayout, screen: StageScreen): OverlayConflictItem[] {
+  const visible = new Set(modulesOnScreen(screen));
+  const items: OverlayConflictItem[] = [];
+
+  for (const id of OVERLAY_MODULE_IDS) {
+    if (!layout[id].enabled || !visible.has(id)) continue;
+    const conflicts = zoneConflicts(moduleRect(id, layout[id]), STAGE_ZONES[screen]);
+    if (conflicts.length === 0) continue;
+
+    for (const zone of conflicts) {
+      const acceptedReason = ACCEPTED_OVERLAPS[id]?.[zone.id];
+      if (acceptedReason) {
+        items.push({
+          id: `${id}:accepted:${zone.id}:${screen}`,
+          moduleId: id,
+          kind: "accepted",
+          message: `${OVERLAY_MODULE_LABELS[id]} has an accepted overlap with ${zone.label}: ${acceptedReason}.`,
+        });
+        continue;
+      }
+      items.push({
+        id: `${id}:${zone.id}:${screen}`,
+        moduleId: id,
+        kind: zone.kind,
+        message: zone.kind === "transient"
+          ? `${OVERLAY_MODULE_LABELS[id]} overlaps ${zone.label}; it is clear now but covered when the event appears.`
+          : `${OVERLAY_MODULE_LABELS[id]} overlaps ${zone.label}; move it clear of this Dota control.`,
+      });
+    }
+  }
+
+  for (const [moduleId, otherModuleId] of moduleCollisions(layout)) {
+    if (!visible.has(moduleId) || !visible.has(otherModuleId)) continue;
+    items.push({
+      id: `${moduleId}:${otherModuleId}:module`,
+      moduleId,
+      otherModuleId,
+      kind: "module",
+      message: `${OVERLAY_MODULE_LABELS[moduleId]} overlaps ${OVERLAY_MODULE_LABELS[otherModuleId]}; move one module to separate them.`,
+    });
+  }
+
+  return items;
 }
 
 export function cloneDefaultOverlayLayout(): OverlayLayout {

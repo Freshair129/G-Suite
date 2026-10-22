@@ -4,7 +4,7 @@
 // @tested src/store/useStudioStore.test.ts
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { cloneDefaultOverlayLayout, type OverlayLayout } from "../lib/overlayLayout";
+import { cloneDefaultOverlayLayout, OVERLAY_MODULE_IDS, type OverlayLayout } from "../lib/overlayLayout";
 import { cloneBannerProject, createDefaultBannerProject, type BannerProject } from "../lib/bannerProject";
 
 export interface Clip {
@@ -157,6 +157,8 @@ interface StudioState {
   gmaidenPath: string;
   voiceCache: VoiceCacheMap;
   overlayLayout: OverlayLayout;
+  pastOverlayLayouts: OverlayLayout[];
+  futureOverlayLayouts: OverlayLayout[];
   bannerProject: BannerProject;
   pastBannerProjects: BannerProject[];
   futureBannerProjects: BannerProject[];
@@ -214,6 +216,8 @@ interface StudioState {
   /** set the G-Maiden install directory (where packs are written) */
   setGmaidenPath: (path: string) => void;
   setOverlayLayout: (layout: OverlayLayout) => void;
+  undoOverlayLayout: () => void;
+  redoOverlayLayout: () => void;
   setBannerProject: (project: BannerProject) => void;
   setBannerProjectSilent: (project: BannerProject) => void;
   pushBannerProjectHistory: () => void;
@@ -271,6 +275,20 @@ export function packId() {
 }
 
 const HISTORY_MAX = 50;
+const OVERLAY_LAYOUT_HISTORY_MAX = 100;
+
+function cloneOverlayLayout(layout: OverlayLayout): OverlayLayout {
+  return Object.fromEntries(OVERLAY_MODULE_IDS.map((id) => [id, { ...layout[id] }])) as OverlayLayout;
+}
+
+function overlayLayoutsEqual(left: OverlayLayout, right: OverlayLayout): boolean {
+  return OVERLAY_MODULE_IDS.every((id) =>
+    Object.is(left[id].x, right[id].x) &&
+    Object.is(left[id].y, right[id].y) &&
+    Object.is(left[id].scale, right[id].scale) &&
+    left[id].enabled === right[id].enabled,
+  );
+}
 
 export const useStudioStore = create<StudioState>()(
   persist(
@@ -295,6 +313,8 @@ export const useStudioStore = create<StudioState>()(
       gmaidenPath: "",
       voiceCache: {},
       overlayLayout: cloneDefaultOverlayLayout(),
+      pastOverlayLayouts: [],
+      futureOverlayLayouts: [],
       bannerProject: createDefaultBannerProject(),
       pastBannerProjects: [],
       futureBannerProjects: [],
@@ -440,7 +460,35 @@ export const useStudioStore = create<StudioState>()(
         set({ gmaidenConnected, gmaidenPath, voiceCache }),
 
       setGmaidenPath: (gmaidenPath) => set({ gmaidenPath }),
-      setOverlayLayout: (overlayLayout) => set({ overlayLayout }),
+      setOverlayLayout: (overlayLayout) =>
+        set((s) => {
+          if (overlayLayoutsEqual(s.overlayLayout, overlayLayout)) return s;
+          return {
+            overlayLayout: cloneOverlayLayout(overlayLayout),
+            pastOverlayLayouts: [...s.pastOverlayLayouts, cloneOverlayLayout(s.overlayLayout)].slice(-OVERLAY_LAYOUT_HISTORY_MAX),
+            futureOverlayLayouts: [],
+          };
+        }),
+      undoOverlayLayout: () =>
+        set((s) => {
+          const previous = s.pastOverlayLayouts[s.pastOverlayLayouts.length - 1];
+          if (!previous) return s;
+          return {
+            overlayLayout: cloneOverlayLayout(previous),
+            pastOverlayLayouts: s.pastOverlayLayouts.slice(0, -1),
+            futureOverlayLayouts: [cloneOverlayLayout(s.overlayLayout), ...s.futureOverlayLayouts].slice(0, OVERLAY_LAYOUT_HISTORY_MAX),
+          };
+        }),
+      redoOverlayLayout: () =>
+        set((s) => {
+          const next = s.futureOverlayLayouts[0];
+          if (!next) return s;
+          return {
+            overlayLayout: cloneOverlayLayout(next),
+            pastOverlayLayouts: [...s.pastOverlayLayouts, cloneOverlayLayout(s.overlayLayout)].slice(-OVERLAY_LAYOUT_HISTORY_MAX),
+            futureOverlayLayouts: s.futureOverlayLayouts.slice(1),
+          };
+        }),
       setBannerProject: (bannerProject) =>
         set((s) => ({
           bannerProject: { ...bannerProject, revision: s.bannerProject.revision + 1 },
@@ -563,6 +611,8 @@ export const useStudioStore = create<StudioState>()(
         packBuilder: s.packBuilder,
         gmaidenPath: s.gmaidenPath,
         overlayLayout: s.overlayLayout,
+        pastOverlayLayouts: s.pastOverlayLayouts,
+        futureOverlayLayouts: s.futureOverlayLayouts,
         bannerProject: s.bannerProject,
       }),
     }

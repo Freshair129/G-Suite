@@ -2,24 +2,18 @@
 // @spec SDD-004 — keeps explicit local HUD sync separate from BannerProject authoring.
 // @designs docs/g-overlay-lab.md
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ImagePlus, RotateCcw, Send, Sparkles } from "lucide-react";
+import { ImagePlus, Redo2, RotateCcw, Send, Sparkles, Undo2 } from "lucide-react";
 import BannerEditor from "./BannerEditor";
-import { OverlayModulePreview } from "./OverlayModulePreview";
+import { OverlayCanvasStage } from "./OverlayCanvasStage";
+import { OverlayConflictList } from "./OverlayConflictList";
+import { OverlayInspector } from "./OverlayInspector";
+import { OverlayModuleShelf } from "./OverlayModuleShelf";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { toneBannerPngDataUrl } from "../lib/toneBanner";
 import {
-  BOX_REF,
-  boxPercent,
   cloneDefaultOverlayLayout,
-  DOTA_HUD_ZONES,
-  STAGE_ZONES,
-  modulesOnScreen,
-  ACCEPTED_OVERLAPS,
-  moduleCollisions,
-  moduleRect,
-  OVERLAY_MODULE_IDS,
+  getOverlayConflictItems,
   syncOverlayLayout,
-  zoneConflicts,
   type OverlayLayout,
   type OverlayModuleId,
   type StageScreen,
@@ -34,26 +28,6 @@ import {
 } from "../lib/labView";
 import { useStudioStore } from "../store/useStudioStore";
 
-const LABEL: Record<OverlayModuleId, string> = {
-  alert: "Danger alert", gmeter: "G-Meter", toast: "Voice notice", companion: "Maiden", advice: "Advice",
-  buyback: "Buyback", missing: "Enemy missing", banner: "Event banner", lowhp: "Low HP", vol: "Volume",
-  standby: "Standby", clock: "Clock", kda: "K/D/A", gold: "Gold", gpm: "GPM", xpm: "XPM", nw: "Net worth",
-  score: "Score", hero: "HP / Mana",
-};
-
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-
-/**
- * Annotated 16:9 Dota 2 HUD reference, bundled so the stage shows the real game
- * out of the box instead of grey placeholder blocks — you cannot judge clearance
- * against rectangles. Users can still load their own capture over it, which is
- * the accurate option: HUD geometry shifts with aspect ratio and HUD skins.
- *
- * Valve/Dota 2 artwork, used as a layout reference inside a companion tool.
- */
-const DOTA_HUD_REFERENCE = "/dota-hud-reference.webp";
-const DOTA_MINIMAP_REFERENCE = "/dota-minimap-reference.webp";
-
 // Surface, event and screenshot live in lib/labView so they survive both a tab
 // switch (OverlayLab unmounts) and an app restart. See that file for why the
 // screenshot goes to IndexedDB rather than localStorage or the project store.
@@ -61,16 +35,24 @@ const DOTA_MINIMAP_REFERENCE = "/dota-minimap-reference.webp";
 export default function OverlayLab() {
   const layout = useStudioStore((s) => s.overlayLayout);
   const setLayout = useStudioStore((s) => s.setOverlayLayout);
+  const undoOverlayLayout = useStudioStore((s) => s.undoOverlayLayout);
+  const redoOverlayLayout = useStudioStore((s) => s.redoOverlayLayout);
+  const canUndoLayout = useStudioStore((s) => s.pastOverlayLayouts.length > 0);
+  const canRedoLayout = useStudioStore((s) => s.futureOverlayLayouts.length > 0);
   const bannerOverrides = useStudioStore((s) => s.bannerOverrides);
-  const stageRef = useRef<HTMLDivElement>(null);
-  // Previews are real px, so they must shrink with the stage: the reference is a
-  // 1920-wide screen and the stage is whatever the panel gives us.
-  const [stageScale, setStageScale] = useState(0);
-  const [dragging, setDragging] = useState<OverlayModuleId | null>(null);
+  const [selectedId, setSelectedId] = useState<OverlayModuleId | null>("alert");
+  const [previewLayout, setPreviewLayout] = useState<OverlayLayout | null>(null);
+  const gestureStartLayout = useRef<OverlayLayout | null>(null);
+  const gesturePreviewLayout = useRef<OverlayLayout | null>(null);
   const [screen, setScreen] = useState<StageScreen>("ingame");
   const [playing, setPlaying] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [notice, setNotice] = useState("Draft only. Sync when you are happy with the HUD clearance.");
+  const [notice, setNotice] = useState("Draft is unverified this session. Only Sync sends it to G-Maiden.");
+  const viewLayout = previewLayout ?? layout;
+  const conflictItems = useMemo(() => getOverlayConflictItems(viewLayout, screen), [viewLayout, screen]);
+  const warningIds = useMemo(() => new Set(conflictItems.flatMap(({ moduleId, otherModuleId }) =>
+    otherModuleId ? [moduleId, otherModuleId] : [moduleId],
+  )), [conflictItems]);
 
   // Seed from the cache above and write back on every change, so a tab switch
   // returns you to the surface, event and screenshot you left.
@@ -80,6 +62,8 @@ export default function OverlayLab() {
 
   const setEventId = (value: string) => { setLabEventId(value); setEventIdState(value); };
   const setSurface = (value: LabSurface) => { setLabSurface(value); setSurfaceState(value); };
+
+  const markDraftChanged = () => setNotice("Draft changed since the last accepted sync; it has not been verified with G-Maiden.");
 
   // Rehydrate a screenshot saved by a previous run. No revoke-on-unmount here:
   // the object URL has to outlive this component, or returning to the tab would
@@ -91,67 +75,44 @@ export default function OverlayLab() {
     return () => { live = false; };
   }, []);
 
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const measure = () => setStageScale(stage.getBoundingClientRect().width / BOX_REF.w);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(stage);
-    return () => observer.disconnect();
-    // `surface` matters even though it is unused above: this component returns
-    // <BannerEditor/> before the stage exists, so on the first mount the ref is
-    // null and this effect bails. Without the dep it never re-runs when the user
-    // switches to the HUD surface, stageScale stays 0, and every preview renders
-    // at scale(0) — an invisible module inside a correctly-sized box.
-  }, [surface]);
-
-  const zones = STAGE_ZONES[screen];
-  // Only judge (and only ring) modules that this screen actually draws.
-  const onScreen = useMemo(() => new Set(modulesOnScreen(screen)), [screen]);
-
   const update = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
+    markDraftChanged();
   };
 
-  /**
-   * Stacking order by footprint: the biggest boxes go to the bottom, the
-   * smallest to the top.
-   *
-   * Hit areas are MODULE_BOX-sized, and the widest are ~22% of the stage, so a
-   * small chip parked over the advice card was unreachable — you grabbed the
-   * card behind it. Ordering by area makes the smaller thing win, which is also
-   * the right answer visually: a stat chip should never hide behind a panel.
-   *
-   * Ties are broken by id so the order is stable rather than dependent on sort
-   * implementation, and the module being dragged is lifted above everything so
-   * it cannot slip underneath whatever it is dragged across.
-   */
-  const zByArea = useMemo(() => {
-    const area = (id: OverlayModuleId) => {
-      const { w, h } = boxPercent(id, layout[id].scale);
-      return w * h;
-    };
-    const ranked = [...OVERLAY_MODULE_IDS].sort(
-      (a, b) => area(b) - area(a) || a.localeCompare(b),
-    );
-    return Object.fromEntries(ranked.map((id, index) => [id, index + 1])) as Record<OverlayModuleId, number>;
-  }, [layout]);
+  const beginLayoutGesture = () => {
+    gestureStartLayout.current = layout;
+    gesturePreviewLayout.current = layout;
+    setPreviewLayout(layout);
+  };
 
-  // Free positioning, no magnet. Snapping was added to fix a grid that never
-  // lined up, but the real answer is that a uniform grid is the wrong tool here:
-  // Dota's HUD edges sit at no round percentage, so any grid fights the layout
-  // instead of helping it. Placement is now continuous and the conflict readout
-  // — which knows the actual geometry — is what tells you when you are wrong.
-  // Values are rounded to 0.1% purely to keep the synced layout tidy.
-  const move = (event: React.PointerEvent) => {
-    if (!dragging || !stageRef.current) return;
-    const box = stageRef.current.getBoundingClientRect();
-    const round = (value: number) => Math.round(value * 10) / 10;
-    update(dragging, {
-      x: clamp(round(((event.clientX - box.left) / box.width) * 100), 0, 100),
-      y: clamp(round(((event.clientY - box.top) / box.height) * 100), 0, 100),
-    });
+  const setGesturePreview = (next: OverlayLayout) => {
+    gesturePreviewLayout.current = next;
+    setPreviewLayout(next);
+  };
+
+  const previewLayoutPatch = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
+    const current = gesturePreviewLayout.current ?? layout;
+    const next = { ...current, [id]: { ...current[id], ...patch } };
+    setGesturePreview(next);
+  };
+
+  const clearLayoutGesture = () => {
+    gestureStartLayout.current = null;
+    gesturePreviewLayout.current = null;
+    setPreviewLayout(null);
+  };
+
+  const commitLayoutGesture = (next = gesturePreviewLayout.current) => {
+    if (next) {
+      setLayout(next);
+      markDraftChanged();
+    }
+    clearLayoutGesture();
+  };
+
+  const endLayoutGesture = () => {
+    if (gestureStartLayout.current) commitLayoutGesture();
   };
 
   const preview = () => {
@@ -167,12 +128,18 @@ export default function OverlayLab() {
   };
 
   const sync = async () => {
+    const submittedLayout = useStudioStore.getState().overlayLayout;
     setSyncing(true);
+    setNotice("Syncing the current draft to G-Maiden…");
     try {
-      await syncOverlayLayout(layout);
-      setNotice("Synced to G-Maiden. The open Combat HUD received the new layout now.");
+      const result = await syncOverlayLayout(submittedLayout);
+      if (!result.ok) throw new Error(result.error ?? "G-Maiden rejected the HUD layout.");
+      const newerDraftExists = JSON.stringify(useStudioStore.getState().overlayLayout) !== JSON.stringify(submittedLayout);
+      setNotice(newerDraftExists
+        ? "G-Maiden saved the submitted layout. Newer draft changes remain unverified."
+        : "G-Maiden saved the layout and notified the overlay.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Sync to G-Maiden failed.");
+      setNotice(typeof error === "string" ? error : error instanceof Error ? error.message : "Sync to G-Maiden failed.");
     } finally {
       setSyncing(false);
     }
@@ -188,23 +155,49 @@ export default function OverlayLab() {
   }
 
   return (
-    <main className="flex-1 min-w-0 grid grid-cols-[minmax(0,1fr)_280px] overflow-hidden bg-base">
+    <main className="flex-1 min-w-0 grid grid-cols-[228px_minmax(0,1fr)_272px] overflow-hidden bg-base">
+      <aside aria-label="HUD module shelf" className="min-w-0 overflow-y-auto border-r border-line bg-panel/25 p-3">
+        <OverlayModuleShelf
+          layout={viewLayout}
+          selectedId={selectedId}
+          warningIds={warningIds}
+          onSelect={setSelectedId}
+          onToggle={(id, enabled) => update(id, { enabled })}
+        />
+      </aside>
+
       <section className="min-w-0 overflow-y-auto p-5">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <p className="text-xs font-semibold text-lime">G-Overlay Lab</p>
             <h2 className="text-lg font-bold text-ink mt-0.5">Arrange the real event slot before a match</h2>
-            <p className="text-xs text-ink-faint mt-1">Drag modules over a 16:9 Dota reference. Only Sync changes G-Maiden.</p>
+            <p className="text-xs text-ink-faint mt-1">Drag modules over the bundled 1920×1080 Dota capture. Screenshot import is optional; only Sync changes G-Maiden.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-lime/40 text-xs text-lime hover:bg-lime/10" onClick={() => setSurface("banner")}>
               Banner editor
             </button>
             <label className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink cursor-pointer">
-              <ImagePlus size={14} /> Screenshot
+              <ImagePlus size={14} /> Replace capture
               <input type="file" accept="image/*" className="hidden" onChange={loadScreenshot} />
             </label>
-            <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink" onClick={() => setLayout(cloneDefaultOverlayLayout())}>
+            <button
+              aria-label="Undo layout"
+              disabled={!canUndoLayout}
+              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg border border-line text-xs text-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => { undoOverlayLayout(); markDraftChanged(); }}
+            >
+              <Undo2 size={14} /> Undo
+            </button>
+            <button
+              aria-label="Redo layout"
+              disabled={!canRedoLayout}
+              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg border border-line text-xs text-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => { redoOverlayLayout(); markDraftChanged(); }}
+            >
+              <Redo2 size={14} /> Redo
+            </button>
+            <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink" onClick={() => { setLayout(cloneDefaultOverlayLayout()); markDraftChanged(); }}>
               <RotateCcw size={14} /> Restore default
             </button>
             {/* One layout, two screens to clear. `standby` is up whenever the
@@ -235,183 +228,41 @@ export default function OverlayLab() {
           <span className="text-xs text-ink-faint">{activeEvent.trigger}</span>
         </div>
 
-        <div
-          ref={stageRef}
-          onPointerMove={move}
-          onPointerUp={() => setDragging(null)}
-          onPointerLeave={() => setDragging(null)}
-          className="relative aspect-video overflow-hidden rounded-xl border border-line bg-[#111214] select-none"
-          // In-game shows a real capture. Pre-game is drawn, not photographed:
-          // no loading-screen shot ships with the app, and a synthetic backdrop
-          // that looks obviously synthetic is honest, where a mocked-up "photo"
-          // would invite pixel-matching against something that was never real.
-          // A user-loaded screenshot always wins on the in-game screen.
-          style={
-            screen === "pregame"
-              ? { background: "#0b0d12" }
-              : { background: `center / cover no-repeat url(${screenUrl ?? DOTA_HUD_REFERENCE})` }
-          }
-        >
-          {/* Zones are drawn over a loaded screenshot too: the whole point is to see
-              where Dota will paint, and a screenshot taken between events shows an
-              EMPTY kill-feed strip — the one region that matters most at trigger time. */}
-          {zones.map((zone) => (
-            <div
-              key={zone.id}
-              // Outline only, never filled: there is always a real screen underneath
-              // now, and blanking out the HUD would hide the very thing being cleared.
-              className={`absolute pointer-events-none ${
-                zone.kind === "transient"
-                  ? "border border-dashed border-amber-400/80 bg-amber-400/10"
-                  : "border border-white/25"
-              }`}
-              style={{
-                left: `${zone.left}%`, top: `${zone.top}%`,
-                width: `${zone.right - zone.left}%`, height: `${zone.bottom - zone.top}%`,
-              }}
-            >
-              <span className="absolute left-1 top-0.5 text-[9px] leading-tight text-white/45">{zone.label}</span>
-            </div>
-          ))}
-          {!screenUrl && (
-            <span className="absolute bottom-1 right-2 text-[9px] text-white/50">
-              Dota 2 reference — load your own capture for your aspect ratio / HUD skin
-            </span>
-          )}
-          {/* Pre-game backdrop: the map sits centre, one roster down each edge.
-              Drawn from the zone rectangles themselves so the picture and the
-              clearance test can never disagree. */}
-          {screen === "pregame" && (
-            <img
-              src={DOTA_MINIMAP_REFERENCE}
-              alt=""
-              draggable={false}
-              className="pointer-events-none absolute object-contain opacity-70"
-              style={{
-                left: "30%", top: "10%", width: "40%", height: "80%",
-              }}
-            />
-          )}
-          {/* Grid overlay removed with the magnet: lines you cannot snap to are
-              just texture over the game screenshot. */}
-          {OVERLAY_MODULE_IDS.map((id) => {
-            const cfg = layout[id];
-            if (!cfg.enabled) return null;
-            const isBanner = id === "banner";
-            const visible = !isBanner || playing;
-            // Size the box from MODULE_BOX rather than letting the label size it.
-            // A chip that fits its own text tells you nothing about whether the
-            // real module clears the HUD — which was the whole complaint.
-            const { w, h } = boxPercent(id, cfg.scale);
-            const rect = moduleRect(id, cfg);
-            const drawn = onScreen.has(id);
-            const accepted = ACCEPTED_OVERLAPS[id] !== undefined;
-            const conflicts = drawn && !accepted ? zoneConflicts(rect, zones) : [];
-            const blocked = conflicts.some((z) => z.kind === "blocked");
-            const transient = conflicts.some((z) => z.kind === "transient");
-            // Ring ONLY when something is wrong. The permanent grey box that used
-            // to sit here framed every module in furniture that was not part of the
-            // overlay, and its overflow-hidden clipped any preview wider than the
-            // nominal MODULE_BOX — the advice and buyback cards lost their last
-            // line. The box still drives hit-testing and the overlap maths; it is
-            // just no longer painted.
-            const ring = blocked
-              ? "ring-1 ring-red-400"
-              : transient
-                ? "ring-1 ring-amber-400"
-                : dragging === id
-                  ? "ring-1 ring-lime/70"
-                  : "";
-            return (
-              <div
-                key={id}
-                title={conflicts.length ? `Overlaps: ${conflicts.map((z) => z.label).join(", ")}` : LABEL[id]}
-                onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setDragging(id); }}
-                className={`absolute cursor-grab active:cursor-grabbing rounded ${ring} ${visible && drawn ? "" : "opacity-35"}`}
-                style={{
-                  left: `${cfg.x}%`, top: `${cfg.y}%`,
-                  width: `${w}%`, height: `${h}%`,
-                  transform: "translate(-50%, -50%)",
-                  zIndex: dragging === id ? 100 : zByArea[id],
-                }}
-              >
-                {/* The real component at true px, scaled by the stage. Centred with
-                    flex so the scale is about its own centre and nothing is clipped:
-                    the wrapper keeps MODULE_BOX dimensions for hit-testing while the
-                    preview is free to overflow it. */}
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="origin-center" style={{ transform: `scale(${stageScale * cfg.scale})` }}>
-                    <OverlayModulePreview id={id} bannerSrc={isBanner ? banner : undefined} />
-                  </div>
-                </div>
-                {/* Name only the module being moved. A permanent label on all 19 is
-                    the same clutter the grey boxes were — and the modules now look
-                    like themselves, so they no longer need naming to be identified. */}
-                {dragging === id && (
-                  <span className="pointer-events-none absolute -top-4 left-0 whitespace-nowrap rounded bg-black/80 px-1 text-[10px] font-semibold leading-tight text-lime">
-                    {LABEL[id]} · {cfg.x},{cfg.y}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <OverlayCanvasStage
+          layout={layout}
+          previewLayout={previewLayout}
+          selectedId={selectedId}
+          screen={screen}
+          screenshotUrl={screenUrl}
+          previewActive={playing}
+          bannerSrc={banner}
+          onSelect={setSelectedId}
+          onPreviewLayout={setGesturePreview}
+          onGestureCommit={commitLayoutGesture}
+          onGestureCancel={clearLayoutGesture}
+        />
         <p className="mt-2 text-xs text-ink-faint">
           Modules are drawn at their real size for a 1920&times;1080 screen and drag freely — no grid,
           no snapping. Smaller modules sit above larger ones, so a stat chip over a card is still
           the thing you grab. The local authored preview runs for 3.5 seconds; G-Maiden currently uses a
           4.0-second show phase plus a 0.8-second exit phase.
         </p>
-        {(() => {
-          // Overlap is only a problem when two things are on screen together, and the
-          // pair that bites is a module sitting under Dota's own kill banner — clear
-          // whenever you look at a screenshot, occupied exactly when an event fires.
-          const zoneHits = OVERLAY_MODULE_IDS
-            .filter((id) => layout[id].enabled && onScreen.has(id) && ACCEPTED_OVERLAPS[id] === undefined)
-            .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, layout[id]), zones) }))
-            .filter((entry) => entry.zones.length > 0);
-          const pairs = moduleCollisions(layout);
-          if (!zoneHits.length && !pairs.length) {
-            return <p className="mt-1 text-xs text-lime">No overlaps: every enabled module clears the HUD and each other.</p>;
-          }
-          return (
-            <div className="mt-1 space-y-0.5 text-xs">
-              {zoneHits.map(({ id, zones }) => (
-                <p key={id} className={zones.some((z) => z.kind === "blocked") ? "text-red-400" : "text-amber-400"}>
-                  {LABEL[id]} overlaps {zones.map((z) => z.label).join(", ")}
-                  {zones.every((z) => z.kind === "transient") && " — clear now, covered when the event fires"}
-                </p>
-              ))}
-              {pairs.map(([a, b]) => (
-                <p key={`${a}-${b}`} className="text-amber-400">{LABEL[a]} and {LABEL[b]} overlap each other</p>
-              ))}
-            </div>
-          );
-        })()}
+        <OverlayConflictList items={conflictItems} onSelect={setSelectedId} />
       </section>
 
-      <aside className="border-l border-line overflow-y-auto p-4 bg-panel/25">
-        <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold">Components</h3><span className="text-[10px] text-ink-faint">{OVERLAY_MODULE_IDS.length} modules</span></div>
-        <div className="space-y-2">
-          {OVERLAY_MODULE_IDS.map((id) => {
-            const cfg = layout[id];
-            // Accent the row for the module being dragged. With 19 rows and no
-            // labels on the stage, there was nothing tying the thing under the
-            // cursor to its entry here — and the live x,y readout is in this row,
-            // so it is exactly where you look while positioning.
-            const active = dragging === id;
-            return <div
-              key={id}
-              ref={(node) => { if (active && node) node.scrollIntoView({ block: "nearest" }); }}
-              className={`rounded-lg border p-2 transition-colors ${active ? "border-lime bg-lime/10" : "border-line bg-black/15"}`}
-            >
-              <div className="flex items-center justify-between gap-2"><label className="flex items-center gap-2 text-xs text-ink-muted"><input className="accent-lime" type="checkbox" checked={cfg.enabled} onChange={(event) => update(id, { enabled: event.target.checked })} />{LABEL[id]}</label><span className="text-[10px] text-ink-faint">{cfg.x},{cfg.y}</span></div>
-              <div className="mt-1.5 flex items-center gap-2"><span className="text-[10px] text-ink-faint">Scale</span><input className="flex-1" type="range" min="0.6" max="1.6" step="0.05" value={cfg.scale} disabled={!cfg.enabled} onChange={(event) => update(id, { scale: Number(event.target.value) })} /><span className="w-7 text-right text-[10px] text-ink-muted">{cfg.scale.toFixed(2)}</span></div>
-            </div>;
-          })}
+      <aside className="min-w-0 overflow-y-auto border-l border-line bg-panel/25 p-4">
+        <OverlayInspector
+          selectedId={selectedId}
+          layout={viewLayout}
+          onCommit={update}
+          onPreview={previewLayoutPatch}
+          onGestureStart={beginLayoutGesture}
+          onGestureEnd={endLayoutGesture}
+        />
+        <div className="mt-5 border-t border-line pt-4">
+          <button type="button" aria-busy={syncing} disabled={syncing} onClick={() => { void sync(); }} className="w-full inline-flex justify-center items-center gap-2 h-10 rounded-lg bg-white text-black text-xs font-bold hover:bg-zinc-200 disabled:opacity-50"><Send size={14} />{syncing ? "Syncing…" : "Sync to G-Maiden"}</button>
+          <p data-testid="sync-status" role="status" aria-live="polite" className="mt-3 text-[11px] leading-relaxed text-ink-faint">{notice}</p>
         </div>
-        <button disabled={syncing} onClick={sync} className="mt-4 w-full inline-flex justify-center items-center gap-2 h-10 rounded-lg bg-white text-black text-xs font-bold hover:bg-zinc-200 disabled:opacity-50"><Send size={14} />{syncing ? "Syncing…" : "Sync to G-Maiden"}</button>
-        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">{notice}</p>
       </aside>
     </main>
   );

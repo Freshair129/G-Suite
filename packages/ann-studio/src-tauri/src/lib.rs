@@ -1266,21 +1266,35 @@ struct OverlayLayoutSyncReport {
 /// asset, or other settings field can cross this seam.
 #[tauri::command]
 async fn sync_overlay_layout(layout: serde_json::Value) -> Result<OverlayLayoutSyncReport, String> {
-    let response = reqwest::Client::new()
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|error| format!("สร้างการเชื่อมต่อ G-Maiden ไม่สำเร็จ: {error}"))?
         .post("http://127.0.0.1:3000/overlay/layout")
         .json(&serde_json::json!({ "schemaVersion": 1, "layout": layout }))
         .send()
         .await
-        .map_err(|_| "เชื่อมต่อ G-Maiden ไม่ได้ — เปิด G-Maiden ก่อนแล้วลอง Sync ใหม่".to_string())?;
-    let payload: serde_json::Value = response
-        .json()
+        .map_err(|error| {
+            if error.is_timeout() {
+                "G-Maiden ไม่ตอบกลับภายใน 5 วินาที — ตรวจสถานะ GSI แล้วลอง Sync ใหม่".to_string()
+            } else {
+                format!("เชื่อมต่อ G-Maiden ไม่ได้ — เปิด G-Maiden ก่อนแล้วลอง Sync ใหม่ ({error})")
+            }
+        })?;
+    let status = response.status();
+    let body = response
+        .text()
         .await
-        .map_err(|_| "G-Maiden ตอบกลับ layout sync ไม่ถูกต้อง".to_string())?;
-    if payload["ok"].as_bool() != Some(true) {
+        .map_err(|error| format!("อ่านคำตอบจาก G-Maiden ไม่ได้: {error}"))?;
+    let payload: serde_json::Value = serde_json::from_str(&body).map_err(|_| {
+        let detail = body.chars().take(160).collect::<String>();
+        format!("G-Maiden ตอบกลับ HTTP {status} ในรูปแบบที่อ่านไม่ได้: {detail}")
+    })?;
+    if !status.is_success() || payload["ok"].as_bool() != Some(true) {
         return Err(payload["error"]
             .as_str()
-            .unwrap_or("G-Maiden ปฏิเสธ layout นี้")
-            .to_string());
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("G-Maiden ปฏิเสธ layout (HTTP {status})")));
     }
     Ok(OverlayLayoutSyncReport { ok: true })
 }

@@ -19,10 +19,13 @@ G-Overlay Lab is a dedicated G-AnnStudio view for arranging G-Maiden's passive C
 
 ## Interaction
 
-1. Choose a Dota HUD reference or a local screenshot.
-2. Select an event and press **Play event** to inspect its banner slot in context.
-3. Drag, enable/disable, or scale overlay modules in the local draft.
-4. **Restore default** replaces only the draft. **Sync to G-Maiden** is the sole action that changes G-Maiden.
+1. Choose the in-game or pre-game Dota reference, or load a local screenshot stored on this device.
+2. Select a module from the 19-module shelf or directly on the canvas. The inspector edits its enabled state, position, and scale; drag to move and use the canvas handle or inspector slider to resize.
+3. Select an event and press **Play event** to inspect its banner slot in context. The banner editor remains a separate surface and project.
+4. Blocked Dota HUD regions, transient kill-feed regions, intentional overlaps, and overlapping modules appear as warnings. Select a warning to focus its module; warnings are guidance and do not block Sync.
+5. **Undo**, **Redo**, and **Restore default** operate on the HUD draft history, independently of banner history. Numeric edits and completed canvas gestures enter that history; an in-progress drag or resize is preview-only until released.
+6. The draft is local until **Sync to G-Maiden** is pressed. That explicit action sends all 19 layout entries; editing, previewing an event, and selecting a screenshot do not send anything. The screenshot remains on this device and is not part of the sync payload.
+7. Status distinguishes an unverified draft, an active request, an accepted request, and a failed request. Acceptance is the response to the sync request; the seam has no live layout read-back, so it does not compare the editor draft with G-Maiden's current state. A failure leaves the draft and its undo/redo history available for correction and retry.
 
 ## Acceptance criteria
 
