@@ -2,7 +2,7 @@
 // @spec SDD-004 — keeps explicit local HUD sync separate from BannerProject authoring.
 // @designs docs/g-overlay-lab.md
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ImagePlus, RotateCcw, Send, Sparkles } from "lucide-react";
+import { ImagePlus, Redo2, RotateCcw, Send, Sparkles, Undo2 } from "lucide-react";
 import BannerEditor from "./BannerEditor";
 import { OverlayCanvasStage } from "./OverlayCanvasStage";
 import { OverlayConflictList } from "./OverlayConflictList";
@@ -35,6 +35,10 @@ import { useStudioStore } from "../store/useStudioStore";
 export default function OverlayLab() {
   const layout = useStudioStore((s) => s.overlayLayout);
   const setLayout = useStudioStore((s) => s.setOverlayLayout);
+  const undoOverlayLayout = useStudioStore((s) => s.undoOverlayLayout);
+  const redoOverlayLayout = useStudioStore((s) => s.redoOverlayLayout);
+  const canUndoLayout = useStudioStore((s) => s.pastOverlayLayouts.length > 0);
+  const canRedoLayout = useStudioStore((s) => s.futureOverlayLayouts.length > 0);
   const bannerOverrides = useStudioStore((s) => s.bannerOverrides);
   const [selectedId, setSelectedId] = useState<OverlayModuleId | null>("alert");
   const [previewLayout, setPreviewLayout] = useState<OverlayLayout | null>(null);
@@ -43,7 +47,7 @@ export default function OverlayLab() {
   const [screen, setScreen] = useState<StageScreen>("ingame");
   const [playing, setPlaying] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [notice, setNotice] = useState("Draft only. Sync when you are happy with the HUD clearance.");
+  const [notice, setNotice] = useState("Draft is unverified this session. Only Sync sends it to G-Maiden.");
   const viewLayout = previewLayout ?? layout;
   const conflictItems = useMemo(() => getOverlayConflictItems(viewLayout, screen), [viewLayout, screen]);
   const warningIds = useMemo(() => new Set(conflictItems.flatMap(({ moduleId, otherModuleId }) =>
@@ -59,6 +63,8 @@ export default function OverlayLab() {
   const setEventId = (value: string) => { setLabEventId(value); setEventIdState(value); };
   const setSurface = (value: LabSurface) => { setLabSurface(value); setSurfaceState(value); };
 
+  const markDraftChanged = () => setNotice("Draft changed since the last accepted sync; it has not been verified with G-Maiden.");
+
   // Rehydrate a screenshot saved by a previous run. No revoke-on-unmount here:
   // the object URL has to outlive this component, or returning to the tab would
   // show a dead image. labView owns the single live URL and revokes the old one
@@ -71,6 +77,7 @@ export default function OverlayLab() {
 
   const update = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
+    markDraftChanged();
   };
 
   const beginLayoutGesture = () => {
@@ -97,7 +104,10 @@ export default function OverlayLab() {
   };
 
   const commitLayoutGesture = (next = gesturePreviewLayout.current) => {
-    if (next) setLayout(next);
+    if (next) {
+      setLayout(next);
+      markDraftChanged();
+    }
     clearLayoutGesture();
   };
 
@@ -119,9 +129,11 @@ export default function OverlayLab() {
 
   const sync = async () => {
     setSyncing(true);
+    setNotice("Syncing the current draft to G-Maiden…");
     try {
-      await syncOverlayLayout(layout);
-      setNotice("Synced to G-Maiden. The open Combat HUD received the new layout now.");
+      const result = await syncOverlayLayout(layout);
+      if (!result.ok) throw new Error(result.error ?? "G-Maiden rejected the HUD layout.");
+      setNotice("G-Maiden accepted the layout sync request. There is no live read-back check.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Sync to G-Maiden failed.");
     } finally {
@@ -165,7 +177,23 @@ export default function OverlayLab() {
               <ImagePlus size={14} /> Screenshot
               <input type="file" accept="image/*" className="hidden" onChange={loadScreenshot} />
             </label>
-            <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink" onClick={() => setLayout(cloneDefaultOverlayLayout())}>
+            <button
+              aria-label="Undo layout"
+              disabled={!canUndoLayout}
+              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg border border-line text-xs text-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => { undoOverlayLayout(); markDraftChanged(); }}
+            >
+              <Undo2 size={14} /> Undo
+            </button>
+            <button
+              aria-label="Redo layout"
+              disabled={!canRedoLayout}
+              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg border border-line text-xs text-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => { redoOverlayLayout(); markDraftChanged(); }}
+            >
+              <Redo2 size={14} /> Redo
+            </button>
+            <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-xs text-ink-muted hover:text-ink" onClick={() => { setLayout(cloneDefaultOverlayLayout()); markDraftChanged(); }}>
               <RotateCcw size={14} /> Restore default
             </button>
             {/* One layout, two screens to clear. `standby` is up whenever the
@@ -229,7 +257,7 @@ export default function OverlayLab() {
         />
         <div className="mt-5 border-t border-line pt-4">
           <button disabled={syncing} onClick={sync} className="w-full inline-flex justify-center items-center gap-2 h-10 rounded-lg bg-white text-black text-xs font-bold hover:bg-zinc-200 disabled:opacity-50"><Send size={14} />{syncing ? "Syncing…" : "Sync to G-Maiden"}</button>
-          <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">{notice}</p>
+          <p data-testid="sync-status" role="status" aria-live="polite" className="mt-3 text-[11px] leading-relaxed text-ink-faint">{notice}</p>
         </div>
       </aside>
     </main>
