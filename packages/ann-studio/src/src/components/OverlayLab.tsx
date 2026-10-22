@@ -5,21 +5,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ImagePlus, RotateCcw, Send, Sparkles } from "lucide-react";
 import BannerEditor from "./BannerEditor";
 import { OverlayCanvasStage } from "./OverlayCanvasStage";
+import { OverlayConflictList } from "./OverlayConflictList";
 import { OverlayInspector } from "./OverlayInspector";
 import { OverlayModuleShelf } from "./OverlayModuleShelf";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { toneBannerPngDataUrl } from "../lib/toneBanner";
 import {
   cloneDefaultOverlayLayout,
-  STAGE_ZONES,
-  modulesOnScreen,
-  ACCEPTED_OVERLAPS,
-  moduleCollisions,
-  moduleRect,
-  OVERLAY_MODULE_IDS,
-  OVERLAY_MODULE_LABELS,
+  getOverlayConflictItems,
   syncOverlayLayout,
-  zoneConflicts,
   type OverlayLayout,
   type OverlayModuleId,
   type StageScreen,
@@ -51,6 +45,10 @@ export default function OverlayLab() {
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("Draft only. Sync when you are happy with the HUD clearance.");
   const viewLayout = previewLayout ?? layout;
+  const conflictItems = useMemo(() => getOverlayConflictItems(viewLayout, screen), [viewLayout, screen]);
+  const warningIds = useMemo(() => new Set(conflictItems.flatMap(({ moduleId, otherModuleId }) =>
+    otherModuleId ? [moduleId, otherModuleId] : [moduleId],
+  )), [conflictItems]);
 
   // Seed from the cache above and write back on every change, so a tab switch
   // returns you to the surface, event and screenshot you left.
@@ -70,10 +68,6 @@ export default function OverlayLab() {
     void restoreLabScreenshot().then((url) => { if (live && url) setScreenUrlState(url); });
     return () => { live = false; };
   }, []);
-
-  const zones = STAGE_ZONES[screen];
-  // Only judge (and only ring) modules that this screen actually draws.
-  const onScreen = useMemo(() => new Set(modulesOnScreen(screen)), [screen]);
 
   const update = (id: OverlayModuleId, patch: Partial<OverlayLayout[OverlayModuleId]>) => {
     setLayout({ ...layout, [id]: { ...layout[id], ...patch } });
@@ -150,6 +144,7 @@ export default function OverlayLab() {
         <OverlayModuleShelf
           layout={viewLayout}
           selectedId={selectedId}
+          warningIds={warningIds}
           onSelect={setSelectedId}
           onToggle={(id, enabled) => update(id, { enabled })}
         />
@@ -220,32 +215,7 @@ export default function OverlayLab() {
           the thing you grab. The local authored preview runs for 3.5 seconds; G-Maiden currently uses a
           4.0-second show phase plus a 0.8-second exit phase.
         </p>
-        {(() => {
-          // Overlap is only a problem when two things are on screen together, and the
-          // pair that bites is a module sitting under Dota's own kill banner — clear
-          // whenever you look at a screenshot, occupied exactly when an event fires.
-          const zoneHits = OVERLAY_MODULE_IDS
-            .filter((id) => viewLayout[id].enabled && onScreen.has(id) && ACCEPTED_OVERLAPS[id] === undefined)
-            .map((id) => ({ id, zones: zoneConflicts(moduleRect(id, viewLayout[id]), zones) }))
-            .filter((entry) => entry.zones.length > 0);
-          const pairs = moduleCollisions(viewLayout);
-          if (!zoneHits.length && !pairs.length) {
-            return <p className="mt-1 text-xs text-lime">No overlaps: every enabled module clears the HUD and each other.</p>;
-          }
-          return (
-            <div className="mt-1 space-y-0.5 text-xs">
-              {zoneHits.map(({ id, zones }) => (
-                <p key={id} className={zones.some((z) => z.kind === "blocked") ? "text-red-400" : "text-amber-400"}>
-                  {OVERLAY_MODULE_LABELS[id]} overlaps {zones.map((z) => z.label).join(", ")}
-                  {zones.every((z) => z.kind === "transient") && " — clear now, covered when the event fires"}
-                </p>
-              ))}
-              {pairs.map(([a, b]) => (
-                <p key={`${a}-${b}`} className="text-amber-400">{OVERLAY_MODULE_LABELS[a]} and {OVERLAY_MODULE_LABELS[b]} overlap each other</p>
-              ))}
-            </div>
-          );
-        })()}
+        <OverlayConflictList items={conflictItems} onSelect={setSelectedId} />
       </section>
 
       <aside className="min-w-0 overflow-y-auto border-l border-line bg-panel/25 p-4">

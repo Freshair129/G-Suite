@@ -3,11 +3,12 @@ import { OVERLAY_MODULE_IDS, OVERLAY_MODULE_LABELS, type OverlayLayout, type Ove
 interface OverlayModuleShelfProps {
   layout: OverlayLayout;
   selectedId: OverlayModuleId | null;
+  warningIds?: ReadonlySet<OverlayModuleId>;
   onSelect: (id: OverlayModuleId) => void;
   onToggle: (id: OverlayModuleId, enabled: boolean) => void;
 }
 
-export function OverlayModuleShelf({ layout, selectedId, onSelect, onToggle }: OverlayModuleShelfProps) {
+export function OverlayModuleShelf({ layout, selectedId, warningIds, onSelect, onToggle }: OverlayModuleShelfProps) {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -30,6 +31,9 @@ export function OverlayModuleShelf({ layout, selectedId, onSelect, onToggle }: O
                 >
                   {label}
                 </button>
+                {warningIds?.has(id) && (
+                  <span role="img" aria-label={`${label} has layout warning`} className="ml-1 text-amber-300" title="Layout warning">!</span>
+                )}
                 <span className="block px-1 text-[10px] text-ink-faint">{config.x}% · {config.y}%</span>
               </div>
               <label className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded hover:bg-white/5" title={`Enable ${label}`}>

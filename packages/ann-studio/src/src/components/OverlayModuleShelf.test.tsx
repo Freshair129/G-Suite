@@ -71,4 +71,20 @@ describe("OverlayModuleShelf", () => {
     expect(onSelect).toHaveBeenCalledWith("hero");
     expect((screen.getByRole("checkbox", { name: "Enable HP / Mana" }) as HTMLInputElement).checked).toBe(false);
   });
+
+  it("marks modules with active layout warnings", () => {
+    render(
+      <OverlayModuleShelf
+        layout={cloneDefaultOverlayLayout()}
+        selectedId={null}
+        warningIds={new Set(["clock", "alert"])}
+        onSelect={vi.fn()}
+        onToggle={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Clock has layout warning" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Danger alert has layout warning" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "G-Meter has layout warning" })).toBeNull();
+  });
 });

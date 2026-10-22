@@ -236,6 +236,63 @@ export function moduleCollisions(layout: OverlayLayout): [OverlayModuleId, Overl
   return hits;
 }
 
+export type OverlayConflictKind = HudZone["kind"] | "accepted" | "module";
+
+export interface OverlayConflictItem {
+  id: string;
+  moduleId: OverlayModuleId;
+  otherModuleId?: OverlayModuleId;
+  kind: OverlayConflictKind;
+  message: string;
+}
+
+/** Actionable, screen-aware warnings shared by the canvas, shelf and inspector. */
+export function getOverlayConflictItems(layout: OverlayLayout, screen: StageScreen): OverlayConflictItem[] {
+  const visible = new Set(modulesOnScreen(screen));
+  const items: OverlayConflictItem[] = [];
+
+  for (const id of OVERLAY_MODULE_IDS) {
+    if (!layout[id].enabled || !visible.has(id)) continue;
+    const conflicts = zoneConflicts(moduleRect(id, layout[id]), STAGE_ZONES[screen]);
+    if (conflicts.length === 0) continue;
+
+    const acceptedReason = ACCEPTED_OVERLAPS[id];
+    if (acceptedReason) {
+      items.push({
+        id: `${id}:accepted:${screen}`,
+        moduleId: id,
+        kind: "accepted",
+        message: `${OVERLAY_MODULE_LABELS[id]} has an accepted overlap with ${conflicts.map((zone) => zone.label).join(", ")}: ${acceptedReason}.`,
+      });
+      continue;
+    }
+
+    for (const zone of conflicts) {
+      items.push({
+        id: `${id}:${zone.id}:${screen}`,
+        moduleId: id,
+        kind: zone.kind,
+        message: zone.kind === "transient"
+          ? `${OVERLAY_MODULE_LABELS[id]} overlaps ${zone.label}; it is clear now but covered when the event appears.`
+          : `${OVERLAY_MODULE_LABELS[id]} overlaps ${zone.label}; move it clear of this Dota control.`,
+      });
+    }
+  }
+
+  for (const [moduleId, otherModuleId] of moduleCollisions(layout)) {
+    if (!visible.has(moduleId) || !visible.has(otherModuleId)) continue;
+    items.push({
+      id: `${moduleId}:${otherModuleId}:module`,
+      moduleId,
+      otherModuleId,
+      kind: "module",
+      message: `${OVERLAY_MODULE_LABELS[moduleId]} overlaps ${OVERLAY_MODULE_LABELS[otherModuleId]}; move one module to separate them.`,
+    });
+  }
+
+  return items;
+}
+
 export function cloneDefaultOverlayLayout(): OverlayLayout {
   return Object.fromEntries(OVERLAY_MODULE_IDS.map((id) => [id, { ...DEFAULT_OVERLAY_LAYOUT[id] }])) as OverlayLayout;
 }
