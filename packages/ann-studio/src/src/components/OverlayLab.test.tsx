@@ -103,6 +103,25 @@ describe("OverlayLab HUD draft workflow", () => {
     expect(screen.getByTestId("sync-status").textContent).toMatch(/draft changed.*not been verified/i);
   });
 
+  it("keeps newer edits unverified when an in-flight sync saves an older draft", async () => {
+    let resolveSync!: (result: { ok: boolean }) => void;
+    syncOverlayLayoutMock.mockImplementationOnce(() => new Promise<{ ok: boolean }>((resolve) => {
+      resolveSync = resolve;
+    }));
+    render(<OverlayLab />);
+    editAlertX("53");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync to G-Maiden" }));
+    await waitFor(() => expect(syncOverlayLayoutMock).toHaveBeenCalledTimes(1));
+    editAlertX("54");
+    expect(screen.getByTestId("sync-status").textContent).toMatch(/draft changed.*not been verified/i);
+
+    resolveSync({ ok: true });
+    await waitFor(() => expect(screen.getByTestId("sync-status").textContent).toMatch(/newer draft changes remain unverified/i));
+    expect(syncOverlayLayoutMock.mock.calls[0][0].alert.x).toBe(53);
+    expect(useStudioStore.getState().overlayLayout.alert.x).toBe(54);
+  });
+
   it("shows sync rejection and retains the draft plus undo history", async () => {
     render(<OverlayLab />);
     editAlertX("61");

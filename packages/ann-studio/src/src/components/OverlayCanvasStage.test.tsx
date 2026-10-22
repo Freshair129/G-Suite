@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { cloneDefaultOverlayLayout, type OverlayLayout } from "../lib/overlayLayout";
+import { cloneDefaultOverlayLayout, type OverlayLayout, type OverlayModuleId, type StageScreen } from "../lib/overlayLayout";
 import { useStudioStore } from "../store/useStudioStore";
 import { OverlayCanvasStage } from "./OverlayCanvasStage";
 
@@ -48,15 +48,19 @@ function setStageRect() {
   });
 }
 
-function StoreHarness({ onCancel }: { onCancel?: () => void } = {}) {
+function StoreHarness({
+  onCancel,
+  selectedId = "alert",
+  stageScreen = "ingame",
+}: { onCancel?: () => void; selectedId?: OverlayModuleId | null; stageScreen?: StageScreen } = {}) {
   const layout = useStudioStore((state) => state.overlayLayout);
   const [previewLayout, setPreviewLayout] = useState<OverlayLayout | null>(null);
   return (
     <OverlayCanvasStage
       layout={layout}
       previewLayout={previewLayout}
-      selectedId="alert"
-      screen="ingame"
+      selectedId={selectedId}
+      screen={stageScreen}
       screenshotUrl={null}
       previewActive={false}
       onSelect={vi.fn()}
@@ -101,6 +105,17 @@ describe("OverlayCanvasStage", () => {
 
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith("alert");
+  });
+
+  it("shows a blocked-zone ring when toast overlaps a pregame roster", () => {
+    const layout = cloneDefaultOverlayLayout();
+    layout.toast = { ...layout.toast, x: 8, y: 50 };
+    useStudioStore.setState({ overlayLayout: layout });
+    render(<StoreHarness selectedId={null} stageScreen="pregame" />);
+
+    const toast = screen.getByTestId("overlay-module-toast");
+    expect(toast.className).toContain("ring-red-400");
+    expect(toast.getAttribute("title")).toContain("team roster (left)");
   });
 
   it("commits one history entry after a completed move gesture", () => {

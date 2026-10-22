@@ -214,8 +214,8 @@ export function OverlayCanvasStage({
         const isBanner = id === "banner";
         const visible = !isBanner || previewActive;
         const { w, h } = boxPercent(id, config.scale);
-        const conflicts = onScreen.has(id) && ACCEPTED_OVERLAPS[id] === undefined
-          ? zoneConflicts(moduleRect(id, config), zones)
+        const conflicts = onScreen.has(id)
+          ? zoneConflicts(moduleRect(id, config), zones).filter((zone) => !ACCEPTED_OVERLAPS[id]?.[zone.id])
           : [];
         const blocked = conflicts.some((zone) => zone.kind === "blocked");
         const transient = conflicts.some((zone) => zone.kind === "transient");

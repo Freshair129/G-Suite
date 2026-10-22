@@ -179,10 +179,10 @@ export const INGAME_HIDDEN: ReadonlySet<OverlayModuleId> = new Set<OverlayModule
  * to ignore it, which costs more than the overlap does. Recording the reason
  * here keeps the red list strictly actionable while leaving the fact visible.
  */
-export const ACCEPTED_OVERLAPS: Partial<Record<OverlayModuleId, string>> = {
-  toast:
-    "in-game it belongs to the alert → toast → banner column, which is where it fires " +
-    "almost always; pre-game it is a ≤3s notification passing over the map",
+export const ACCEPTED_OVERLAPS: Partial<Record<OverlayModuleId, Readonly<Record<string, string>>>> = {
+  toast: {
+    "pregame-map": "it is a brief notification that passes over the map before a match",
+  },
 };
 
 /** Modules a given screen actually draws — the only ones worth judging on it. */
@@ -256,18 +256,17 @@ export function getOverlayConflictItems(layout: OverlayLayout, screen: StageScre
     const conflicts = zoneConflicts(moduleRect(id, layout[id]), STAGE_ZONES[screen]);
     if (conflicts.length === 0) continue;
 
-    const acceptedReason = ACCEPTED_OVERLAPS[id];
-    if (acceptedReason) {
-      items.push({
-        id: `${id}:accepted:${screen}`,
-        moduleId: id,
-        kind: "accepted",
-        message: `${OVERLAY_MODULE_LABELS[id]} has an accepted overlap with ${conflicts.map((zone) => zone.label).join(", ")}: ${acceptedReason}.`,
-      });
-      continue;
-    }
-
     for (const zone of conflicts) {
+      const acceptedReason = ACCEPTED_OVERLAPS[id]?.[zone.id];
+      if (acceptedReason) {
+        items.push({
+          id: `${id}:accepted:${zone.id}:${screen}`,
+          moduleId: id,
+          kind: "accepted",
+          message: `${OVERLAY_MODULE_LABELS[id]} has an accepted overlap with ${zone.label}: ${acceptedReason}.`,
+        });
+        continue;
+      }
       items.push({
         id: `${id}:${zone.id}:${screen}`,
         moduleId: id,

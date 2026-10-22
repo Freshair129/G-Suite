@@ -128,13 +128,16 @@ export default function OverlayLab() {
   };
 
   const sync = async () => {
-    const currentLayout = useStudioStore.getState().overlayLayout;
+    const submittedLayout = useStudioStore.getState().overlayLayout;
     setSyncing(true);
     setNotice("Syncing the current draft to G-Maiden…");
     try {
-      const result = await syncOverlayLayout(currentLayout);
+      const result = await syncOverlayLayout(submittedLayout);
       if (!result.ok) throw new Error(result.error ?? "G-Maiden rejected the HUD layout.");
-      setNotice("G-Maiden saved the layout and notified the overlay.");
+      const newerDraftExists = JSON.stringify(useStudioStore.getState().overlayLayout) !== JSON.stringify(submittedLayout);
+      setNotice(newerDraftExists
+        ? "G-Maiden saved the submitted layout. Newer draft changes remain unverified."
+        : "G-Maiden saved the layout and notified the overlay.");
     } catch (error) {
       setNotice(typeof error === "string" ? error : error instanceof Error ? error.message : "Sync to G-Maiden failed.");
     } finally {

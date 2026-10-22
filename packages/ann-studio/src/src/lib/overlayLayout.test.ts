@@ -62,7 +62,18 @@ describe("getOverlayConflictItems", () => {
     expect(items).toContainEqual(expect.objectContaining({
       moduleId: "toast",
       kind: "accepted",
-      message: expect.stringContaining("passing over the map"),
+      message: expect.stringContaining("passes over the map"),
+    }));
+  });
+
+  it("still reports blocked roster overlaps for the toast outside its accepted map zone", () => {
+    const layout = cloneDefaultOverlayLayout();
+    layout.toast = { ...layout.toast, x: 8, y: 50 };
+
+    expect(getOverlayConflictItems(layout, "pregame")).toContainEqual(expect.objectContaining({
+      moduleId: "toast",
+      kind: "blocked",
+      message: expect.stringContaining("team roster (left)"),
     }));
   });
 
