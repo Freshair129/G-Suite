@@ -108,7 +108,8 @@ describe("OverlayLab HUD draft workflow", () => {
     editAlertX("61");
     const draftBeforeSync = useStudioStore.getState().overlayLayout;
     const historyBeforeSync = useStudioStore.getState().pastOverlayLayouts;
-    syncOverlayLayoutMock.mockRejectedValueOnce(new Error("G-Maiden offline"));
+    // Tauri's invoke rejects a Rust Result<String> as the string value itself.
+    syncOverlayLayoutMock.mockRejectedValueOnce("G-Maiden offline");
 
     fireEvent.click(screen.getByRole("button", { name: "Sync to G-Maiden" }));
 

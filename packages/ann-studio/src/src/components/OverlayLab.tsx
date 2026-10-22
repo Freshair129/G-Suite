@@ -135,7 +135,7 @@ export default function OverlayLab() {
       if (!result.ok) throw new Error(result.error ?? "G-Maiden rejected the HUD layout.");
       setNotice("G-Maiden accepted the layout sync request. There is no live read-back check.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Sync to G-Maiden failed.");
+      setNotice(typeof error === "string" ? error : error instanceof Error ? error.message : "Sync to G-Maiden failed.");
     } finally {
       setSyncing(false);
     }
