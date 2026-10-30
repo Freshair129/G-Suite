@@ -1,3 +1,4 @@
+mod gann;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
@@ -2331,6 +2332,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
+            gann::gann_startup_path, gann::gann_open, gann::gann_read, gann::gann_save_copy,
             extract_audio,
             cut_clip,
             export_all,
@@ -2363,6 +2365,7 @@ pub fn run() {
             read_text_file,
             gid_oauth_listen,
         ])
+        .manage(gann::OpenPackage::default())
         .manage(SysInfoState(std::sync::Mutex::new(sysinfo::System::new_all())))
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");

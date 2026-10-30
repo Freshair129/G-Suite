@@ -1,3 +1,4 @@
+import GannPackage from "./GannPackage";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, useEffect } from "react";
@@ -15,6 +16,9 @@ function shortModel(m: string): string {
 export default function Header() {
   const { wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel, view, setView, gid, gidSignedIn } =
     useStudioStore();
+  const [packageOpen,setPackageOpen] = useState(false);
+  const [packagePath,setPackagePath] = useState<string>();
+  useEffect(()=>{void invoke<string|null>("gann_startup_path").then(path=>{if(path){setPackagePath(path);setPackageOpen(true);}}).catch(()=>{});},[]);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -100,8 +104,11 @@ export default function Header() {
   }
 
   return (
+    <>
+    {packageOpen && <GannPackage initialPath={packagePath} onClose={()=>setPackageOpen(false)} />}
     <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-base">
       <div className="flex items-center gap-3">
+        <button className="px-3 py-2 rounded border border-line" onClick={()=>setPackageOpen(true)}>เปิด .gann</button>
         <div className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-tr from-lime to-grass text-black font-extrabold text-lg">
           G
         </div>
@@ -248,5 +255,6 @@ export default function Header() {
         </button>
       </div>
     </header>
+    </>
   );
 }
