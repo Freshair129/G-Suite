@@ -36,5 +36,14 @@
     "shell": {
       "open": true
     }
+  },
+  "bundle": {
+    "fileAssociations": [{
+      "ext": ["gann"],
+      "name": "G-Ann Announcer Package",
+      "description": "Announcer audio, banner motion and configuration",
+      "role": "Viewer",
+      "mimeType": "application/vnd.gann.package+zip"
+    }]
   }
 }
