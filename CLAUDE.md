@@ -103,6 +103,8 @@ transcribe.py:
 
 Event audio and visuals come only from verified `.gann` containers. `gann_authoring.rs` creates the indexed archive, normalizes mastered voice to mono48k PCM16 and renders authored visuals to silent VP8 WebM. `create_gann_package` is shared by Export and Event Test. Event Test reads `registry.events` pairs through `gann_open`/`gann_read`; raw source/library auditions remain authoring operations.
 
-`install_gann_package` uses the vendored `g_ann_package::install` to install verified indexed media plus `local-gann.json` and the original archive. It discovers `%LOCALAPPDATA%/G-Maiden/gsi-port.txt`, checks `/health`, then calls `/announcer/install {packId}` only to activate an already installed pack. A failed/mismatched activation is an error, not success. The old direct-manifest and flat-cache installers are retired. See `packages/ann-studio/docs/gann-package.md` for the CLI job protocol and limits. Signed Store provenance remains separate.
+`install_gann_package` sends a profile-bound LocalInstall request through the current-Windows-user named pipe. Maiden alone owns package copy/verification, versioned registry and equip; Studio never writes its folders. Request ID and digest bind retry and installation. Installed/active/deferred/activation_error are distinct; no success is inferred from copying bytes. Registry authority never falls back to old direct folders or active-pack.txt. See `packages/ann-studio/docs/gann-package.md` for the portable project, compression and native job contracts. Store backend remains deferred.
+
+Source builds prepare the pinned media resource through `node tools/prepare-ann-media.mjs`; runtime release builds require its matching hash and never search developer installations or PATH. Keep original LICENSE/README and satisfy corresponding-source distribution requirements before public release.
 
 ## repo https://github.com/Freshair129/G-Suite (private)

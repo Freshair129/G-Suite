@@ -5,9 +5,10 @@ import SaveToLibDialog from "./SaveToLibDialog";
 import { Trash2, Wand2, Send, FolderDown } from "lucide-react";
 import { autoMapEvents } from "../lib/llm";
 import { sendToGMaiden } from "../lib/actions";
+import { selectProjectVariant } from "../lib/project";
 
 export default function ClipList() {
-  const { clips, selectedClipId, selectClip, updateClip, removeClip, setClips } = useStudioStore();
+  const { clips, selectedClipId, updateClip, removeClip, setClips } = useStudioStore();
   const ordered = clips.slice().sort((a, b) => a.start - b.start);
   const [busy, setBusy] = useState<"map" | "send" | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -95,7 +96,7 @@ export default function ClipList() {
             return (
               <div
                 key={clip.id}
-                onClick={() => selectClip(clip.id)}
+                onClick={() => selectProjectVariant(clip.id)}
                 className={`group relative rounded-2xl border px-3 py-2.5 cursor-pointer transition ${
                   selected
                     ? "border-lime/60 bg-lime/[0.06] shadow-glow"

@@ -1,0 +1,20 @@
+{
+  "payload": {
+    "format": "gann-store-release",
+    "version": 1,
+    "algorithm": "Ed25519",
+    "key_id": "test-release-2026-01",
+    "issuer": "gstore",
+    "release_id": "00000000-0000-4000-8000-000000000001",
+    "publisher_id": "00000000-0000-4000-8000-000000000002",
+    "item_id": "00000000-0000-4000-8000-000000000003",
+    "announcer_id": "ann_00000000-0000-4000-8000-000000000004",
+    "revision": 1,
+    "container_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "container_bytes": 123456,
+    "expanded_bytes": 234567,
+    "compression_profile": "gann-zip-1",
+    "issued_at": "2026-10-31T00:00:00Z"
+  },
+  "signature": "yulXaMy-l9Dqbw9aPR9DD0ZOfMl1mlfWKsP9PzNaDUQak2o9WhY1LYF59xF2m85ekhEwEHgElNcrTMmUW2uLDw"
+}

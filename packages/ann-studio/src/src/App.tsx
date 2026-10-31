@@ -1,3 +1,4 @@
+import PackWorkflow from "./components/PackWorkflow";
 import Header from "./components/Header";
 import RightRail from "./components/RightRail";
 import StatusBar from "./components/StatusBar";
@@ -8,6 +9,7 @@ import EventTestGrid from "./components/EventTestGrid";
 import SourceView from "./components/SourceView";
 import OverlayLab from "./components/OverlayLab";
 import { useStudioStore } from "./store/useStudioStore";
+import { initializeProject } from "./lib/project";
 import { restoreGidSession } from "./lib/gidAuth";
 import { useEffect, useState } from "react";
 
@@ -15,6 +17,7 @@ export default function App() {
   const view = useStudioStore((s) => s.view);
   const undoClips = useStudioStore((s) => s.undoClips);
   const redoClips = useStudioStore((s) => s.redoClips);
+  const [projectMessage,setProjectMessage]=useState<string|null>(null);
   const [leftW, setLeftW] = useState(220);
   const [rightW, setRightW] = useState(340);
 
@@ -36,6 +39,7 @@ export default function App() {
 
   useEffect(() => {
     void restoreGidSession();
+    void initializeProject().then(setProjectMessage).catch(e=>setProjectMessage(String(e)));
   }, []);
 
   useEffect(() => {
@@ -55,8 +59,11 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col bg-base text-ink overflow-hidden">
       <Header />
+      {projectMessage&&<p role="status" className="px-4 py-2 text-sm">{projectMessage}<button className="ml-3" onClick={()=>setProjectMessage(null)}>ปิด</button></p>}
       <div className="flex flex-1 min-h-0">
-        {view === "settings" ? (
+        {view === "creator" ? (
+          <PackWorkflow />
+        ) : view === "settings" ? (
           <Settings />
         ) : view === "overlay" ? (
           <OverlayLab />

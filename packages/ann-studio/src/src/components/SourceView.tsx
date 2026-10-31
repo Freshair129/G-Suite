@@ -13,6 +13,7 @@ import ClipWaveform from "./ClipWaveform";
 import MasteringPanel from "./MasteringPanel";
 import SaveToLibDialog from "./SaveToLibDialog";
 import { eventTone, TONES } from "../lib/toneBanner";
+import { selectProjectVariant } from "../lib/project";
 
 function accentFor(event: string): string {
   return event && event !== "unused" ? TONES[eventTone(event)].accent : "#8fd4ff";
@@ -29,7 +30,7 @@ export default function SourceView() {
   const {
     wavPath, duration, clips, transcribing, libraryRoot, addClip, setClips,
     updateClip, updateClipSilent, pushHistory, removeClip, splitClip, moveClip,
-    selectClip, selectedClipId, playheadId, playheadT,
+    selectedClipId, playheadId, playheadT,
   } = useStudioStore();
 
   const [msg, setMsg] = useState("");
@@ -195,7 +196,7 @@ export default function SourceView() {
             {clips.map((c, i) => (
               <div
                 key={c.id}
-                onClick={() => selectClip(c.id)}
+                onClick={() => selectProjectVariant(c.id)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => { if (dragId.current && dragId.current !== c.id) moveClip(dragId.current, i); dragId.current = null; }}
                 className={`rounded-xl border p-3 space-y-2.5 transition ${

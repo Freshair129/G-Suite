@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { cloneDefaultOverlayLayout, OVERLAY_MODULE_IDS, type OverlayLayout } from "../lib/overlayLayout";
 import { cloneBannerProject, createDefaultBannerProject, type BannerProject } from "../lib/bannerProject";
+import type { PackProject } from "../lib/packProject";
 
 export interface Clip {
   id: string;
@@ -39,7 +40,7 @@ export interface Clip {
   master?: Record<string, number>;
 }
 
-export type AppView = "studio" | "profile" | "settings" | "test" | "overlay" | "source";
+export type AppView = "creator" | "studio" | "profile" | "settings" | "test" | "overlay" | "source";
 
 /** Author-supplied banner image that replaces the auto tone-banner for one event.
  *  `b64` has NO `data:` prefix (ready for the Rust install command); `mime` is
@@ -137,6 +138,12 @@ export interface Pack {
 }
 
 interface StudioState {
+  projectDocument: PackProject | null;
+  projectGeneration: number;
+  projectPath: string | null;
+  projectAssetPaths: Record<string, string>;
+  projectRecoveryError: string | null;
+  recentProjectId: string | null;
   sourcePath: string | null;
   wavPath: string | null;
   duration: number;
@@ -160,6 +167,7 @@ interface StudioState {
   pastOverlayLayouts: OverlayLayout[];
   futureOverlayLayouts: OverlayLayout[];
   bannerProject: BannerProject;
+  bannerVariantId: string | null;
   pastBannerProjects: BannerProject[];
   futureBannerProjects: BannerProject[];
   selectedBannerLayerIds: string[];
@@ -293,6 +301,12 @@ function overlayLayoutsEqual(left: OverlayLayout, right: OverlayLayout): boolean
 export const useStudioStore = create<StudioState>()(
   persist(
     (set) => ({
+      projectDocument: null,
+      projectGeneration: 0,
+      projectPath: null,
+      projectAssetPaths: {},
+      projectRecoveryError: null,
+      recentProjectId: null,
       sourcePath: null,
       wavPath: null,
       duration: 0,
@@ -308,7 +322,7 @@ export const useStudioStore = create<StudioState>()(
       llmModel: "",
       sdEndpoint: "http://127.0.0.1:7860",
 
-      view: "studio",
+      view: "creator",
       gmaidenConnected: false,
       gmaidenPath: "",
       voiceCache: {},
@@ -316,6 +330,7 @@ export const useStudioStore = create<StudioState>()(
       pastOverlayLayouts: [],
       futureOverlayLayouts: [],
       bannerProject: createDefaultBannerProject(),
+      bannerVariantId: null,
       pastBannerProjects: [],
       futureBannerProjects: [],
       selectedBannerLayerIds: [],
@@ -599,21 +614,15 @@ export const useStudioStore = create<StudioState>()(
       setGidAuth: (p) => set({ gid: p.gid, gidDisplayName: p.displayName, gidSignedIn: p.signedIn }),
     }),
     {
-      name: "gann-project",
-      version: 1,
-      // persist only the project itself (source + clips) — not UI/library state
+      name: "gann-preferences",
+      version: 2,
       partialize: (s) => ({
-        sourcePath: s.sourcePath,
-        wavPath: s.wavPath,
-        duration: s.duration,
-        clips: s.clips,
-        bannerOverrides: s.bannerOverrides,
-        packBuilder: s.packBuilder,
         gmaidenPath: s.gmaidenPath,
-        overlayLayout: s.overlayLayout,
-        pastOverlayLayouts: s.pastOverlayLayouts,
-        futureOverlayLayouts: s.futureOverlayLayouts,
-        bannerProject: s.bannerProject,
+        view: s.view,
+        timelineZoom: s.timelineZoom,
+        provider: s.provider,
+        llmModel: s.llmModel,
+        recentProjectId: s.recentProjectId,
       }),
     }
   )

@@ -68,6 +68,13 @@ struct Visual {
 #[derive(Deserialize)]
 struct Config {
     duration_seconds: f64,
+    #[serde(default)]
+    visual_tail_ms: u32,
+}
+impl Config {
+    fn valid_visual_tail(&self) -> bool {
+        self.visual_tail_ms <= 3200
+    }
 }
 #[derive(Deserialize)]
 struct Banner {
@@ -176,6 +183,7 @@ impl Registry {
                 b.config.duration_seconds.is_finite()
                     && b.config.duration_seconds > 0.0
                     && b.config.duration_seconds <= 15.0
+                    && b.config.valid_visual_tail()
                     && b.components.len() <= 16
                     && b.cues.len() <= 64,
                 "banner bounds",
@@ -344,5 +352,25 @@ impl Package {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod visual_tail_contract_tests {
+    use super::Config;
+    #[test]
+    fn explicit_visual_tail_is_bounded_and_absent_tail_is_zero() {
+        let original: Config = serde_json::from_str(r#"{"duration_seconds":1}"#).unwrap();
+        assert_eq!(original.visual_tail_ms, 0);
+        let valid: Config =
+            serde_json::from_str(r#"{"duration_seconds":15,"visual_tail_ms":3200}"#).unwrap();
+        assert!(valid.valid_visual_tail());
+        let invalid: Config =
+            serde_json::from_str(r#"{"duration_seconds":15,"visual_tail_ms":3201}"#).unwrap();
+        assert!(!invalid.valid_visual_tail());
+        assert!(
+            serde_json::from_str::<Config>(r#"{"duration_seconds":1,"visual_tail_ms":-1}"#)
+                .is_err()
+        );
     }
 }

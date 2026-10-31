@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.gmaiden.ann-studio",
   "build": {
-    "beforeBuildCommand": "pnpm -C src build",
+    "beforeBuildCommand": "node ../../tools/prepare-ann-media.mjs && node ../../tools/build-ann-frontend.mjs",
     "beforeDevCommand": "pnpm -C src dev",
     "devUrl": "http://localhost:5174",
     "frontendDist": "gen/web"
@@ -28,7 +28,9 @@
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; media-src 'self' blob: asset: http://asset.localhost; img-src 'self' blob: asset: http://asset.localhost",
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": [
+          "**"
+        ]
       }
     }
   },
@@ -38,12 +40,28 @@
     }
   },
   "bundle": {
-    "fileAssociations": [{
-      "ext": ["gann"],
-      "name": "G-Ann Announcer Package",
-      "description": "Announcer audio, banner motion and configuration",
-      "role": "Viewer",
-      "mimeType": "application/vnd.gann.package+zip"
-    }]
+    "fileAssociations": [
+      {
+        "ext": [
+          "gann"
+        ],
+        "name": "G-Ann Announcer Package",
+        "description": "Announcer audio, banner motion and configuration",
+        "role": "Viewer",
+        "mimeType": "application/vnd.gann.package+zip"
+      },
+      {
+        "ext": [
+          "ann"
+        ],
+        "name": "G-AnnStudio Editable Project",
+        "description": "Portable announcer project with managed media",
+        "role": "Editor",
+        "mimeType": "application/vnd.gann.project+zip"
+      }
+    ],
+    "resources": {
+      "resources/media-tools/": "media-tools/"
+    }
   }
 }

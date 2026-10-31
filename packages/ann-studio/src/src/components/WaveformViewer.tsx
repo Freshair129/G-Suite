@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
 import { invoke } from "@tauri-apps/api/core";
+import { selectProjectVariant } from "../lib/project";
 import {
   Play,
   Pause,
@@ -45,7 +46,6 @@ export default function WaveformViewer() {
     selectedClipId,
     addClip,
     updateClip,
-    selectClip,
     model,
     setModel,
     transcribing,
@@ -106,7 +106,7 @@ export default function WaveformViewer() {
     });
     regions.on("region-clicked", (region: Region, e: MouseEvent) => {
       e.stopPropagation();
-      selectClip((region as any).id);
+      selectProjectVariant((region as any).id);
       region.play();
     });
 

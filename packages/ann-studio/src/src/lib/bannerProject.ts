@@ -26,6 +26,10 @@ export interface BannerTiming {
   endMs: number;
 }
 
+export interface LayerMotion {
+  keyframes: Array<{ timeMs:number; transform:BannerTransform; easing:"linear"|"easeInOut" }>;
+}
+
 export interface BannerLayer {
   id: string;
   kind: BannerLayerKind;
@@ -35,9 +39,10 @@ export interface BannerLayer {
   visible: boolean;
   locked: boolean;
   transform: BannerTransform;
-  style: { fill?: string; stroke?: string; fontSize?: number; fontWeight?: number };
+  style: { fill?: string; stroke?: string; fontSize?: number; fontWeight?: number; fontFamily?:string; fontAssetId?:string };
   content: { text?: string; assetId?: string };
   timing?: BannerTiming;
+  motion?: LayerMotion;
 }
 
 export interface BannerProject {
@@ -83,6 +88,8 @@ export function createBannerLayer(kind: BannerLayerKind, order: number, partial:
     }),
     style: partial.style ?? (isText ? { fill: "#ffffff", fontSize: 34, fontWeight: 800 } : { fill: "#9dff3f" }),
     content: partial.content ?? (isText ? { text: "NEW EVENT" } : {}),
+    ...(partial.timing ? {timing:structuredClone(partial.timing)} : {}),
+    ...(partial.motion ? {motion:structuredClone(partial.motion)} : {}),
   };
 }
 
