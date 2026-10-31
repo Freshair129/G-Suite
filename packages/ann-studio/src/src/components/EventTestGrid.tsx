@@ -1,17 +1,13 @@
-// Event-test grid (W3 slice) — the "Na Khom preview" screen: a grid of every
-// G-Maiden event; click one to FIRE it exactly like in-game — the tone banner
-// (or the author's override image) pops on the stage and the mapped clip plays.
-// Uses toneBanner.ts for the auto visual and the existing read_audio_bytes →
-// Audio pattern for sound. Each card also carries the banner-override rail:
-// replace the auto banner with your own image (png / webp / gif / apng — animated
-// formats pass straight through to G-Maiden's overlay).
+// Event tests build and verify GANN before resolving its indexed audio/video pair.
+// Card thumbnails are authoring previews; triggered media is read from the package.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { drawToneBanner, eventTone, TONES, BANNER_W, BANNER_H } from "../lib/toneBanner";
 import { installGmaidenPack, installLibraryPack } from "../lib/exportGmaidenPack";
-import { clipEnvelope } from "../lib/peaks";
+import GannPackage from "./GannPackage";
+import { buildCurrentGann } from "../lib/exportGmaidenPack";
 import { generateBanner } from "../lib/genBanner";
 import { useStudioStore, type Clip, type BannerOverride, type LibSound, type LibPkg } from "../store/useStudioStore";
 
@@ -69,62 +65,6 @@ function BannerCanvas({
   return <canvas ref={ref} className="block" />;
 }
 
-/** Live audio-reactive stage banner: the waveform head follows the played clip
- *  (falls back to a looping sweep when audio isn't running), so the preview
- *  matches what the audio-reactive bake installs. */
-function ReactiveBanner({
-  event,
-  caption,
-  env,
-  width,
-  audioRef,
-  start,
-  end,
-}: {
-  event: string;
-  caption?: string;
-  env: number[];
-  width: number;
-  audioRef: React.MutableRefObject<HTMLAudioElement | null>;
-  start: number;
-  end: number;
-}) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const scale = (width / BANNER_W) * dpr;
-    c.width = Math.round(BANNER_W * scale);
-    c.height = Math.round(BANNER_H * scale);
-    c.style.width = `${width}px`;
-    c.style.height = `${(width * BANNER_H) / BANNER_W}px`;
-    const ctx = c.getContext("2d");
-    if (!ctx) return;
-    const dur = Math.max(0.05, end - start);
-    const t0 = performance.now();
-    let raf = 0;
-    const loop = () => {
-      const a = audioRef.current;
-      let head: number;
-      if (a && a.currentTime >= start && a.currentTime <= end + 0.05) {
-        head = (a.currentTime - start) / dur;
-      } else {
-        head = (((performance.now() - t0) / 1000) % dur) / dur; // idle sweep
-      }
-      head = Math.max(0, Math.min(1, head));
-      const progress = Math.min(1, head / 0.25);
-      ctx.setTransform(scale, 0, 0, scale, 0, 0);
-      drawToneBanner(ctx, event, progress, caption, { env, head });
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [event, caption, env, width, start, end, audioRef]);
-  return <canvas ref={ref} className="block" />;
-}
-
-/** Shows the author override image when set, otherwise the auto tone banner. */
 function BannerView({
   event,
   width,
@@ -153,7 +93,6 @@ function BannerView({
 
 export default function EventTestGrid() {
   const clips = useStudioStore((s) => s.clips);
-  const wavPath = useStudioStore((s) => s.wavPath);
   const bannerOverrides = useStudioStore((s) => s.bannerOverrides);
   const setBannerOverride = useStudioStore((s) => s.setBannerOverride);
   const sdEndpoint = useStudioStore((s) => s.sdEndpoint);
@@ -169,19 +108,14 @@ export default function EventTestGrid() {
   const [libSounds, setLibSounds] = useState<Array<LibSound & { owner: string }>>([]);
   const [installingLib, setInstallingLib] = useState(false);
 
-  const duration = useStudioStore((s) => s.duration);
 
-  const [fired, setFired] = useState<string | null>(null);
+  const [preview,setPreview]=useState<{path:string;event:string}|null>(null);
+  const [previewBusy,setPreviewBusy]=useState(false);
+  const [previewError,setPreviewError]=useState('');
   const [installing, setInstalling] = useState(false);
   const [animate, setAnimate] = useState(true);
   const [voiceCaption, setVoiceCaption] = useState(true);
   const [reactive, setReactive] = useState(false);
-  // envelope of the currently-fired clip (for the live reactive stage preview)
-  const [stageWave, setStageWave] = useState<{ env: number[]; start: number; end: number } | null>(null);
-  const firedTimer = useRef<number | null>(null);
-  const urlCache = useRef<{ path: string; url: string } | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   // one shared hidden file input; `pendingEvent` is the card awaiting an image
   const fileInput = useRef<HTMLInputElement>(null);
   const pendingEvent = useRef<string | null>(null);
@@ -268,110 +202,17 @@ export default function EventTestGrid() {
     setBannerOverride(event, ov);
   }
 
-  async function ensureUrl(): Promise<string | null> {
-    if (!wavPath) return null;
-    if (urlCache.current?.path === wavPath) return urlCache.current.url;
-    const buf = await invoke<ArrayBuffer>("read_audio_bytes", { path: wavPath });
-    const url = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
-    if (urlCache.current) URL.revokeObjectURL(urlCache.current.url);
-    urlCache.current = { path: wavPath, url };
-    return url;
+  async function fire(id:string) {
+    if(previewBusy)return;setPreviewBusy(true);setPreviewError('');
+    try{const pack=await buildCurrentGann('event',id,undefined,'Event preview','',animate,voiceCaption,reactive);setPreview({path:pack.path,event:id});}
+    catch(error){setPreviewError(String(error));}finally{setPreviewBusy(false);}
   }
-
-  async function fire(id: string) {
-    // Local authored preview only; it does not mirror G-Maiden's 4.0s show + 0.8s exit lifecycle.
-    setFired(id);
-    setStageWave(null);
-    if (firedTimer.current) window.clearTimeout(firedTimer.current);
-    firedTimer.current = window.setTimeout(() => setFired(null), 3500);
-
-    // prefer a library sound assigned via the pack builder (whole file)
-    const lib = packBuilder[id];
-    if (lib?.length) {
-      try {
-        const abs = `${libraryRoot}/${lib[0].file_path}`.replace(/\//g, "\\");
-        const buf = await invoke<ArrayBuffer>("read_audio_bytes", { path: abs });
-        const url = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
-        if (audioRef.current) audioRef.current.pause();
-        const a = new Audio(url);
-        audioRef.current = a;
-        a.onended = () => URL.revokeObjectURL(url);
-        void a.play().catch(() => {});
-      } catch {
-        /* ignore */
-      }
-      return;
-    }
-
-    // audio: play the first mapped clip's segment of the source wav
-    const cs = byEvent[id];
-    if (!cs?.length) return;
-    const clip = cs[0];
-
-    // reactive preview: load the clip's envelope so the stage banner pulses
-    if (reactive && wavPath) {
-      clipEnvelope(wavPath, clip.start, clip.end, duration)
-        .then((env) => setStageWave({ env, start: clip.start, end: clip.end }))
-        .catch(() => {});
-    }
-
-    const url = await ensureUrl();
-    if (!url) return;
-    if (audioRef.current) audioRef.current.pause();
-    const a = new Audio(url);
-    audioRef.current = a;
-    a.addEventListener("loadedmetadata", () => {
-      a.currentTime = clip.start;
-      void a.play().catch(() => {});
-    });
-    const stopAtEnd = () => {
-      if (a.currentTime >= clip.end) {
-        a.pause();
-        a.removeEventListener("timeupdate", stopAtEnd);
-      }
-    };
-    a.addEventListener("timeupdate", stopAtEnd);
-  }
-
-  useEffect(
-    () => () => {
-      if (firedTimer.current) window.clearTimeout(firedTimer.current);
-      if (urlCache.current) URL.revokeObjectURL(urlCache.current.url);
-      if (audioRef.current) audioRef.current.pause();
-    },
-    []
-  );
 
   return (
     <div className="flex-1 min-w-0 overflow-y-auto bg-base">
-      {/* stage — the fired banner pops here, like the in-game overlay */}
+      {preview&&<GannPackage initialPath={preview.path} initialEvent={preview.event} autoPlay onClose={()=>setPreview(null)}/>}
       <div className="sticky top-0 z-10 h-[164px] grid place-items-center bg-base border-b border-line">
-        {fired ? (
-          <div key={fired} style={{ animation: "gannPop .22s ease-out" }}>
-            {reactive && stageWave && !bannerOverrides[fired] ? (
-              <ReactiveBanner
-                event={fired}
-                width={420}
-                caption={captionOf(fired)}
-                env={stageWave.env}
-                audioRef={audioRef}
-                start={stageWave.start}
-                end={stageWave.end}
-              />
-            ) : (
-              <BannerView
-                event={fired}
-                width={420}
-                override={bannerOverrides[fired]}
-                caption={captionOf(fired)}
-              />
-            )}
-          </div>
-        ) : (
-          <p className="text-ink-faint text-sm">
-            กด event ด้านล่างเพื่อทดสอบ — โชว์ banner + เล่นเสียง (แบบในเกม)
-          </p>
-        )}
+        <p role={previewError?'alert':undefined} className="text-ink-faint text-sm">{previewError|| (previewBusy?'กำลังสร้างและตรวจ GANN…':'กด event เพื่อสร้าง GANN แล้วเล่นเสียงและภาพจากแพ็กที่ตรวจแล้ว')}</p>
       </div>
 
       <div className="p-5">
@@ -570,7 +411,6 @@ export default function EventTestGrid() {
         onChange={onFilePicked}
       />
 
-      <style>{`@keyframes gannPop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}`}</style>
     </div>
   );
 }

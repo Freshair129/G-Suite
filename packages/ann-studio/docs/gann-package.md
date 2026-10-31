@@ -8,7 +8,7 @@ The same crate source is vendored under each app's src-tauri/gann-package, with 
 
 ## Container contract
 
-The reader and writer live in [`../src-tauri/gann-package`](../src-tauri/gann-package). This indexed ZIP format is separate from the existing installed `pack-manifest` and transfer schemas: opening a package in Studio does not install or activate a G-Maiden pack.
+The reader and writer live in [`../src-tauri/gann-package`](../src-tauri/gann-package). This indexed ZIP format is the sole event-media handoff. Older `pack-manifest` and transfer schemas are historical; runtime playback and installation do not consume them. Opening a package is independent of installation and activation.
 
 | `gann.json` field | Contract |
 | --- | --- |
@@ -31,3 +31,18 @@ cargo test --locked --manifest-path packages/ann-studio/src-tauri/gann-package/C
 ```
 
 The writer creates and verifies a temporary sibling before committing a new destination; verification prints the announcer ID, file count and archive SHA-256. No sample voice or banner media is included in this repository. Native preview, acoustic sync, interrupted frame-drop and whole-match performance claims require separate evidence.
+
+## Authoring, event test, and installation
+
+Export builds `.gann` through `create_gann_package`. The Studio renders its authored tone/override art into silent VP8 WebM and its mastered audio into mono 48 kHz PCM16 WAV; every variant has explicit original/mixed sound and banner IDs. With no SFX cues, the mixed snapshot contains the same mastered voice bytes. Tone templates run only while authoring a package. Event Test first creates and verifies a GANN, then reads the selected `registry.events` pair using `gann_open`/`gann_read`. It never plays library/source segments directly as an event. Natural audio and video completion do not truncate the paired medium; the package config bounds the visual tail. Event/package changes and media failures cancel the relevant playback, and stale play rejections cannot interrupt a replacement event.
+
+`install_gann_package` requires a selected, existing G-Maiden directory, validates the container and playback contract, installs its indexed cache with the shared installer, then activates the pack through the running Maiden's discovered loopback port. An empty or invalid directory fails without falling back to another checkout or installation. HTTP status, service identity, returned pack ID, container digest and `activated` must all agree before Studio reports success. The existing activation endpoint still never writes files. Failed activation leaves an installed, inactive package and reports the failure. Old flat-cache/direct-manifest installers and the fixed KOM clip map were removed.
+
+For reproducible headless checks, the built Studio executable uses the same production functions:
+
+```powershell
+g-ann-studio.exe --gann-build D:/validation/build-job.json
+g-ann-studio.exe --gann-install D:/validation/install-job.json
+```
+
+A build job contains `name`, `sourcePath`, `clips` (`name`, `event`, `start`, `end`, optional mastering fields), `banners` (`event`, `b64`, `ext`, optional PNG `frames`/`fps`), and `outputPath`. A library clip uses `filePath` relative to the library; `end: 0` means its whole WAV. Authoring requests are bounded to 24 event images and 96 MiB of inline encoded images/frames; whole-file library WAVs are bounded to 16 MiB before duration inspection. Missing authored images, invalid events, damaged media and clips longer than 15 seconds fail rather than inventing playback. An install job contains `path`, `gmaidenDir`, and explicit `activate`. `activate: false` only installs; `true` requires the actual running runtime to admit the package.

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/Freshair129/G-Suite/schemas/gmaiden-events.json",
   "title": "G-Maiden Announcer Event Taxonomy",
-  "description": "Canonical contract of in-game events a G-Maiden announcer pack can voice. G-AnnStudio maps clips to these ids; G-Maiden plays a random clip from voice-cache/{id}/*.wav when the event fires. 'status: active' = G-Maiden already fires it; 'new' = added for the extended pack (G-Maiden engine wired to detect+fire from GSI game-tick data).",
+  "description": "Canonical event taxonomy. Studio authors and verifies GANN audio/video pairs; Maiden resolves only the selected verified GANN event mapping. Detection and eligibility remain native runtime responsibilities.",
   "version": "1.1",
   "x-events": [
     { "id": "danger",        "label": "Danger",           "category": "signal",   "priority": "critical", "status": "active", "trigger": "อันตรายทั่วไป — เลือดต่ำ/สถานการณ์เสี่ยง (G-Signal)" },
