@@ -11,8 +11,9 @@ import {
   FolderOutput,
   ArrowLeft,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useStudioStore, type Pack, type SoundMapping } from "../store/useStudioStore";
+import { buildSavedPackGann } from "../lib/exportGmaidenPack";
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 
 const PRIORITY_DOT: Record<string, string> = {
@@ -58,18 +59,12 @@ export default function PackEditor({ pack }: { pack: Pack }) {
   }
 
   async function handleExport() {
-    const dir = await open({
-      title: "เลือกโฟลเดอร์ปลายทาง",
-      directory: true,
-    });
+    const dir = await save({title:'บันทึก GANN',defaultPath:`${pack.name}.gann`,filters:[{name:'G-Ann Package',extensions:['gann']}]});
     if (!dir) return;
     setExporting(true);
     try {
-      const result: { output_dir: string; total: number } = await invoke(
-        "export_pack",
-        { packId: pack.id, targetDir: dir }
-      );
-      alert(`ส่งออกสำเร็จ: ${result.total} ไฟล์ → ${result.output_dir}`);
+      const result=await buildSavedPackGann(pack,dir);
+      alert(`ส่งออก GANN สำเร็จ: ${result.clips} คู่เสียง/ภาพ → ${result.path}`);
     } catch (e) {
       alert(`ส่งออกไม่สำเร็จ: ${e}`);
     } finally {

@@ -26,25 +26,15 @@ a raw clip into a working G-Maiden announcer pack:
    the event contract to an LLM, which assigns each clip a G-Maiden event. Provider is chosen from a
    header chip: **Ollama** (local, free) or **Claude** (your plan quota, via the `claude` CLI — no API
    key). Chat also runs split / export / rename / delete / send commands in Thai or English.
-5. **Send to G-Maiden** — cuts every event-mapped clip into `G-Maiden/assets/voice-cache/{event}/`
-   and `POST`s `http://127.0.0.1:3000/announcer/install` so G-Maiden picks the pack up live.
+5. **Export / Event Test / Send** — create and verify one `.gann` containing ID-addressed paired audio and silent video. Event Test reads the package's event pairs. Send installs the verified container/cache, verifies the selected running runtime's root identity, and activates the exact container digest through its discovered loopback port.
 
 ## Contracts (the seam with G-Maiden)
 
 Shared, language-agnostic specs in [`schemas/`](schemas) — neither repo depends on the other's code:
 
-- [`gmaiden-events.json`](schemas/gmaiden-events.json) — **the announcer event taxonomy**. The
-  authoritative list of events a pack can voice (kills, the full streak ladder, state events). Both
-  G-AnnStudio (maps clips to these) and G-Maiden (`src-tauri/src/announcer.rs` fires them, plays
-  `voice-cache/{event}/*.wav`) follow it. The streak ladder matches G-Maiden's overlay kill banner.
-- [`pack-manifest.schema.json`](schemas/pack-manifest.schema.json) — **the install contract**. The
-  `manifest.json` at the root of an installed pack (`voice-cache/packs/<id>/`), written by
-  `install_gmaiden_pack`/`install_library_pack` and parsed by G-Maiden's
-  `src-tauri/src/voice_api/pack_io.rs` `Manifest` — which is the ground truth the schema tracks.
-  Carries the pack metadata (`id`/`name`/`version`/`locale`/`author`/optional `authorGid`/
-  `description`/`coverImage`) plus the per-event `mappings`.
-- [`announcer-manifest.schema.json`](schemas/announcer-manifest.schema.json) — the JSON manifest the
-  plain `export` writes alongside the WAV clips. An export inventory only; G-Maiden never reads it.
+- [`gmaiden-events.json`](schemas/gmaiden-events.json) — canonical event IDs and trigger eligibility; event media is resolved from `registry.events` in GANN.
+- [GANN package contract](packages/ann-studio/docs/gann-package.md) — the sole audio/visual export, event-preview and install handoff. The shared vendored Rust crate verifies indexed files, hashes and playback contracts.
+- `pack-manifest.schema.json` and `announcer-manifest.schema.json` describe retired layouts. Active Studio exporters/installers no longer write them or install flat event directories.
 
 ## Stack
 

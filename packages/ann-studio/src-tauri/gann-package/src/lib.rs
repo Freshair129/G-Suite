@@ -1,4 +1,8 @@
 //! Indexed .gann container. Imported authoring scripts are inert data.
+mod install;
+mod playback;
+mod webm;
+pub use install::{install, root_identity, InstalledPackage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{

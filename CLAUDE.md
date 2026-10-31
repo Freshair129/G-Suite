@@ -101,27 +101,8 @@ transcribe.py:
 
 ## The G-Maiden seam
 
-**Contract is frozen in `../G-Maiden/docs/change request/CR-009-…md` — read it before changing any of
-this.** G-Ann installs a **manifest-based pack** (not the old per-event flat layout), then activates it:
+Event audio and visuals come only from verified `.gann` containers. `gann_authoring.rs` creates the indexed archive, normalizes mastered voice to mono48k PCM16 and renders authored visuals to silent VP8 WebM. `create_gann_package` is shared by Export and Event Test. Event Test reads `registry.events` pairs through `gann_open`/`gann_read`; raw source/library auditions remain authoring operations.
 
-1. **Write** to `voice_cache_root(base)/packs/<id>/` = `clips/*.wav` + `banners/<event>.<ext>` +
-   `manifest.json` (camelCase: `id/name/version/locale/author/coverImage/mappings{event:{text,thai,
-   banner,bannerAsset,clips[]}}`). `install_gmaiden_pack` cuts from one source wav; `install_library_pack`
-   copies already-cut library wavs.
-2. **Activate** — POST `http://localhost:3000/announcer/install {packId}` → G-Maiden `gsi.rs`
-   `announcer_install` (no auth; only activates a pack already on disk — never writes files).
-
-**Path resolution is the tricky part.** G-Maiden reads packs from its own `voice_cache_dir()`:
-exe-adjacent `voice-cache/` (a built/installed run) wins over the dev-tree `assets/voice-cache/`.
-`voice_cache_root(base)` in `lib.rs` **mirrors that exactly**, so a pack lands where THIS G-Maiden
-reads it. `resolve_gmaiden_dir` picks `base`: Settings path → `GMAIDEN_DIR` → dev sibling repo →
-`detect_gmaiden_target` (repo `src-tauri/target/release` → `target/debug` → installed via Start-menu
-shortcut). The Settings "G-Maiden Path" field + auto-detect button let the user aim at the exact build
-they run (Boss usually tests the repo **release build** → `…/target/release/voice-cache/packs`).
-
-Other invariants: `schemas/gmaiden-events.json` is the event-id source of truth (`src/data/
-gmaiden-events.ts` mirrors it — update both). Banners inline as `data:` URLs in G-Maiden's overlay,
-whose `image_mime` allows png/jpg/webp/gif/svg (**no apng** → normalize apng→png). The streak ladder
-must match G-Maiden's overlay kill banner (`G-Maiden/src/src/App.tsx` `STREAK_LABELS`).
+`install_gann_package` uses the vendored `g_ann_package::install` to install verified indexed media plus `local-gann.json` and the original archive. It discovers `%LOCALAPPDATA%/G-Maiden/gsi-port.txt`, checks `/health`, then calls `/announcer/install {packId}` only to activate an already installed pack. A failed/mismatched activation is an error, not success. The old direct-manifest and flat-cache installers are retired. See `packages/ann-studio/docs/gann-package.md` for the CLI job protocol and limits. Signed Store provenance remains separate.
 
 ## repo https://github.com/Freshair129/G-Suite (private)

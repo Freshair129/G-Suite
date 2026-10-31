@@ -1,4 +1,5 @@
 mod gann;
+mod gann_authoring;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
@@ -61,30 +62,6 @@ struct AudioInfo {
     path: String,
     duration: f64,
     sample_rate: u32,
-}
-
-#[derive(Deserialize)]
-struct ClipRegion {
-    id: String,
-    name: String,
-    start: f64,
-    end: f64,
-    event: String,
-}
-
-#[derive(Serialize)]
-struct ExportResult {
-    clips: Vec<ExportedClip>,
-    manifest_path: String,
-}
-
-#[derive(Serialize)]
-struct ExportedClip {
-    id: String,
-    name: String,
-    path: String,
-    event: String,
-    duration: f64,
 }
 
 #[cfg(target_os = "windows")]
@@ -191,72 +168,6 @@ async fn cut_clip(
     }
 
     Ok(output_path)
-}
-
-#[tauri::command]
-async fn export_all(
-    source_path: String,
-    clips: Vec<ClipRegion>,
-    output_dir: String,
-) -> Result<ExportResult, String> {
-    std::fs::create_dir_all(&output_dir)
-        .map_err(|e| format!("cannot create output dir: {e}"))?;
-
-    let mut exported: Vec<ExportedClip> = Vec::new();
-
-    for (i, clip) in clips.iter().enumerate() {
-        let filename = format!(
-            "{:02}_{}.wav",
-            i + 1,
-            sanitize_filename(&clip.name)
-        );
-        let out_path = Path::new(&output_dir).join(&filename);
-        let duration = clip.end - clip.start;
-
-        let output = Command::new(ffmpeg_bin())
-            .creation_flags(CREATE_NO_WINDOW)
-            .args([
-                "-y",
-                "-i", &source_path,
-                "-ss", &format!("{:.3}", clip.start),
-                "-t", &format!("{duration:.3}"),
-                "-acodec", "pcm_s16le",
-                out_path.to_str().unwrap(),
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("ffmpeg cut failed for {}: {e}", clip.name))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("ffmpeg error for {}: {stderr}", clip.name));
-        }
-
-        exported.push(ExportedClip {
-            id: clip.id.clone(),
-            name: clip.name.clone(),
-            path: filename,
-            event: clip.event.clone(),
-            duration: round2(duration),
-        });
-    }
-
-    let manifest = serde_json::json!({
-        "version": "1.0",
-        "pack_name": "announcer-pack",
-        "clips": exported,
-    });
-    let manifest_path = Path::new(&output_dir).join("announcer-manifest.json");
-    std::fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&manifest).unwrap(),
-    )
-    .map_err(|e| format!("failed to write manifest: {e}"))?;
-
-    Ok(ExportResult {
-        clips: exported,
-        manifest_path: manifest_path.to_string_lossy().into_owned(),
-    })
 }
 
 /// Round seconds to 2 decimals for clean metadata (cutting still uses full
@@ -480,7 +391,7 @@ fn read_audio_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct InstallClip {
+pub(crate) struct InstallClip {
     name: String,
     start: f64,
     end: f64,
@@ -491,7 +402,7 @@ struct InstallClip {
     #[serde(default)]
     file_path: String,
     // tuning (focused set) — applied as an ffmpeg -af chain on cut. Defaulted so
-    // callers that don't tune (install_pack / sendToGMaiden) still deserialize.
+    // Untuned authoring jobs retain the default chain.
     #[serde(default)]
     gain: f64, // dB
     #[serde(default)]
@@ -587,15 +498,6 @@ fn clip_audio_filter(c: &InstallClip, dur: f64) -> Option<String> {
     } else {
         Some(parts.join(","))
     }
-}
-
-#[derive(Serialize)]
-struct InstallReport {
-    installed: usize,
-    skipped: usize,
-    voice_cache: String,
-    per_event: std::collections::BTreeMap<String, usize>,
-    endpoint: Option<String>,
 }
 
 /// Locate the G-Maiden repo: arg → `GMAIDEN_DIR` env → sibling of the G-Suite repo.
@@ -706,89 +608,6 @@ fn detect_gmaiden_installed() -> String {
         .unwrap_or_default()
 }
 
-/// Cut every event-mapped clip to WAV into G-Maiden's voice-cache
-/// and (optionally) POST a notify to G-Maiden's install endpoint so it reloads.
-#[tauri::command]
-async fn install_pack(
-    source_path: String,
-    clips: Vec<InstallClip>,
-    pack_name: String,
-    gmaiden_dir: Option<String>,
-    endpoint: Option<String>,
-) -> Result<InstallReport, String> {
-    let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
-    let vc = voice_cache_root(&base);
-
-    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
-    let mut installed = 0usize;
-    let mut skipped = 0usize;
-
-    for clip in &clips {
-        if clip.event.is_empty() || clip.event == "unused" {
-            skipped += 1;
-            continue;
-        }
-        let dir = vc.join(&clip.event);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
-        let n = per_event.entry(clip.event.clone()).or_insert(0);
-        *n += 1;
-        let fname = format!("{}_{:02}.wav", sanitize_filename(&pack_name), *n);
-        let out_path = dir.join(&fname);
-        let duration = clip.end - clip.start;
-
-        let output = Command::new(ffmpeg_bin())
-            .creation_flags(CREATE_NO_WINDOW)
-            .args([
-                "-y",
-                "-i",
-                &source_path,
-                "-ss",
-                &format!("{:.3}", clip.start),
-                "-t",
-                &format!("{duration:.3}"),
-                "-acodec",
-                "pcm_s16le",
-                out_path.to_str().unwrap(),
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("ffmpeg: {e}"))?;
-        if !output.status.success() {
-            return Err(format!(
-                "ffmpeg cut failed for {}: {}",
-                clip.name,
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-        installed += 1;
-    }
-
-    // Notify G-Maiden's install endpoint (best-effort — works once Phase 3 lands).
-    let mut endpoint_result = None;
-    if let Some(ep) = endpoint {
-        if !ep.is_empty() {
-            let body = serde_json::json!({
-                "pack": pack_name,
-                "installed": installed,
-                "voice_cache": vc.to_string_lossy(),
-            });
-            match reqwest::Client::new().post(&ep).json(&body).send().await {
-                Ok(r) => endpoint_result = Some(format!("{ep} → {}", r.status())),
-                Err(e) => endpoint_result = Some(format!("{ep} (POST ไม่ติด: {e})")),
-            }
-        }
-    }
-
-    Ok(InstallReport {
-        installed,
-        skipped,
-        voice_cache: vc.to_string_lossy().into_owned(),
-        per_event,
-        endpoint: endpoint_result,
-    })
-}
-
 // ---- Game Profile / G-Maiden integration ---------------------------------
 
 #[derive(Serialize)]
@@ -798,309 +617,13 @@ struct GMaidenStatus {
 }
 
 #[derive(Deserialize)]
-struct BannerAsset {
+pub(crate) struct BannerAsset {
     event: String,
     /// base64 payload (no `data:` prefix)
     b64: String,
     ext: String,
-}
-
-#[derive(Serialize)]
-struct PackInstallReport {
-    pack_id: String,
-    pack_dir: String,
-    events: usize,
-    clips: usize,
-    banners: usize,
-}
-
-/// Build a G-Maiden **manifest-based** pack (clips/ + banners/ + manifest.json in
-/// G-Maiden's camelCase schema) under `<gmaiden>/assets/voice-cache/packs/<id>/`.
-/// Unlike [`install_pack`] (flat, audio-only), this carries a per-event banner so
-/// the in-game overlay shows the pack's own image. Manifest text/thai are left
-/// empty on purpose — the tone banner image is already self-labelled, so the
-/// overlay renders image-only with no duplicate caption.
-#[tauri::command]
-async fn install_gmaiden_pack(
-    pack_id: String,
-    pack_name: String,
-    author: String,
-    author_gid: Option<String>,
-    source_path: String,
-    clips: Vec<InstallClip>,
-    banners: Vec<BannerAsset>,
-    gmaiden_dir: Option<String>,
-    endpoint: Option<String>,
-) -> Result<PackInstallReport, String> {
-    use base64::Engine;
-    use serde_json::{json, Map, Value};
-
-    let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
-    let id = sanitize_filename(&pack_id);
-    let pack_dir = voice_cache_root(&base).join("packs").join(&id);
-    let clips_dir = pack_dir.join("clips");
-    let banners_dir = pack_dir.join("banners");
-    std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
-    std::fs::create_dir_all(&banners_dir).map_err(|e| format!("mkdir banners: {e}"))?;
-
-    // cut each mapped clip to clips/<event>_NN.wav, build manifest mappings
-    let mut mappings: Map<String, Value> = Map::new();
-    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
-    let mut clip_total = 0usize;
-    for clip in &clips {
-        if clip.event.is_empty() || clip.event == "unused" {
-            continue;
-        }
-        let n = per_event.entry(clip.event.clone()).or_insert(0);
-        *n += 1;
-        let fname = format!("{}_{:02}.wav", sanitize_filename(&clip.event), *n);
-        let out_path = clips_dir.join(&fname);
-        let dur = clip.end - clip.start;
-        // a file-clip is cut from its own library wav (contained under sounds_dir);
-        // a segment clip is cut from the shared source wav.
-        let input = if clip.file_path.is_empty() {
-            source_path.clone()
-        } else {
-            let canon = sounds_dir()
-                .join(&clip.file_path)
-                .canonicalize()
-                .map_err(|e| format!("หาไฟล์ {}: {e}", clip.file_path))?;
-            if !canon.starts_with(sounds_dir()) {
-                return Err(format!("ไฟล์อยู่นอกคลัง: {}", clip.file_path));
-            }
-            canon.to_string_lossy().into_owned()
-        };
-        let mut args: Vec<String> = vec![
-            "-y".into(),
-            "-i".into(),
-            input,
-            "-ss".into(),
-            format!("{:.3}", clip.start),
-            "-t".into(),
-            format!("{dur:.3}"),
-        ];
-        if let Some(af) = clip_audio_filter(clip, dur) {
-            args.push("-af".into());
-            args.push(af);
-        }
-        args.push("-acodec".into());
-        args.push("pcm_s16le".into());
-        args.push(out_path.to_string_lossy().into_owned());
-        let output = Command::new(ffmpeg_bin())
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(&args)
-            .output()
-            .await
-            .map_err(|e| format!("ffmpeg cut failed for {}: {e}", clip.event))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("ffmpeg error for {}: {stderr}", clip.event));
-        }
-        let entry = mappings.entry(clip.event.clone()).or_insert_with(|| {
-            json!({ "text": "", "thai": "", "banner": "", "bannerAsset": "", "clips": [] })
-        });
-        entry["clips"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!(format!("clips/{fname}")));
-        clip_total += 1;
-    }
-
-    if mappings.is_empty() {
-        return Err("ไม่มี event ที่ map (clip) — map ก่อนส่งออกนะครับ".into());
-    }
-
-    // write a banner only for events that actually have clips; set bannerAsset
-    let mut banner_total = 0usize;
-    let mut cover = String::new();
-    for b in &banners {
-        if !mappings.contains_key(&b.event) {
-            continue;
-        }
-        let ext = match b.ext.as_str() {
-            "png" | "webp" | "webm" | "gif" | "apng" => b.ext.as_str(),
-            _ => "png",
-        };
-        let data = base64::engine::general_purpose::STANDARD
-            .decode(b.b64.trim())
-            .map_err(|e| format!("banner base64 ({}): {e}", b.event))?;
-        let fname = format!("{}.{}", sanitize_filename(&b.event), ext);
-        std::fs::write(banners_dir.join(&fname), &data)
-            .map_err(|e| format!("write banner {}: {e}", b.event))?;
-        let rel = format!("banners/{fname}");
-        if let Some(m) = mappings.get_mut(&b.event) {
-            m["bannerAsset"] = json!(rel);
-        }
-        if cover.is_empty() {
-            cover = rel.clone();
-        }
-        banner_total += 1;
-    }
-
-    let mut manifest = json!({
-        "id": id,
-        "name": pack_name,
-        "version": "0.1.0",
-        "locale": "th",
-        "author": author,
-        "description": "",
-        "coverImage": cover,
-        "mappings": Value::Object(mappings.clone()),
-    });
-    if let Some(gid) = author_gid.as_deref().filter(|g| !g.is_empty()) {
-        manifest["authorGid"] = json!(gid);
-    }
-    std::fs::write(
-        pack_dir.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest).unwrap(),
-    )
-    .map_err(|e| format!("write manifest: {e}"))?;
-
-    // tell G-Maiden to activate the pack (same file-write path as the UI action)
-    if let Some(ep) = &endpoint {
-        if !ep.is_empty() {
-            let _ = reqwest::Client::new()
-                .post(ep)
-                .json(&json!({ "packId": id }))
-                .send()
-                .await;
-        }
-    }
-
-    Ok(PackInstallReport {
-        pack_id: id,
-        pack_dir: pack_dir.to_string_lossy().into_owned(),
-        events: mappings.len(),
-        clips: clip_total,
-        banners: banner_total,
-    })
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LibPackClip {
-    event: String,
-    /// path relative to the sounds dir (LibSound.file_path)
-    file_path: String,
-}
-
-/// Install a G-Maiden manifest pack assembled from LIBRARY sounds (the test-
-/// screen pack builder). Unlike [`install_gmaiden_pack`] (which cuts each clip
-/// from one source wav), every clip here is an already-cut library wav that is
-/// COPIED into the pack. Banners + manifest are identical.
-#[tauri::command]
-async fn install_library_pack(
-    pack_id: String,
-    pack_name: String,
-    author: String,
-    author_gid: Option<String>,
-    clips: Vec<LibPackClip>,
-    banners: Vec<BannerAsset>,
-    gmaiden_dir: Option<String>,
-    endpoint: Option<String>,
-) -> Result<PackInstallReport, String> {
-    use base64::Engine;
-    use serde_json::{json, Map, Value};
-
-    let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
-    let id = sanitize_filename(&pack_id);
-    let pack_dir = voice_cache_root(&base).join("packs").join(&id);
-    let clips_dir = pack_dir.join("clips");
-    let banners_dir = pack_dir.join("banners");
-    std::fs::create_dir_all(&clips_dir).map_err(|e| format!("mkdir clips: {e}"))?;
-    std::fs::create_dir_all(&banners_dir).map_err(|e| format!("mkdir banners: {e}"))?;
-
-    let snd_root = sounds_dir();
-    let mut mappings: Map<String, Value> = Map::new();
-    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
-    let mut clip_total = 0usize;
-    for clip in &clips {
-        if clip.event.is_empty() || clip.event == "unused" {
-            continue;
-        }
-        // resolve + contain the library source under sounds_dir (defensive)
-        let canon = snd_root
-            .join(&clip.file_path)
-            .canonicalize()
-            .map_err(|e| format!("หาไฟล์ {}: {e}", clip.file_path))?;
-        if !canon.starts_with(&snd_root) {
-            return Err(format!("ไฟล์อยู่นอกคลัง: {}", clip.file_path));
-        }
-        let n = per_event.entry(clip.event.clone()).or_insert(0);
-        *n += 1;
-        let fname = format!("{}_{:02}.wav", sanitize_filename(&clip.event), *n);
-        std::fs::copy(&canon, clips_dir.join(&fname))
-            .map_err(|e| format!("copy {}: {e}", clip.file_path))?;
-        let entry = mappings.entry(clip.event.clone()).or_insert_with(|| {
-            json!({ "text": "", "thai": "", "banner": "", "bannerAsset": "", "clips": [] })
-        });
-        entry["clips"].as_array_mut().unwrap().push(json!(format!("clips/{fname}")));
-        clip_total += 1;
-    }
-
-    if mappings.is_empty() {
-        return Err("ไม่มี event ที่ map — เพิ่มเสียงก่อนนะครับ".into());
-    }
-
-    let mut banner_total = 0usize;
-    let mut cover = String::new();
-    for b in &banners {
-        if !mappings.contains_key(&b.event) {
-            continue;
-        }
-        let ext = match b.ext.as_str() {
-            "png" | "webp" | "webm" | "gif" | "apng" => b.ext.as_str(),
-            _ => "png",
-        };
-        let data = base64::engine::general_purpose::STANDARD
-            .decode(b.b64.trim())
-            .map_err(|e| format!("banner base64 ({}): {e}", b.event))?;
-        let fname = format!("{}.{}", sanitize_filename(&b.event), ext);
-        std::fs::write(banners_dir.join(&fname), &data)
-            .map_err(|e| format!("write banner {}: {e}", b.event))?;
-        let rel = format!("banners/{fname}");
-        if let Some(m) = mappings.get_mut(&b.event) {
-            m["bannerAsset"] = json!(rel);
-        }
-        if cover.is_empty() {
-            cover = rel.clone();
-        }
-        banner_total += 1;
-    }
-
-    let mut manifest = json!({
-        "id": id, "name": pack_name, "version": "0.1.0", "locale": "th",
-        "author": author, "description": "", "coverImage": cover,
-        "mappings": Value::Object(mappings.clone()),
-    });
-    if let Some(gid) = author_gid.as_deref().filter(|g| !g.is_empty()) {
-        manifest["authorGid"] = json!(gid);
-    }
-    std::fs::write(
-        pack_dir.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest).unwrap(),
-    )
-    .map_err(|e| format!("write manifest: {e}"))?;
-
-    if let Some(ep) = &endpoint {
-        if !ep.is_empty() {
-            let _ = reqwest::Client::new()
-                .post(ep)
-                .json(&json!({ "packId": id }))
-                .send()
-                .await;
-        }
-    }
-
-    Ok(PackInstallReport {
-        pack_id: id,
-        pack_dir: pack_dir.to_string_lossy().into_owned(),
-        events: mappings.len(),
-        clips: clip_total,
-        banners: banner_total,
-    })
+    #[serde(default)] frames: Vec<String>,
+    #[serde(default)] fps: Option<f64>,
 }
 
 /// Bake a sequence of alpha PNG frames (base64, no `data:` prefix) into a single
@@ -1312,50 +835,22 @@ struct VoiceCacheScan {
     entries: Vec<VoiceCacheEntry>,
 }
 
-/// Walk `G-Maiden/assets/voice-cache/` and return a list of (event → files[])
-/// so the frontend can show which events have audio installed.
+/// Show only event pairs admitted from installed GANN containers.
 #[tauri::command]
 fn scan_voice_cache(gmaiden_dir: Option<String>) -> Result<VoiceCacheScan, String> {
-    let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
-    let vc = voice_cache_root(&base);
-    if !vc.exists() {
-        return Ok(VoiceCacheScan {
-            voice_cache_path: vc.to_string_lossy().into_owned(),
-            entries: vec![],
-        });
-    }
-
-    let mut entries = Vec::new();
-    let mut dirs: Vec<_> = std::fs::read_dir(&vc)
-        .map_err(|e| format!("read voice-cache: {e}"))?
-        .flatten()
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-        .collect();
-    dirs.sort_by_key(|d| d.file_name());
-
-    for dir in dirs {
-        let event = dir.file_name().to_string_lossy().into_owned();
-        let mut files: Vec<String> = std::fs::read_dir(dir.path())
-            .map_err(|e| format!("read {event}: {e}"))?
-            .flatten()
-            .filter(|f| {
-                f.path()
-                    .extension()
-                    .map(|ext| ext == "wav" || ext == "mp3" || ext == "ogg")
-                    .unwrap_or(false)
-            })
-            .map(|f| f.file_name().to_string_lossy().into_owned())
-            .collect();
-        files.sort();
-        entries.push(VoiceCacheEntry { event, files });
-    }
-
-    Ok(VoiceCacheScan {
-        voice_cache_path: vc.to_string_lossy().into_owned(),
-        entries,
-    })
+ let base=resolve_gmaiden_dir(&gmaiden_dir).ok_or("หา G-Maiden ไม่พบ")?;let root=voice_cache_root(&base);
+ let mut events:std::collections::BTreeMap<String,Vec<String>>=Default::default();
+ if let Ok(entries)=std::fs::read_dir(root.join("packs")) {for entry in entries.flatten(){
+  let id=entry.file_name().to_string_lossy().into_owned();if !g_ann_package::valid_id(&id,"ann_"){continue}
+  let Some(origin)=std::fs::read(entry.path().join("local-gann.json")).ok().and_then(|b|serde_json::from_slice::<serde_json::Value>(&b).ok()) else{continue};
+  let Some(hash)=origin["container_sha256"].as_str() else{continue};if hash.len()!=64||!hash.bytes().all(|b|b.is_ascii_hexdigit()){continue}
+  let Ok(package)=g_ann_package::Package::open(&root.join("containers").join(format!("{hash}.gann"))) else{continue};
+  if package.index.announcer_id!=id || package.validate_playback().is_err(){continue}
+  if let Some(mapped)=package.registry["events"].as_object(){for (event,pairs) in mapped{if let Some(pairs)=pairs.as_array(){for pair in pairs{if let Some(sound)=pair["sound_id"].as_str(){events.entry(event.clone()).or_default().push(format!("{id}/audio/{sound}.wav"));}}}}}
+ }}
+ Ok(VoiceCacheScan{voice_cache_path:root.to_string_lossy().into_owned(),entries:events.into_iter().map(|(event,files)|VoiceCacheEntry{event,files}).collect()})
 }
+
 
 // ---- Sound Library (SQLite) & Pack Management ----------------------------
 
@@ -1916,181 +1411,6 @@ fn delete_pack(pack_id: String) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Serialize)]
-struct ExportPackResult {
-    output_dir: String,
-    files: Vec<String>,
-    total: usize,
-}
-
-#[tauri::command]
-async fn export_pack(
-    pack_id: String,
-    target_dir: String,
-) -> Result<ExportPackResult, String> {
-    let manifest = {
-        let conn = open_db()?;
-        let mut stmt = conn
-            .prepare("SELECT name, pack_type, events, mappings FROM packs WHERE id = ?1")
-            .map_err(|e| format!("query: {e}"))?;
-        stmt.query_row([&pack_id], |row| {
-            let events_str: String = row.get(2)?;
-            let mappings_str: String = row.get(3)?;
-            Ok(PackManifest {
-                id: pack_id.clone(),
-                name: row.get(0)?,
-                pack_type: row.get(1)?,
-                events: serde_json::from_str(&events_str).unwrap_or_default(),
-                mappings: serde_json::from_str(&mappings_str).unwrap_or_default(),
-                created_at: String::new(),
-                updated_at: String::new(),
-            })
-        })
-        .map_err(|e| format!("pack not found: {e}"))?
-    };
-
-    let snd_root = sounds_dir();
-    let out = Path::new(&target_dir).join(&manifest.name);
-    std::fs::create_dir_all(&out).map_err(|e| format!("mkdir output: {e}"))?;
-
-    let mut files = Vec::new();
-
-    for (event, mapping) in &manifest.mappings {
-        let src = snd_root.join(&mapping.sound_path);
-        if !src.exists() {
-            continue;
-        }
-        let event_dir = out.join(event);
-        std::fs::create_dir_all(&event_dir)
-            .map_err(|e| format!("mkdir {event}: {e}"))?;
-
-        let fname = src
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let dest = event_dir.join(&fname);
-
-        let needs_filter =
-            (mapping.volume - 1.0).abs() > 0.01 || (mapping.speed - 1.0).abs() > 0.01;
-
-        if needs_filter {
-            let mut af = Vec::new();
-            if (mapping.volume - 1.0).abs() > 0.01 {
-                af.push(format!("volume={:.2}", mapping.volume));
-            }
-            if (mapping.speed - 1.0).abs() > 0.01 {
-                af.push(format!("atempo={:.2}", mapping.speed.clamp(0.5, 2.0)));
-            }
-            let filter_str = af.join(",");
-            let output = Command::new(ffmpeg_bin())
-                .creation_flags(CREATE_NO_WINDOW)
-                .args([
-                    "-y",
-                    "-i",
-                    src.to_str().unwrap(),
-                    "-af",
-                    &filter_str,
-                    "-acodec",
-                    "pcm_s16le",
-                    dest.to_str().unwrap(),
-                ])
-                .output()
-                .await
-                .map_err(|e| format!("ffmpeg: {e}"))?;
-            if !output.status.success() {
-                return Err(format!(
-                    "ffmpeg error {event}/{fname}: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                ));
-            }
-        } else {
-            std::fs::copy(&src, &dest).map_err(|e| format!("copy {fname}: {e}"))?;
-        }
-        files.push(format!("{event}/{fname}"));
-    }
-
-    let out_manifest = serde_json::json!({
-        "version": "1.0",
-        "pack_name": manifest.name,
-        "pack_type": manifest.pack_type,
-        "events": manifest.events,
-        "mappings": manifest.mappings,
-    });
-    std::fs::write(
-        out.join("manifest.json"),
-        serde_json::to_string_pretty(&out_manifest).unwrap(),
-    )
-    .map_err(|e| format!("write manifest: {e}"))?;
-
-    let total = files.len();
-    Ok(ExportPackResult {
-        output_dir: out.to_string_lossy().into_owned(),
-        files,
-        total,
-    })
-}
-
-// ---- Quick install library → G-Maiden voice-cache ----------------------
-
-#[derive(Serialize)]
-struct QuickInstallResult {
-    installed: usize,
-    voice_cache: String,
-    per_event: std::collections::BTreeMap<String, usize>,
-}
-
-#[tauri::command]
-fn install_lib_to_gmaiden(
-    pkg_id: String,
-    mappings: std::collections::HashMap<String, String>,
-    gmaiden_dir: Option<String>,
-) -> Result<QuickInstallResult, String> {
-    let base = resolve_gmaiden_dir(&gmaiden_dir)
-        .ok_or("หา G-Maiden ไม่เจอ — ตั้ง env GMAIDEN_DIR หรือวาง repo ข้าง G-Suite")?;
-    let vc = base.join("assets/voice-cache");
-    let snd_root = sounds_dir();
-
-    let conn = open_db()?;
-    let mut stmt = conn
-        .prepare("SELECT idx, file_path, name FROM sounds WHERE pkg_id = ?1 ORDER BY idx")
-        .map_err(|e| format!("query: {e}"))?;
-    let sounds: Vec<(i64, String, String)> = stmt
-        .query_map([&pkg_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-        .map_err(|e| format!("map: {e}"))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    let mut per_event: std::collections::BTreeMap<String, usize> = Default::default();
-    let mut installed = 0usize;
-
-    for (idx, file_path, _name) in &sounds {
-        let key = format!("{:03}", idx);
-        let event = match mappings.get(&key) {
-            Some(ev) if !ev.is_empty() && ev != "unused" => ev.clone(),
-            _ => continue,
-        };
-        let src = snd_root.join(file_path);
-        if !src.exists() {
-            continue;
-        }
-        let dir = vc.join(&event);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
-        let n = per_event.entry(event.clone()).or_insert(0);
-        *n += 1;
-        let fname = format!("kom_{:02}.wav", *n);
-        let dest = dir.join(&fname);
-        std::fs::copy(&src, &dest).map_err(|e| format!("copy: {e}"))?;
-        installed += 1;
-    }
-
-    Ok(QuickInstallResult {
-        installed,
-        voice_cache: vc.to_string_lossy().into_owned(),
-        per_event,
-    })
-}
-
 // ---- System monitoring --------------------------------------------------
 
 #[derive(Serialize)]
@@ -2122,10 +1442,8 @@ async fn get_system_stats(state: tauri::State<'_, SysInfoState>) -> Result<Syste
     };
 
     // GPU via nvidia-smi (best-effort)
-    let (gpu_percent, vram_used_mb, vram_total_mb) = match read_nvidia_smi().await {
-        Ok(g) => g,
-        Err(_) => (0.0, 0, 0),
-    };
+    let (gpu_percent, vram_used_mb, vram_total_mb) =
+        read_nvidia_smi().await.unwrap_or((0.0, 0, 0));
     let vram_percent = if vram_total_mb > 0 {
         (vram_used_mb as f32 / vram_total_mb as f32) * 100.0
     } else {
@@ -2333,15 +1651,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             gann::gann_startup_path, gann::gann_open, gann::gann_read, gann::gann_save_copy,
+            gann_authoring::create_gann_package, gann_authoring::install_gann_package,
             extract_audio,
             cut_clip,
-            export_all,
             transcribe_audio,
             analyze_video,
             read_audio_bytes,
-            install_pack,
-            install_gmaiden_pack,
-            install_library_pack,
             detect_gmaiden_installed,
             bake_animated_webp,
             generate_banner_image,
@@ -2356,11 +1671,9 @@ pub fn run() {
             save_pack,
             load_packs,
             delete_pack,
-            export_pack,
             list_ollama_models,
             llm_complete,
             get_system_stats,
-            install_lib_to_gmaiden,
             save_text_file,
             read_text_file,
             gid_oauth_listen,
@@ -2369,4 +1682,13 @@ pub fn run() {
         .manage(SysInfoState(std::sync::Mutex::new(sysinfo::System::new_all())))
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");
+}
+
+/// Explicit headless authoring uses the same package builder/installer as the UI.
+pub fn run_gann_job(args: &[String]) -> Option<Result<String,String>> {
+ let command=args.get(1)?;if !matches!(command.as_str(),"--gann-build"|"--gann-install"){return None}
+ Some((||{let path=args.get(2).ok_or("Supply job.json")?;let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
+ if command=="--gann-build" {let report=gann_authoring::build(serde_json::from_slice(&bytes).map_err(|e|e.to_string())?)?;serde_json::to_string(&report).map_err(|e|e.to_string())}
+ else {let runtime=tokio::runtime::Runtime::new().map_err(|e|e.to_string())?;let report=runtime.block_on(gann_authoring::install(serde_json::from_slice(&bytes).map_err(|e|e.to_string())?))?;serde_json::to_string(&report).map_err(|e|e.to_string())}
+ })())
 }
