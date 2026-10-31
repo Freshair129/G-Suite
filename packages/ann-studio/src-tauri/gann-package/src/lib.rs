@@ -1,7 +1,13 @@
 //! Indexed .gann container. Imported authoring scripts are inert data.
+mod compression;
+pub mod local_ipc;
+mod strict_json;
+pub use compression::{validate_producer_profile, CompressionReport, PRODUCER_PROFILE};
 mod install;
 mod playback;
 mod webm;
+mod release;
+pub use release::{canonical_release_message, verify_store_release, PackageError, ReleasePayload, ReleaseEnvelope, TrustedKey, TrustedKeyState, VerifiedRelease};
 pub use install::{install, root_identity, InstalledPackage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -128,7 +134,9 @@ fn bytes<R: Read>(r: R, limit: u64) -> Result<Vec<u8>, String> {
     Ok(b)
 }
 fn archive(path: &Path) -> Result<zip::ZipArchive<File>, String> {
-    zip::ZipArchive::new(File::open(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    let archive = zip::ZipArchive::new(File::open(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    compression::validate_entry_count(path, archive.len())?;
+    Ok(archive)
 }
 impl Package {
     pub fn open(path: &Path) -> Result<Self, String> {
@@ -202,7 +210,7 @@ impl Package {
                 .map_err(|_| "Missing registry")?,
             MAX_JSON,
         )?;
-        let registry: Value = serde_json::from_slice(&raw).map_err(|e| e.to_string())?;
+        let registry: Value = strict_json::parse(&raw)?;
         validate_registry(&registry, &index)?;
         check(
             file_digest(path)? == digest,
@@ -247,6 +255,7 @@ impl Package {
             "symlink target",
         )?;
         let root = dest.canonicalize().map_err(|e| e.to_string())?;
+        let mut zip = archive(&self.path)?;
         for e in &self.index.files {
             let p = root.join(&e.path);
             let parent = p.parent().ok_or("file parent")?;
@@ -263,8 +272,20 @@ impl Package {
                 .create_new(true)
                 .open(p)
                 .map_err(|e| e.to_string())?;
-            f.write_all(&self.read(&e.path)?)
-                .map_err(|e| e.to_string())?;
+            let mut input = zip.by_name(&e.path).map_err(|e| e.to_string())?.take(e.bytes + 1);
+            let mut hash = ring::digest::Context::new(&ring::digest::SHA256);
+            let mut count = 0u64;
+            let mut buffer = [0u8; 65536];
+            loop {
+                let n = input.read(&mut buffer).map_err(|e| e.to_string())?;
+                if n == 0 { break; }
+                count += n as u64;
+                check(count <= e.bytes, "expanded entry grew")?;
+                hash.update(&buffer[..n]);
+                f.write_all(&buffer[..n]).map_err(|e| e.to_string())?;
+            }
+            check(count == e.bytes && hex(hash.finish().as_ref()) == e.sha256, "extracted entry hash mismatch")?;
+            f.sync_all().map_err(|e| e.to_string())?;
         }
         Ok(())
     }
@@ -394,7 +415,7 @@ fn create_staged(root: &Path, manifest: &str, dest: &Path) -> Result<Package, St
         File::open(root.join(manifest)).map_err(|e| e.to_string())?,
         MAX_JSON,
     )?;
-    let v: Value = serde_json::from_slice(&raw).map_err(|e| e.to_string())?;
+    let v: Value = strict_json::parse(&raw)?;
     let id = text(&v, "announcer_id")?.to_owned();
     let mut names = BTreeSet::from([manifest.to_owned()]);
     for s in array(&v, "sounds")? {
@@ -458,9 +479,7 @@ fn create_staged(root: &Path, manifest: &str, dest: &Path) -> Result<Package, St
         .open(dest)
         .map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(out);
-    let opts =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    zip.start_file("gann.json", opts)
+    zip.start_file("gann.json", compression::options("gann.json"))
         .map_err(|e| e.to_string())?;
     zip.write_all(&serde_json::to_vec_pretty(&index).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
@@ -470,7 +489,7 @@ fn create_staged(root: &Path, manifest: &str, dest: &Path) -> Result<Package, St
             e.bytes,
         )?;
         check(sha256(&b) == e.sha256, "source changed while packing")?;
-        zip.start_file(&e.path, opts).map_err(|e| e.to_string())?;
+        zip.start_file(&e.path, compression::options(&e.path)).map_err(|e| e.to_string())?;
         zip.write_all(&b).map_err(|e| e.to_string())?;
     }
     zip.finish().map_err(|e| e.to_string())?;

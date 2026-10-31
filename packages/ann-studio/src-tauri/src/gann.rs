@@ -29,6 +29,33 @@ pub(crate) fn trusted(window: &tauri::WebviewWindow) -> Result<(), String> {
         Err("Package operations require the local main window".into())
     }
 }
+
+#[tauri::command]
+pub async fn export_gann_artifact(
+    window: tauri::WebviewWindow,
+    path: String,
+    expected_digest: String,
+    destination: String,
+) -> Result<(), String> {
+    trusted(&window)?;
+    if Path::new(&destination)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_none_or(|e| !e.eq_ignore_ascii_case("gann"))
+    {
+        return Err("เลือกไฟล์ปลายทาง .gann".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let package = g_ann_package::Package::open(Path::new(&path))?;
+        if package.digest != expected_digest {
+            return Err("Artifact changed; build or validate again".into());
+        }
+        package.validate_playback()?;
+        package.save_copy(Path::new(&destination))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 #[tauri::command]
 pub async fn gann_open(
     window: tauri::WebviewWindow,

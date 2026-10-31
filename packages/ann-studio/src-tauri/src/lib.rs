@@ -1,60 +1,51 @@
 mod gann;
 mod gann_authoring;
+mod maiden_client;
+mod project_io;
+mod build_jobs;
+mod media_jobs;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-const EXE: &str = if cfg!(windows) { ".exe" } else { "" };
 
-/// Resolve the ffmpeg binary. Order: `FFMPEG_PATH` env → a bundled/global
-/// `ffmpeg-static` install → bare `ffmpeg` on `PATH`.
-fn ffmpeg_bin() -> String {
-    resolve_bin("ffmpeg", "FFMPEG_PATH")
+#[tauri::command]
+fn project_startup_path(window:tauri::WebviewWindow)->Result<Option<String>,String> {
+    gann::trusted(&window)?;
+    Ok(std::env::args().skip(1).find(|path|Path::new(path).extension().and_then(|s|s.to_str()).is_some_and(|s|s.eq_ignore_ascii_case("ann"))))
 }
 
-fn resolve_bin(name: &str, env_key: &str) -> String {
-    // 1. Explicit override.
-    if let Ok(p) = std::env::var(env_key) {
-        if !p.is_empty() && Path::new(&p).exists() {
-            return p;
-        }
-    }
-    // 2. ffmpeg-static next to the node toolchain (common on this project's
-    //    Windows setup). Probe a couple of likely roots.
-    let file = format!("{name}{EXE}");
-    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
-        let home = Path::new(&home);
-        for root in [
-            home.join("AppData/Local/GoVibeToolchains"),
-            home.join("AppData/Roaming/npm/node_modules"),
-        ] {
-            if let Some(hit) = find_ffmpeg_static(&root, &file) {
-                return hit;
-            }
-        }
-    }
-    // 3. Fall back to PATH.
-    name.to_string()
+#[tauri::command]
+async fn prepare_project(window: tauri::WebviewWindow, app: tauri::AppHandle, snapshot: serde_json::Value, asset_paths: std::collections::BTreeMap<String,String>) -> Result<project_io::ProjectOpenResult,String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
+    tauri::async_runtime::spawn_blocking(move || project_io::prepare(snapshot,asset_paths,&workspace)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+async fn save_project(window: tauri::WebviewWindow, app: tauri::AppHandle, path: String, snapshot: serde_json::Value, asset_paths: std::collections::BTreeMap<String,String>) -> Result<project_io::ProjectSaveResult,String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
+    tauri::async_runtime::spawn_blocking(move || project_io::save(Path::new(&path),snapshot,asset_paths,&workspace)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+async fn open_project(window: tauri::WebviewWindow, app: tauri::AppHandle, path: String) -> Result<project_io::ProjectOpenResult,String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
+    tauri::async_runtime::spawn_blocking(move || project_io::open(Path::new(&path),&workspace)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+async fn recover_project(window: tauri::WebviewWindow, app: tauri::AppHandle, project_id: String) -> Result<Vec<project_io::RecoveryCandidate>,String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
+    tauri::async_runtime::spawn_blocking(move || project_io::recover(&project_id,&workspace)).await.map_err(|e|e.to_string())?
 }
 
-/// Shallow search for `node_modules/ffmpeg-static/<file>` under `root`
-/// (one level of node version dirs deep), returning the first hit.
-fn find_ffmpeg_static(root: &Path, file: &str) -> Option<String> {
-    let direct = root.join("ffmpeg-static").join(file);
-    if direct.exists() {
-        return Some(direct.to_string_lossy().into_owned());
-    }
-    let entries = std::fs::read_dir(root).ok()?;
-    for entry in entries.flatten() {
-        let candidate = entry
-            .path()
-            .join("node_modules/ffmpeg-static")
-            .join(file);
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().into_owned());
-        }
-    }
-    None
+fn ffmpeg_bin() -> Result<PathBuf, String> {
+    media_jobs::tool_path()
 }
 
 #[derive(Serialize)]
@@ -74,7 +65,7 @@ async fn extract_audio(input_path: String) -> Result<AudioInfo, String> {
     let out_dir = input.parent().unwrap_or(Path::new("."));
     let wav_path = out_dir.join(format!("{stem}_extracted.wav"));
 
-    let output = Command::new(ffmpeg_bin())
+    let output = Command::new(ffmpeg_bin()?)
         .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-y",
@@ -148,7 +139,7 @@ async fn cut_clip(
 ) -> Result<String, String> {
     let duration = end - start;
 
-    let output = Command::new(ffmpeg_bin())
+    let output = Command::new(ffmpeg_bin()?)
         .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-y",
@@ -392,15 +383,6 @@ fn read_audio_bytes(path: String) -> Result<tauri::ipc::Response, String> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InstallClip {
-    name: String,
-    start: f64,
-    end: f64,
-    event: String,
-    // standalone library-file clip: path relative to the sounds dir. When set,
-    // this clip is cut from that file (start/end within it) instead of the shared
-    // source wav — lets a pack opened on the canvas mix file-clips + segments.
-    #[serde(default)]
-    file_path: String,
     // tuning (focused set) — applied as an ffmpeg -af chain on cut. Defaulted so
     // Untuned authoring jobs retain the default chain.
     #[serde(default)]
@@ -616,16 +598,6 @@ struct GMaidenStatus {
     path: String,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct BannerAsset {
-    event: String,
-    /// base64 payload (no `data:` prefix)
-    b64: String,
-    ext: String,
-    #[serde(default)] frames: Vec<String>,
-    #[serde(default)] fps: Option<f64>,
-}
-
 /// Bake a sequence of alpha PNG frames (base64, no `data:` prefix) into a single
 /// **animated WebP** and return it base64-encoded. The clip plays once and rests
 /// on the final frame (`-loop 1`), giving the auto tone banner an entrance
@@ -670,7 +642,7 @@ async fn bake_animated_webp(
 
     let out = dir.join("out.webp");
     let pattern = dir.join("f_%03d.png");
-    let result = Command::new(ffmpeg_bin())
+    let result = Command::new(ffmpeg_bin()?)
         .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-y",
@@ -1212,7 +1184,7 @@ async fn save_clips_to_library(
         args.extend(quality_args.iter().cloned());
         args.push(out_path.to_str().unwrap().to_string());
 
-        let output = Command::new(ffmpeg_bin())
+        let output = Command::new(ffmpeg_bin()?)
             .creation_flags(CREATE_NO_WINDOW)
             .args(&args)
             .output()
@@ -1651,7 +1623,13 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             gann::gann_startup_path, gann::gann_open, gann::gann_read, gann::gann_save_copy,
+            gann::export_gann_artifact,
             gann_authoring::create_gann_package, gann_authoring::install_gann_package,
+            maiden_client::discover_maiden_profiles, maiden_client::launch_maiden_profile,
+            prepare_project, save_project, open_project, recover_project,
+            project_startup_path,
+            build_jobs::start_build, build_jobs::build_status, build_jobs::cancel_build, build_jobs::export_artifact,
+            media_jobs::import_media, media_jobs::inspect_media, media_jobs::build_event_capabilities,
             extract_audio,
             cut_clip,
             transcribe_audio,

@@ -1,3 +1,4 @@
+import { importProjectMedia } from "../lib/importMedia";
 import GannPackage from "./GannPackage";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -14,7 +15,7 @@ function shortModel(m: string): string {
 }
 
 export default function Header() {
-  const { wavPath, clips, setSource, provider, llmModel, setProvider, setLlmModel, view, setView, gid, gidSignedIn } =
+  const { wavPath, clips, provider, llmModel, setProvider, setLlmModel, view, setView, gid, gidSignedIn } =
     useStudioStore();
   const [packageOpen,setPackageOpen] = useState(false);
   const [packagePath,setPackagePath] = useState<string>();
@@ -72,10 +73,7 @@ export default function Header() {
     }
     setImporting(true);
     try {
-      const result: { path: string; duration: number } = await invoke("extract_audio", {
-        inputPath: file,
-      });
-      setSource(file as string, result.path, result.duration);
+      await importProjectMedia(file as string);
     } catch (e) {
       alert(`นำเข้าไม่สำเร็จ: ${e}`);
     } finally {
@@ -121,6 +119,7 @@ export default function Header() {
       <div className="hidden md:flex items-center gap-1">
         {/* View toggle pills */}
         <div className="flex bg-panel p-0.5 rounded-full border border-line">
+          <button onClick={() => setView("creator")} className="px-3 py-2 rounded-lg border border-line text-lime">สร้างแพ็ก</button>
           <button
             onClick={() => setView("studio")}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${

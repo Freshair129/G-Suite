@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "name": "ffmpeg",
+  "release": "9.0.2-essentials_build-www.gyan.dev",
+  "archiveUrl": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip",
+  "archiveSha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+  "binarySha256": "3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec",
+  "binaryEntry": "ffmpeg-9.0.2-essentials_build/bin/ffmpeg.exe",
+  "licenseEntry": "ffmpeg-9.0.2-essentials_build/LICENSE",
+  "readmeEntry": "ffmpeg-9.0.2-essentials_build/README.txt",
+  "license": "GPL-3.0-or-later",
+  "sourceCodeUrl": "https://github.com/FFmpeg/FFmpeg/commit/946fcce07b",
+  "provider": "https://www.gyan.dev/ffmpeg/builds/",
+  "distributionNote": "Separate executable; retain original LICENSE and README. Published distribution requires corresponding-source/build-dependency fulfillment, recorded in release qualification."
+}

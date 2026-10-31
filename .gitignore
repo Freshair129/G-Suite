@@ -36,3 +36,7 @@ pnpm-debug.log*
 # of bundled JS. The directories are left in place; only the paths are ignored.
 .verify-build/
 .verify-*-build/
+
+# Build-prepared pinned media executable (bundled in installers)
+packages/ann-studio/src-tauri/resources/media-tools/
+packages/ann-studio/src-tauri/resources/.media-cache/

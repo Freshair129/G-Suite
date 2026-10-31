@@ -53,11 +53,11 @@ describe("OverlayLayout store history", () => {
 
     expect(useStudioStore.getState().overlayLayout).toEqual(edited);
     expect(useStudioStore.getState().pastOverlayLayouts).toEqual([initial]);
-    const persisted = JSON.parse(localStorage.getItem("gann-project") ?? "{}") as {
+    const persisted = JSON.parse(localStorage.getItem("gann-preferences") ?? "{}") as {
       state?: { pastOverlayLayouts?: unknown[]; futureOverlayLayouts?: unknown[] };
     };
-    expect(persisted.state?.pastOverlayLayouts).toEqual([initial]);
-    expect(persisted.state?.futureOverlayLayouts).toEqual([]);
+    expect(persisted.state?.pastOverlayLayouts).toBeUndefined();
+    expect(persisted.state?.futureOverlayLayouts).toBeUndefined();
 
     useStudioStore.getState().undoOverlayLayout();
     expect(useStudioStore.getState().overlayLayout).toEqual(initial);
@@ -110,7 +110,7 @@ describe("OverlayLayout store history", () => {
     expect(useStudioStore.getState().pastBannerProjects).toEqual([]);
   });
 
-  it("rehydrates_legacy_layout_without_history_fields", async () => {
+  it("keeps_legacy_localStorage_documents_out_of_the_native_project", async () => {
     const legacyLayout = cloneDefaultOverlayLayout();
     legacyLayout.alert.x = 47;
     localStorage.setItem(
@@ -122,7 +122,7 @@ describe("OverlayLayout store history", () => {
     const { useStudioStore: rehydratedStore } = await import("./useStudioStore");
     await rehydratedStore.persist.rehydrate();
 
-    expect(rehydratedStore.getState().overlayLayout).toEqual(legacyLayout);
+    expect(rehydratedStore.getState().overlayLayout).toEqual(cloneDefaultOverlayLayout());
     expect(rehydratedStore.getState().pastOverlayLayouts).toEqual([]);
     expect(rehydratedStore.getState().futureOverlayLayouts).toEqual([]);
   });

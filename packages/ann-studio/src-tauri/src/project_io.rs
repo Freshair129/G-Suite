@@ -1,0 +1,705 @@
+//! Portable editable projects. All media references inside archives are managed and relative.
+use serde::Serialize;
+use serde_json::Value;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
+
+pub const MAX_PROJECT: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_ASSET: u64 = 512 * 1024 * 1024;
+const MAX_DOCUMENT: u64 = 16 * 1024 * 1024;
+const MAX_ASSETS: usize = 4096;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectOpenResult {
+    pub snapshot: Value,
+    pub asset_paths: BTreeMap<String, String>,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSaveResult {
+    pub snapshot: Value,
+    pub asset_paths: BTreeMap<String, String>,
+    pub path: String,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryCandidate {
+    pub project_id: String,
+    pub path: String,
+    pub generation: u64,
+}
+
+fn err(error: impl std::fmt::Display) -> String {
+    error.to_string()
+}
+fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
+    value[key]
+        .as_str()
+        .ok_or_else(|| format!("Project missing {key}"))
+}
+fn project_id(snapshot: &Value) -> Result<&str, String> {
+    let id = text(&snapshot["project"], "projectId")?;
+    if !g_ann_package::valid_id(id, "") {
+        return Err("Invalid project identity".into());
+    }
+    Ok(id)
+}
+fn asset_name(name: &str) -> bool {
+    name.starts_with("assets/")
+        && name.len() <= 160
+        && name[7..]
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"_.-".contains(&c))
+        && !name.contains("..")
+        && name.len() > 7
+}
+fn validate(snapshot: &Value) -> Result<(), String> {
+    let project = &snapshot["project"];
+    project_id(snapshot)?;
+    if project["schemaVersion"] != 2
+        || !g_ann_package::valid_id(text(project, "announcerId")?, "ann_")
+        || project["currentRevision"].as_u64().is_none()
+        || snapshot["generation"].as_u64().is_none()
+    {
+        return Err("Invalid project schema/revision".into());
+    }
+    for key in ["name", "author", "locale"] {
+        text(project, key)?;
+    }
+    for key in [
+        "variants",
+        "eventMappings",
+        "inactiveStock",
+        "templates",
+        "buildHistory",
+    ] {
+        if !project[key].is_array() {
+            return Err(format!("Project missing {key}"));
+        }
+    }
+    if !project["editor"].is_object() {
+        return Err("Project missing editor document".into());
+    }
+    let assets = project["assets"]
+        .as_array()
+        .ok_or("Project missing assets")?;
+    if assets.len() > MAX_ASSETS {
+        return Err("Project asset count exceeds 4096".into());
+    }
+    let mut ids = BTreeSet::new();
+    for asset in assets {
+        let id = text(asset, "id")?;
+        if id.is_empty()
+            || id.len() > 128
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+            || !ids.insert(id)
+        {
+            return Err("Invalid or duplicate asset identity".into());
+        }
+        if !asset_name(text(asset, "relativePath")?) {
+            return Err(format!("Unsafe asset path {id}"));
+        }
+        let hash = text(asset, "sha256")?;
+        if !hash.is_empty()
+            && (hash.len() != 64
+                || !hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        {
+            return Err(format!("Invalid asset hash {id}"));
+        }
+        text(asset, "mediaType")?;
+        let name = text(&asset["sourceMetadata"], "originalName")?;
+        if name.contains(['/', '\\']) {
+            return Err(format!("Asset {id} retains an external source path"));
+        }
+    }
+    fn refs(value: &Value, ids: &BTreeSet<&str>) -> Result<(), String> {
+        match value {
+            Value::String(s) if s.starts_with("asset:") => {
+                if !ids.contains(&s[6..]) {
+                    return Err(format!("Missing asset reference {}", &s[6..]));
+                }
+            }
+            Value::Object(map) => {
+                for (key, value) in map {
+                    if matches!(
+                        key.as_str(),
+                        "source" | "filePath" | "file_path" | "source_path"
+                    ) {
+                        if let Some(path) = value.as_str() {
+                            if !path.is_empty() && !path.starts_with("asset:") {
+                                return Err(format!("External project media reference {key}"));
+                            }
+                        }
+                    }
+                    refs(value, ids)?;
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    refs(value, ids)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    refs(project, &ids)?;
+    if serde_json::to_vec(snapshot).map_err(err)?.len() as u64 > MAX_DOCUMENT {
+        return Err("Project document exceeds 16 MiB".into());
+    }
+    Ok(())
+}
+
+pub fn project_fingerprint(snapshot: &Value) -> Result<String, String> {
+    let mut project = snapshot.get("project").cloned().ok_or("Missing project")?;
+    project["currentRevision"] = Value::from(0);
+    project["buildHistory"] = Value::Array(vec![]);
+    project["installBindings"] = serde_json::json!({});
+    Ok(g_ann_package::sha256(
+        &serde_json::to_vec(&project).map_err(err)?,
+    ))
+}
+
+fn unique(path: &Path, label: &str) -> PathBuf {
+    static N: AtomicU64 = AtomicU64::new(0);
+    path.join(format!(
+        ".{label}-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+fn lock(root: &Path) -> Result<File, String> {
+    fs::create_dir_all(root).map_err(err)?;
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(root.join("project.lock"))
+        .map_err(err)?;
+    file.try_lock()
+        .map_err(|_| "Project is locked by another operation".to_string())?;
+    Ok(file)
+}
+fn copy_bounded(mut input: impl Read, output: &mut impl Write, limit: u64) -> Result<u64, String> {
+    let mut scratch = [0u8; 65536];
+    let mut total = 0;
+    loop {
+        let n = input.read(&mut scratch).map_err(err)?;
+        if n == 0 {
+            break;
+        }
+        total += n as u64;
+        if total > limit {
+            return Err("Project expanded/asset size limit".into());
+        }
+        output.write_all(&scratch[..n]).map_err(err)?;
+    }
+    Ok(total)
+}
+
+fn prepare_locked(
+    mut snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    root: &Path,
+) -> Result<ProjectOpenResult, String> {
+    let assets_root = root.join("assets");
+    fs::create_dir_all(&assets_root).map_err(err)?;
+    let mut paths = BTreeMap::new();
+    let mut total = 0u64;
+    let assets = snapshot["project"]["assets"]
+        .as_array_mut()
+        .ok_or("Missing assets")?;
+    for asset in assets {
+        let id = text(asset, "id")?.to_owned();
+        let source = asset_paths.get(&id).ok_or_else(|| {
+            format!("Missing asset {id}: select the original media/font to repair")
+        })?;
+        let temp = unique(&assets_root, "import");
+        let result = (|| {
+            let mut output = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temp)
+                .map_err(err)?;
+            let count = if source.starts_with("data:") {
+                use base64::engine::general_purpose::STANDARD;
+                let (header, data) = source
+                    .split_once(',')
+                    .ok_or_else(|| format!("Invalid embedded asset {id}"))?;
+                if !header.ends_with(";base64") || !header.starts_with("data:") {
+                    return Err(format!("Unsupported embedded asset {id}"));
+                }
+                copy_bounded(
+                    base64::read::DecoderReader::new(data.as_bytes(), &STANDARD),
+                    &mut output,
+                    MAX_ASSET,
+                )?
+            } else {
+                if source.contains("://") {
+                    return Err(format!("Remote asset {id} is not allowed"));
+                }
+                let file = File::open(source).map_err(|e| format!("Missing asset {id}: {e}"))?;
+                if file.metadata().map_err(err)?.len() > MAX_ASSET {
+                    return Err(format!("Asset {id} exceeds 512 MiB"));
+                }
+                copy_bounded(file, &mut output, MAX_ASSET)?
+            };
+            output.sync_all().map_err(err)?;
+            drop(output);
+            total = total.checked_add(count).ok_or("Project size overflow")?;
+            if total > MAX_PROJECT {
+                return Err("Project expanded size limit".into());
+            }
+            let hash = g_ann_package::file_digest(&temp)?;
+            let expected = text(asset, "sha256")?;
+            if !expected.is_empty() && expected != hash {
+                return Err(format!(
+                    "Asset {id} hash changed; import it again explicitly"
+                ));
+            }
+            let extension = Path::new(text(asset, "relativePath")?)
+                .extension()
+                .and_then(|x| x.to_str())
+                .unwrap_or("bin");
+            let relative = format!("assets/{hash}.{extension}");
+            let target = root.join(&relative);
+            if target.exists() {
+                if g_ann_package::file_digest(&target)? != hash {
+                    return Err(format!("Managed asset {id} is corrupt"));
+                }
+                fs::remove_file(&temp).map_err(err)?;
+            } else {
+                fs::rename(&temp, &target).map_err(err)?;
+            }
+            asset["relativePath"] = Value::from(relative);
+            asset["sha256"] = Value::from(hash);
+            paths.insert(id, target.to_string_lossy().into_owned());
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temp);
+        }
+        result?;
+    }
+    snapshot["fingerprint"] = Value::from(project_fingerprint(&snapshot)?);
+    if let Some(latest) = latest_snapshot(
+        project_id(&snapshot)?,
+        root.parent().ok_or("Project workspace root")?,
+    )? {
+        merge_build_metadata(&mut snapshot, &latest)?;
+    }
+    validate(&snapshot)?;
+    Ok(ProjectOpenResult {
+        snapshot,
+        asset_paths: paths,
+    })
+}
+
+pub fn prepare(
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    validate(&snapshot)?;
+    let root = workspace.join(project_id(&snapshot)?);
+    let _guard = lock(&root)?;
+    let prepared = prepare_locked(snapshot, asset_paths, &root)?;
+    persist_if_current(&prepared.snapshot, workspace, &root)?;
+    Ok(prepared)
+}
+
+fn archive_bytes(
+    path: &Path,
+    snapshot: &Value,
+    asset_paths: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or("Project destination requires a folder")?;
+    fs::create_dir_all(parent).map_err(err)?;
+    let temp = unique(parent, "ann-save");
+    let result = (|| {
+        let document = serde_json::to_vec(snapshot).map_err(err)?;
+        if document.len() as u64 > MAX_DOCUMENT {
+            return Err("Project document exceeds 16 MiB".into());
+        }
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)
+            .map_err(err)?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .compression_level(Some(6))
+            .last_modified_time(zip::DateTime::default())
+            .unix_permissions(0o644);
+        zip.start_file("project.json", options).map_err(err)?;
+        zip.write_all(&document).map_err(err)?;
+        let mut written = BTreeSet::new();
+        let mut total = document.len() as u64;
+        for asset in snapshot["project"]["assets"]
+            .as_array()
+            .ok_or("Missing assets")?
+        {
+            let name = text(asset, "relativePath")?;
+            if !written.insert(name) {
+                continue;
+            }
+            let id = text(asset, "id")?;
+            let source = asset_paths
+                .get(id)
+                .ok_or_else(|| format!("Missing managed asset {id}"))?;
+            if g_ann_package::file_digest(Path::new(source))? != text(asset, "sha256")? {
+                return Err(format!("Managed asset {id} changed before save"));
+            }
+            zip.start_file(name, options).map_err(err)?;
+            total = total
+                .checked_add(copy_bounded(
+                    File::open(source).map_err(err)?,
+                    &mut zip,
+                    MAX_ASSET,
+                )?)
+                .ok_or("Project size overflow")?;
+            if total > MAX_PROJECT {
+                return Err("Project expanded size limit".into());
+            }
+        }
+        let file = zip.finish().map_err(err)?;
+        if file.metadata().map_err(err)?.len() > MAX_PROJECT {
+            return Err("Project archive exceeds 2 GiB".into());
+        }
+        file.sync_all().map_err(err)?;
+        drop(file);
+        fs::rename(&temp, path).map_err(err)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
+    result
+}
+
+#[cfg(test)]
+pub fn persist_snapshot(snapshot: &Value, workspace: &Path) -> Result<(), String> {
+    validate(snapshot)?;
+    let root = workspace.join(project_id(snapshot)?);
+    let _guard = lock(&root)?;
+    persist_if_current(snapshot, workspace, &root)
+}
+
+fn merge_build_metadata(snapshot: &mut Value, latest: &Value) -> Result<(), String> {
+    let revision = snapshot["project"]["currentRevision"]
+        .as_u64()
+        .ok_or("Missing revision")?
+        .max(
+            latest["project"]["currentRevision"]
+                .as_u64()
+                .ok_or("Missing latest revision")?,
+        );
+    let history = snapshot["project"]["buildHistory"]
+        .as_array_mut()
+        .ok_or("Missing build history")?;
+    for entry in latest["project"]["buildHistory"]
+        .as_array()
+        .ok_or("Missing latest history")?
+    {
+        if let Some(existing) = history
+            .iter()
+            .find(|existing| existing["revision"] == entry["revision"])
+        {
+            if existing["digest"] != entry["digest"] {
+                return Err("Conflicting project build history revision".into());
+            }
+        } else {
+            history.push(entry.clone());
+        }
+    }
+    history.sort_by_key(|entry| entry["revision"].as_u64().unwrap_or(0));
+    snapshot["project"]["currentRevision"] = Value::from(revision);
+    Ok(())
+}
+
+fn persist_if_current(snapshot: &Value, workspace: &Path, root: &Path) -> Result<(), String> {
+    let mut document = snapshot.clone();
+    if let Some(latest) = latest_snapshot(project_id(snapshot)?, workspace)? {
+        if latest["generation"].as_u64() > snapshot["generation"].as_u64() {
+            return Ok(());
+        }
+        merge_build_metadata(&mut document, &latest)?;
+    }
+    persist_locked(&document, root)
+}
+
+fn persist_locked(snapshot: &Value, root: &Path) -> Result<(), String> {
+    let bytes = serde_json::to_vec(snapshot).map_err(err)?;
+    let temp = unique(root, "recovery");
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)
+            .map_err(err)?;
+        file.write_all(&bytes).map_err(err)?;
+        file.sync_all().map_err(err)?;
+        drop(file);
+        fs::rename(&temp, root.join("recovery.json")).map_err(err)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
+    result
+}
+
+pub fn commit_build_snapshot(
+    snapshot: &Value,
+    history_entry: Value,
+    workspace: &Path,
+) -> Result<bool, String> {
+    validate(snapshot)?;
+    let id = project_id(snapshot)?;
+    let root = workspace.join(id);
+    let _guard = lock(&root)?;
+    let latest = latest_snapshot(id, workspace)?;
+    let applies = latest.as_ref().is_none_or(|current| {
+        current["generation"] == snapshot["generation"]
+            && current["fingerprint"] == snapshot["fingerprint"]
+    });
+    let mut committed = if applies {
+        snapshot.clone()
+    } else {
+        latest.ok_or("Missing newer project snapshot")?
+    };
+    if applies {
+        if let Some(latest) = latest_snapshot(id, workspace)? {
+            merge_build_metadata(&mut committed, &latest)?;
+        }
+    }
+    let revision = history_entry["revision"]
+        .as_u64()
+        .ok_or("Build history missing revision")?;
+    let history = committed["project"]["buildHistory"]
+        .as_array_mut()
+        .ok_or("Missing build history")?;
+    if let Some(existing) = history
+        .iter()
+        .find(|entry| entry["revision"].as_u64() == Some(revision))
+    {
+        if existing["digest"] != history_entry["digest"] {
+            return Err("Build revision already committed with another digest".into());
+        }
+    } else {
+        history.push(history_entry);
+    }
+    if applies {
+        committed["project"]["currentRevision"] = Value::from(revision);
+    }
+    persist_locked(&committed, &root)?;
+    Ok(applies)
+}
+
+pub fn latest_snapshot(project_id: &str, workspace: &Path) -> Result<Option<Value>, String> {
+    if !g_ann_package::valid_id(project_id, "") {
+        return Err("Invalid project identity".into());
+    }
+    let path = workspace.join(project_id).join("recovery.json");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let file = File::open(path).map_err(err)?;
+    if file.metadata().map_err(err)?.len() > MAX_DOCUMENT {
+        return Err("Recovery document exceeds 16 MiB".into());
+    }
+    let mut bytes = Vec::new();
+    copy_bounded(file, &mut bytes, MAX_DOCUMENT)?;
+    let snapshot: Value = serde_json::from_slice(&bytes).map_err(err)?;
+    validate(&snapshot)?;
+    if self::project_id(&snapshot)? != project_id {
+        return Err("Recovery project identity mismatch".into());
+    }
+    Ok(Some(snapshot))
+}
+
+pub fn save(
+    path: &Path,
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    workspace: &Path,
+) -> Result<ProjectSaveResult, String> {
+    if path
+        .extension()
+        .and_then(|x| x.to_str())
+        .is_none_or(|x| !x.eq_ignore_ascii_case("ann"))
+    {
+        return Err("Choose an .ann project destination".into());
+    }
+    validate(&snapshot)?;
+    let root = workspace.join(project_id(&snapshot)?);
+    let _guard = lock(&root)?;
+    let prepared = prepare_locked(snapshot, asset_paths, &root)?;
+    // Recovery is committed first, so a failed destination write still retains this snapshot.
+    persist_if_current(&prepared.snapshot, workspace, &root)?;
+    archive_bytes(path, &prepared.snapshot, &prepared.asset_paths)?;
+    Ok(ProjectSaveResult {
+        snapshot: prepared.snapshot,
+        asset_paths: prepared.asset_paths,
+        path: path.to_string_lossy().into_owned(),
+    })
+}
+
+pub fn open(path: &Path, workspace: &Path) -> Result<ProjectOpenResult, String> {
+    let file = File::open(path).map_err(err)?;
+    if file.metadata().map_err(err)?.len() > MAX_PROJECT {
+        return Err("Project archive exceeds 2 GiB".into());
+    }
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|_| "Invalid .ann archive; use Import Old Project for .ann v1 JSON".to_string())?;
+    if archive.len() > MAX_ASSETS + 1 {
+        return Err("Project asset count limit".into());
+    }
+    let mut names = BTreeSet::new();
+    let mut total = 0u64;
+    let mut document = None;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(err)?;
+        let name = entry.name().to_owned();
+        if !names.insert(name.to_ascii_lowercase())
+            || entry.is_dir()
+            || entry.is_symlink()
+            || (name != "project.json" && !asset_name(&name))
+        {
+            return Err("Unsafe or duplicate project archive entry".into());
+        }
+        let limit = if name == "project.json" {
+            MAX_DOCUMENT
+        } else {
+            MAX_ASSET
+        };
+        if entry.size() > limit {
+            return Err("Project entry size limit".into());
+        }
+        total = total
+            .checked_add(entry.size())
+            .ok_or("Project size overflow")?;
+        if total > MAX_PROJECT {
+            return Err("Project expanded size limit".into());
+        }
+        if name == "project.json" {
+            let mut bytes = vec![];
+            copy_bounded(&mut entry, &mut bytes, MAX_DOCUMENT)?;
+            document = Some(serde_json::from_slice::<Value>(&bytes).map_err(err)?);
+        }
+    }
+    let snapshot = document.ok_or("Missing project.json")?;
+    validate(&snapshot)?;
+    if snapshot["fingerprint"].as_str() != Some(project_fingerprint(&snapshot)?.as_str()) {
+        return Err("Project fingerprint mismatch".into());
+    }
+    let root = workspace.join(project_id(&snapshot)?);
+    let _guard = lock(&root)?;
+    let asset_root = root.join("assets");
+    fs::create_dir_all(&asset_root).map_err(err)?;
+    let mut paths = BTreeMap::new();
+    let mut expected = BTreeSet::from(["project.json".to_owned()]);
+    for asset in snapshot["project"]["assets"]
+        .as_array()
+        .ok_or("Missing assets")?
+    {
+        let id = text(asset, "id")?;
+        let name = text(asset, "relativePath")?;
+        expected.insert(name.to_ascii_lowercase());
+        let hash = text(asset, "sha256")?;
+        if hash.len() != 64 || Path::new(name).file_stem().is_none_or(|stem| stem != hash) {
+            return Err(format!("Invalid content-addressed asset {id}"));
+        }
+        let mut entry = archive
+            .by_name(name)
+            .map_err(|_| format!("Missing asset {id}"))?;
+        let temp = unique(&asset_root, "open");
+        let result = (|| {
+            let mut output = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temp)
+                .map_err(err)?;
+            copy_bounded(&mut entry, &mut output, MAX_ASSET)?;
+            output.sync_all().map_err(err)?;
+            drop(output);
+            if g_ann_package::file_digest(&temp)? != hash {
+                return Err(format!(
+                    "Corrupt asset {id}: repair from the original source"
+                ));
+            }
+            let target = root.join(name);
+            if target.exists() {
+                if g_ann_package::file_digest(&target)? != hash {
+                    return Err(format!("Managed asset {id} is corrupt"));
+                }
+                fs::remove_file(&temp).map_err(err)?;
+            } else {
+                fs::rename(&temp, &target).map_err(err)?;
+            }
+            paths.insert(id.to_owned(), target.to_string_lossy().into_owned());
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(temp);
+        }
+        result?;
+    }
+    if expected != names {
+        return Err("Unindexed project archive payload".into());
+    }
+    Ok(ProjectOpenResult {
+        snapshot,
+        asset_paths: paths,
+    })
+}
+
+pub fn recover(project_id: &str, workspace: &Path) -> Result<Vec<RecoveryCandidate>, String> {
+    if !g_ann_package::valid_id(project_id, "") {
+        return Err("Invalid project identity".into());
+    }
+    let Some(snapshot) = latest_snapshot(project_id, workspace)? else {
+        return Ok(vec![]);
+    };
+    let root = workspace.join(project_id);
+    let paths = snapshot["project"]["assets"]
+        .as_array()
+        .ok_or("Missing assets")?
+        .iter()
+        .map(|asset| {
+            Ok((
+                text(asset, "id")?.to_owned(),
+                root.join(text(asset, "relativePath")?)
+                    .to_string_lossy()
+                    .into_owned(),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, String>>()?;
+    let path = root.join("recovery.ann");
+    archive_bytes(&path, &snapshot, &paths)?;
+    let recovered = open(&path, workspace)?;
+    Ok(vec![RecoveryCandidate {
+        project_id: project_id.into(),
+        path: path.to_string_lossy().into_owned(),
+        generation: recovered.snapshot["generation"]
+            .as_u64()
+            .ok_or("Missing generation")?,
+    }])
+}
+
+#[cfg(test)]
+#[path = "project_io_tests.rs"]
+mod tests;
