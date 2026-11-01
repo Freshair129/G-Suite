@@ -23,6 +23,8 @@ export default function App() {
   const [rightW, setRightW] = useState(340);
 
   const shellRef = useRef<HTMLDivElement>(null);
+  const assetsButtonRef = useRef<HTMLButtonElement>(null);
+  const agentButtonRef = useRef<HTMLButtonElement>(null);
   const resizeCleanup = useRef<(() => void) | null>(null);
   const [shellWidth, setShellWidth] = useState(0);
   const [drawer, setDrawer] = useState<"assets" | "agent" | null>(null);
@@ -41,10 +43,17 @@ export default function App() {
 
   useEffect(() => { setDrawer(null); resizeCleanup.current?.(); }, [mode, view]);
   useEffect(() => {
-    function close(e: KeyboardEvent) { if (e.key === "Escape") setDrawer(null); }
+    function close(e: KeyboardEvent) {
+      if (e.key !== "Escape" || !drawer) return;
+      const rail = document.getElementById(drawer === "agent" ? "agent-rail" : "asset-rail");
+      if (rail?.contains(document.activeElement)) {
+        (drawer === "agent" ? agentButtonRef : assetsButtonRef).current?.focus();
+      }
+      setDrawer(null);
+    }
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, []);
+  }, [drawer]);
 
   function resizeKey(e: React.KeyboardEvent, side: "left" | "right") {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
@@ -118,8 +127,8 @@ export default function App() {
         ) : (
           <div className="flex flex-col flex-1 min-w-0 min-h-0">
             <div className="shrink-0 flex gap-2 p-2 border-b border-line">
-              <button className="px-3 py-2 rounded bg-panel border border-line" aria-expanded={mode === "compact" ? drawer === "assets" : !leftCollapsed} aria-controls="asset-rail" onClick={() => mode === "compact" ? setDrawer(drawer === "assets" ? null : "assets") : setLeftCollapsed(!leftCollapsed)}>Assets</button>
-              <button className="px-3 py-2 rounded bg-panel border border-line" aria-expanded={mode === "wide" ? !rightCollapsed : drawer === "agent"} aria-controls="agent-rail" onClick={() => mode === "wide" ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "agent" ? null : "agent")}>Agent</button>
+              <button ref={assetsButtonRef} className="px-3 py-2 rounded bg-panel border border-line" aria-expanded={mode === "compact" ? drawer === "assets" : !leftCollapsed} aria-controls="asset-rail" onClick={() => mode === "compact" ? setDrawer(drawer === "assets" ? null : "assets") : setLeftCollapsed(!leftCollapsed)}>Assets</button>
+              <button ref={agentButtonRef} className="px-3 py-2 rounded bg-panel border border-line" aria-expanded={mode === "wide" ? !rightCollapsed : drawer === "agent"} aria-controls="agent-rail" onClick={() => mode === "wide" ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "agent" ? null : "agent")}>Agent</button>
             </div>
             <div className="relative flex flex-1 min-w-0 min-h-0 overflow-hidden">
             <div id="asset-rail" className={mode === "compact" ? `absolute z-10 top-0 bottom-0 left-0 flex shadow-xl ${drawer === "assets" ? "" : "hidden"}` : `shrink-0 flex overflow-hidden ${leftCollapsed ? "hidden" : ""}`} style={{ width: mode === "compact" ? 260 : widths.left }}><SoundLibrary /></div>
