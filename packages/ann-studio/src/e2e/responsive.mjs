@@ -118,6 +118,22 @@ try {
   assert.equal(await eventButtons.count(), 24, 'each event preview needs an accessible event name');
   assert.equal(await page.getByRole('button', {name: /^ทดสอบ event: Danger/}).count(), 1);
   assert.equal(await page.getByRole('button', {name: /^ทดสอบ event: Gank Warning/}).count(), 1);
+  await page.evaluate(() => { document.documentElement.style.zoom = '1.25'; });
+  const eventOverflow = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('button')].filter(el => /ติดตั้งลง G-Maiden|ติดตั้งจากคลัง/.test(el.textContent));
+    return buttons.map(button => {
+      const rect = button.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(button);
+      return {name: button.textContent, rect: {left:rect.left, right:rect.right, top:rect.top, bottom:rect.bottom}, text: [...range.getClientRects()].map(r=>({left:r.left,right:r.right,top:r.top,bottom:r.bottom})), viewport: {width:innerWidth,height:innerHeight}};
+    });
+  });
+  assert.equal(eventOverflow.length, 2, 'both event install actions must exist');
+  for (const item of eventOverflow) {
+    assert.ok(item.rect.left >= 0 && item.rect.right <= item.viewport.width, `event toolbar button outside viewport: ${JSON.stringify(item)}`);
+    assert.ok(item.text.every(r => r.left >= item.rect.left - 1 && r.right <= item.rect.right + 1 && r.top >= item.rect.top - 1 && r.bottom <= item.rect.bottom + 1), `event toolbar text outside button: ${JSON.stringify(item)}`);
+  }
+  await page.evaluate(() => { document.documentElement.style.zoom = ''; });
   await page.getByLabel('More actions').click();
   await page.getByRole('button', {name:'Studio', exact:true}).click();
   await page.evaluate(() => { document.documentElement.style.zoom = '1.5'; });
