@@ -114,6 +114,10 @@ try {
   });
   assert.ok(dialogBounds.top >= 0 && dialogBounds.bottom <= dialogBounds.viewport, `zoomed dialog outside viewport: ${JSON.stringify(dialogBounds)}`);
   const dialog = page.getByText('บันทึกเข้าคลัง — เจ้าของเสียง').locator('xpath=ancestor::div[contains(@class, "fixed")]');
+  for (const name of ['ชื่อเจ้าของเสียง (voice owner)', 'ชื่อเกม', 'ประเภทไฟล์', 'ความละเอียด']) {
+    assert.equal(await dialog.getByLabel(name, {exact: true}).count(), 1, `missing accessible label: ${name}`);
+  }
+  assert.equal(await dialog.getByRole('textbox', {name: 'ชื่อ ENG คลิป 1', exact: true}).count(), 1, 'clip filename needs an accessible name');
   const close = dialog.getByRole('button', {name: 'ปิด', exact: true});
   await close.focus();
   await page.keyboard.press('Shift+Tab');

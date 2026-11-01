@@ -145,10 +145,11 @@ export default function SaveToLibDialog({ onClose }: Props) {
         {/* Body */}
         <div className="min-h-0 overflow-y-auto p-5 space-y-4">
           <div>
-            <label className="block text-[11px] text-ink-faint mb-1.5">
+            <label htmlFor="save-library-owner" className="block text-[11px] text-ink-faint mb-1.5">
               ชื่อเจ้าของเสียง (voice owner)
             </label>
             <input
+              id="save-library-owner"
               ref={ownerRef}
               value={pkgName}
               onChange={(e) => setPkgName(e.target.value)}
@@ -159,10 +160,11 @@ export default function SaveToLibDialog({ onClose }: Props) {
           </div>
 
           <div>
-            <label className="block text-[11px] text-ink-faint mb-1.5">
+            <label htmlFor="save-library-game" className="block text-[11px] text-ink-faint mb-1.5">
               ชื่อเกม
             </label>
             <input
+              id="save-library-game"
               value={game}
               onChange={(e) => setGame(e.target.value)}
               className="w-full h-9 px-3 rounded-lg bg-base border border-line text-sm text-ink outline-none focus:border-lime/50 transition"
@@ -171,10 +173,11 @@ export default function SaveToLibDialog({ onClose }: Props) {
 
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-[11px] text-ink-faint mb-1.5">
+              <label htmlFor="save-library-file-type" className="block text-[11px] text-ink-faint mb-1.5">
                 ประเภทไฟล์
               </label>
               <select
+                id="save-library-file-type"
                 value={fileType}
                 onChange={(e) => setFileType(e.target.value)}
                 className="w-full h-9 px-3 rounded-lg bg-base border border-line text-sm text-ink outline-none focus:border-lime/50 transition"
@@ -185,10 +188,11 @@ export default function SaveToLibDialog({ onClose }: Props) {
               </select>
             </div>
             <div className="flex-1">
-              <label className="block text-[11px] text-ink-faint mb-1.5">
+              <label htmlFor="save-library-quality" className="block text-[11px] text-ink-faint mb-1.5">
                 ความละเอียด
               </label>
               <select
+                id="save-library-quality"
                 value={quality}
                 onChange={(e) => setQuality(e.target.value)}
                 className="w-full h-9 px-3 rounded-lg bg-base border border-line text-sm text-ink outline-none focus:border-lime/50 transition"
@@ -218,6 +222,7 @@ export default function SaveToLibDialog({ onClose }: Props) {
                   <span className="text-[10px] font-mono text-ink-faint w-5 shrink-0">{String(i + 1).padStart(2, "0")}</span>
                   <span className="text-[11px] text-ink-muted truncate flex-1 min-w-0" title={c.name}>{c.name}</span>
                   <input
+                    aria-label={`ชื่อ ENG คลิป ${i + 1}`}
                     value={nameEns[c.id] ?? ""}
                     onChange={(e) => setNameEns((m) => ({ ...m, [c.id]: e.target.value }))}
                     placeholder={c.event && c.event !== "unused" ? c.event : "eng_name"}
