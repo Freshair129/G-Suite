@@ -109,7 +109,13 @@ export default function Header() {
         <button onClick={async () => alert(await saveProject())} className="header-action"><Save size={15} /> บันทึก</button>
         <button onClick={() => setView("test")} aria-pressed={view === "test"} className="header-action"><Play size={15} /> ทดสอบ</button>
         <button onClick={handleExport} disabled={exporting || !wavPath || clips.length === 0} className="header-action bg-white text-black disabled:opacity-40"><Download size={15} /> {exporting ? "กำลังส่งออก…" : "ส่งออก"}</button>
-        <details className="relative">
+        <details className="relative" onKeyDown={(event) => {
+          if (event.key !== "Escape" || !event.currentTarget.open) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
+        }}>
           <summary className="header-action cursor-pointer" aria-label="More actions">เมนู</summary>
           <div onClick={(e) => { if ((e.target as HTMLElement).closest("button")) e.currentTarget.closest("details")?.removeAttribute("open"); }} className="absolute right-0 top-full mt-1 w-64 max-h-[70vh] overflow-y-auto rounded border border-line bg-panel shadow-xl p-2 flex flex-col gap-1">
             <button className="menu-action" onClick={() => setPackageOpen(true)}>เปิด .gann</button>

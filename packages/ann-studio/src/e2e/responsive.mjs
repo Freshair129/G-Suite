@@ -29,6 +29,13 @@ try {
     const clips = Array.from({length: 101}, (_, i) => ({ id: `fixture-${i}`, name: `เสียงประกาศภาษาไทยผสม English long filename ${'W'.repeat(65)} ${i}`, start: 0, end: 3, event: GMAIDEN_EVENTS[i % GMAIDEN_EVENTS.length].id, color: '' }));
     useStudioStore.setState({view: 'studio', sourcePath: 'C:/fixture/เสียงทดสอบ-long-filename.wav', wavPath: 'C:/fixture/เสียงทดสอบ-long-filename.wav', duration: 3, clips, selectedClipId: clips[0].id});
   });
+  const menu = page.getByLabel('More actions');
+  await menu.focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', {name:'Studio', exact:true}).focus();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('button', {name:'Studio', exact:true}).isVisible(), false, 'Escape should close the menu');
+  assert.equal(await menu.evaluate(el => el === document.activeElement), true, 'closing menu should restore focus');
   const clipName = page.getByPlaceholder('(ตั้งชื่อ clip)').first();
   await clipName.fill('แก้ไขแล้ว Mixed English ' + 'ย'.repeat(80));
   const expectedName = await clipName.inputValue();
@@ -65,11 +72,23 @@ try {
     assert.deepEqual(result, [], `${width}x${height}: ${result.join('; ')}`);
     assert.equal(await clipName.inputValue(), expectedName, 'clip edit lost on resize');
     for (const label of ['บันทึก','ทดสอบ','ส่งออก','Assets','Agent','Save to Library','Export','ติดตั้ง G-Maiden']) assert.ok(await page.getByRole('button',{name:label,exact:true}).filter({visible:true}).count(), `${width}: missing visible ${label}`);
+    if (width === 1440) {
+      for (const [label, key] of [['Resize assets', 'ArrowLeft'], ['Resize agent', 'ArrowRight']]) {
+        const separator = page.getByRole('separator', {name: label});
+        const before = Number(await separator.getAttribute('aria-valuenow'));
+        await separator.focus();
+        await page.keyboard.press(key);
+        const after = Number(await separator.getAttribute('aria-valuenow'));
+        assert.ok(after < before, `${label} must resize using the keyboard`);
+      }
+    }
     if (width < 1380) {
       await page.getByRole('button', {name:'Agent', exact:true}).click();
       assert.ok(await page.getByPlaceholder('พิมพ์คำสั่ง AI…').isVisible(), 'Agent drawer unavailable');
+      await page.getByPlaceholder('พิมพ์คำสั่ง AI…').focus();
       await page.keyboard.press('Escape');
       assert.equal(await page.getByPlaceholder('พิมพ์คำสั่ง AI…').isVisible(), false);
+      assert.equal(await page.getByRole('button', {name:'Agent', exact:true}).evaluate(el => el === document.activeElement), true, 'closing Agent drawer should restore focus to its control');
     }
     console.log(`PASS ${width}x${height} browser DPR ${scale}`);
   }
