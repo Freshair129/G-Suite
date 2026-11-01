@@ -307,6 +307,7 @@ export default function EventTestGrid() {
                 <button
                   onClick={() => fire(ev.id)}
                   className="group relative block w-full"
+                  aria-label={`ทดสอบ event: ${ev.label} (${total} เสียง)`}
                   title={ev.trigger}
                 >
                   <BannerView event={ev.id} width={280} override={ov} caption={captionOf(ev.id)} />

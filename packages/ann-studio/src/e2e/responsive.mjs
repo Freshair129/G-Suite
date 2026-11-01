@@ -113,6 +113,13 @@ try {
     console.log(`PASS ${width}x${height} browser DPR ${scale}`);
   }
   await page.setViewportSize({width: 960, height: 600});
+  await page.getByRole('button', {name:'ทดสอบ', exact:true}).click();
+  const eventButtons = page.getByRole('button', {name: /^ทดสอบ event: /});
+  assert.equal(await eventButtons.count(), 24, 'each event preview needs an accessible event name');
+  assert.equal(await page.getByRole('button', {name: /^ทดสอบ event: Danger/}).count(), 1);
+  assert.equal(await page.getByRole('button', {name: /^ทดสอบ event: Gank Warning/}).count(), 1);
+  await page.getByLabel('More actions').click();
+  await page.getByRole('button', {name:'Studio', exact:true}).click();
   await page.evaluate(() => { document.documentElement.style.zoom = '1.5'; });
   await page.getByRole('button', {name:'Save to Library', exact:true}).click();
   const dialogBounds = await page.getByText('บันทึกเข้าคลัง — เจ้าของเสียง').evaluate(el => {
