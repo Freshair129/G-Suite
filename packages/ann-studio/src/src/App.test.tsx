@@ -34,3 +34,25 @@ it("keeps editor and rail state as measured width changes and drawers open", () 
   act(() => resize([{ contentRect: { width: 1440 } }]));
   expect((screen.getByLabelText("Editor state") as HTMLInputElement).value).toBe("unsaved");
 });
+
+it("returns focus to Agent when a resize closes its focused drawer", () => {
+  useStudioStore.setState({ view: "studio" });
+  render(<App />);
+  act(() => resize([{ contentRect: { width: 1200 } }]));
+  fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+  screen.getByLabelText("Agent state").focus();
+  act(() => resize([{ contentRect: { width: 960 } }]));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Agent" }));
+});
+
+it.each([
+  { from: 1440, to: 1200, rail: "Agent state", button: "Agent" },
+  { from: 1200, to: 960, rail: "Library state", button: "Assets" },
+])("returns focus when a docked rail becomes a hidden drawer", ({from, to, rail, button}) => {
+  useStudioStore.setState({ view: "studio" });
+  render(<App />);
+  act(() => resize([{ contentRect: { width: from } }]));
+  screen.getByLabelText(rail).focus();
+  act(() => resize([{ contentRect: { width: to } }]));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: button }));
+});

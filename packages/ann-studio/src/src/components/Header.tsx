@@ -117,7 +117,12 @@ export default function Header() {
           event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
         }}>
           <summary className="header-action cursor-pointer" aria-label="More actions">เมนู</summary>
-          <div onClick={(e) => { if ((e.target as HTMLElement).closest("button")) e.currentTarget.closest("details")?.removeAttribute("open"); }} className="absolute right-0 top-full mt-1 w-64 max-h-[70vh] overflow-y-auto rounded border border-line bg-panel shadow-xl p-2 flex flex-col gap-1">
+          <div onClick={(e) => {
+            if (!(e.target as HTMLElement).closest("button")) return;
+            const details = e.currentTarget.closest("details");
+            details?.querySelector<HTMLElement>("summary")?.focus();
+            details?.removeAttribute("open");
+          }} className="absolute right-0 top-full mt-1 w-64 max-h-[70vh] overflow-y-auto rounded border border-line bg-panel shadow-xl p-2 flex flex-col gap-1">
             <button className="menu-action" onClick={() => setPackageOpen(true)}>เปิด .gann</button>
             <button className="menu-action" onClick={async () => alert(await openProject())}>เปิดโปรเจกต์</button>
             <button className="menu-action" onClick={handleImport} disabled={importing}>{importing ? "กำลังโหลด…" : "นำเข้าไฟล์"}</button>
