@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { GlassButton, GlassPanel, GlassPill } from "./GlassComponents";
 import GlassWorkbenchPreview from "./GlassWorkbenchPreview";
+
+// Vitest has globals disabled in this workspace; prevent React DOM leakage into other test files.
+afterEach(cleanup);
 
 describe("Obsidian Glass opt-in components", () => {
   it("keeps an accessible label when the button is icon-only", () => {
