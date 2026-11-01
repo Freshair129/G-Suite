@@ -2,7 +2,7 @@
 
 Snapshot: 2026-11-02. PR [#18](https://github.com/Freshair129/G-Suite/pull/18), issue [#13](https://github.com/Freshair129/G-Suite/issues/13), implementation head `f0e4951` (this note may be committed later). Base: `design/annstudio-glass-responsive-v1`.
 
-PR-A is still a draft. The user has explicitly said not to merge. The idea of a limited internal MVP was discussed, but the user has not waived the acceptance criteria or authorized a merge. The [change request](../change-requests/CR-ANN-UI-001.md), [design system](../design-system/GLASS-RESPONSIVE-UI-v1.md), and [handoff](CODEX-HANDOFF-ANN-UI-001.md) remain the binding requirements. PR-B through PR-D / issues #14–#16 follow the dependency order in epic #17 after PR-A's gate.
+The user requested preparation for a limited internal MVP with the outstanding work documented, and explicitly said not to merge. This scoped MVP review does not establish full responsive acceptance or waive the existing requirements. The [change request](../change-requests/CR-ANN-UI-001.md), [design system](../design-system/GLASS-RESPONSIVE-UI-v1.md), and [handoff](CODEX-HANDOFF-ANN-UI-001.md) remain the binding requirements for full acceptance. PR-B through PR-D / issues #14–#16 follow the dependency order in epic #17 after PR-A's gate.
 
 The PR description is the detailed chronological evidence ledger. Read its latest entries as well as this summary; older entries can describe gaps that later work partially addressed. Recheck the PR head, review and checks before making any current claim.
 
@@ -25,7 +25,7 @@ Check these against the current candidate and record exact head, environment, st
 - [ ] **Workflows:** exercise audio editing and audible playback, resize during audition, banner view, save/reopen, build/export, AI chat and resize during chat. Verify no loss of selection or unsaved state. The prior Agent check preserved an unsent draft across resizing; it did not send a live AI message.
 - [ ] **Install and review:** extend the bounded isolated install evidence as needed to the intended MVP workflow, including audible playback and real-match activation if claimed. Obtain an appropriate GitHub review and confirm current required checks. Do not merge without renewed user authorization and either completing or explicitly agreeing to a change in the existing acceptance gate.
 
-If the user later chooses an internal-only MVP with deferred checks, document the exact supported audience, environments and accepted risks in the PR before changing its status. A proposed deferral is not itself approval or completed acceptance.
+The intended MVP audience is internal testers who can report issues and recover their own test data. Use the measured Windows 100%-scale desktop configurations as the initial test context. Actual audio output, packaged installer operation, high-DPI usability, screen-reader operation and live AI workflows remain unverified; testers should not depend on those paths without separate confirmation. This scope is for review and internal evaluation, not evidence of public-release readiness or full acceptance.
 
 ## Safe continuation
 
