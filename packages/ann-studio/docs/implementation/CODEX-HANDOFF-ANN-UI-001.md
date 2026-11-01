@@ -3,6 +3,7 @@
 ## Entry point
 Repo: `Freshair129/G-Suite`
 Scope: `packages/ann-studio` only.
+For the current PR-A acceptance state and unfinished work, see [PR-A responsive open work](PR-A-RESPONSIVE-OPEN-WORK.md) and the latest entries on PR #18.
 Read in order:
 1. `packages/ann-studio/docs/change-requests/CR-ANN-UI-001.md`
 2. `packages/ann-studio/docs/design-system/GLASS-RESPONSIVE-UI-v1.md`
