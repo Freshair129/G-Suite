@@ -45,9 +45,14 @@ try {
   await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Assets');
   await page.setViewportSize({width:1200,height:720});
   await page.getByRole('button', {name:'Agent', exact:true}).click();
-  await page.getByPlaceholder('พิมพ์คำสั่ง AI…').focus();
+  const agentInput = page.getByPlaceholder('พิมพ์คำสั่ง AI…');
+  await agentInput.fill('ช่วย test draft');
+  await agentInput.focus();
   await page.setViewportSize({width:960,height:600});
   await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Agent');
+  await page.getByRole('button', {name:'Agent', exact:true}).click();
+  assert.equal(await agentInput.inputValue(), 'ช่วย test draft', 'Agent draft lost on layout transition');
+  await page.getByRole('button', {name:'Agent', exact:true}).click();
   const clipName = page.getByPlaceholder('(ตั้งชื่อ clip)').first();
   await clipName.fill('แก้ไขแล้ว Mixed English ' + 'ย'.repeat(80));
   const expectedName = await clipName.inputValue();
@@ -97,6 +102,9 @@ try {
     if (width < 1380) {
       await page.getByRole('button', {name:'Agent', exact:true}).click();
       assert.ok(await page.getByPlaceholder('พิมพ์คำสั่ง AI…').isVisible(), 'Agent drawer unavailable');
+      const modelBounds = await page.locator('#agent-rail').getByRole('button', {name: /^Local ·/}).boundingBox();
+      const agentBounds = await page.locator('#agent-rail').boundingBox();
+      assert.ok(modelBounds && agentBounds && modelBounds.y + modelBounds.height <= agentBounds.y + agentBounds.height + 1, `Agent model picker is clipped: ${JSON.stringify({modelBounds, agentBounds})}`);
       await page.getByPlaceholder('พิมพ์คำสั่ง AI…').focus();
       await page.keyboard.press('Escape');
       assert.equal(await page.getByPlaceholder('พิมพ์คำสั่ง AI…').isVisible(), false);
