@@ -1,0 +1,96 @@
+import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const packageDir = fileURLToPath(new URL('..', import.meta.url));
+const vite = fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url));
+const server = spawn(process.execPath, [vite, '--host', '127.0.0.1', '--port', '5175', '--strictPort'], { cwd: packageDir, stdio: 'inherit' });
+async function waitForServer() {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (server.exitCode !== null) throw new Error(`Vite exited ${server.exitCode}`);
+    try { if ((await fetch('http://127.0.0.1:5175/')).ok) return; } catch {}
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error('Vite did not start');
+}
+await waitForServer().catch(error => { server.kill(); throw error; });
+
+let browser;
+try {
+ browser = await chromium.launch({headless: true, executablePath: process.env.CHROMIUM_PATH || undefined});
+ for (const scale of [1, 1.25, 1.5]) {
+  const context = await browser.newContext({viewport: {width: 960, height: 600}, deviceScaleFactor: scale});
+  const page = await context.newPage();
+  await page.goto('http://127.0.0.1:5175/', {waitUntil: 'networkidle'});
+  await page.evaluate(async () => {
+    const {useStudioStore} = await import('/src/store/useStudioStore.ts');
+    const {GMAIDEN_EVENTS} = await import('/src/data/gmaiden-events.ts');
+    const clips = Array.from({length: 101}, (_, i) => ({ id: `fixture-${i}`, name: `เสียงประกาศภาษาไทยผสม English long filename ${'W'.repeat(65)} ${i}`, start: 0, end: 3, event: GMAIDEN_EVENTS[i % GMAIDEN_EVENTS.length].id, color: '' }));
+    useStudioStore.setState({view: 'studio', sourcePath: 'C:/fixture/เสียงทดสอบ-long-filename.wav', wavPath: 'C:/fixture/เสียงทดสอบ-long-filename.wav', duration: 3, clips, selectedClipId: clips[0].id});
+  });
+  const clipName = page.getByPlaceholder('(ตั้งชื่อ clip)').first();
+  await clipName.fill('แก้ไขแล้ว Mixed English ' + 'ย'.repeat(80));
+  const expectedName = await clipName.inputValue();
+  for (const [width, height] of [[960,600],[1024,768],[1280,720],[1440,900],[1920,1080]]) {
+    await page.setViewportSize({width,height});
+    await page.waitForTimeout(250);
+    const result = await page.evaluate(() => {
+      const failures = [];
+      if (document.documentElement.scrollWidth > document.documentElement.clientWidth) failures.push('document overflows');
+      const card = document.querySelector('input[placeholder="(ตั้งชื่อ clip)"]')?.closest('.rounded-xl');
+      if (!card) failures.push('populated clip card missing');
+      else {
+        if (card.scrollWidth > card.clientWidth + 1) failures.push(`clip card overflow ${card.scrollWidth}/${card.clientWidth}`);
+        const bounds = card.getBoundingClientRect();
+        const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (!node.textContent.trim()) continue;
+          const range = document.createRange(); range.selectNodeContents(node);
+          for (const rect of range.getClientRects()) if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1) failures.push(`clip text escapes card: ${node.textContent.trim()}`);
+        }
+      }
+      for (const b of document.querySelectorAll('button')) {
+        const r=b.getBoundingClientRect(), style=getComputedStyle(b);
+        if (!r.width || !r.height || style.visibility==='hidden') continue;
+        for (const n of b.childNodes) {
+          if (n.nodeType!==Node.TEXT_NODE || !n.textContent.trim()) continue;
+          const range=document.createRange(); range.selectNodeContents(n);
+          for (const t of range.getClientRects()) if(t.left < r.left-1 || t.right > r.right+1 || t.top < r.top-1 || t.bottom > r.bottom+1) failures.push(`${b.textContent.trim()} exceeds button`);
+        }
+      }
+      return failures;
+    });
+    assert.deepEqual(result, [], `${width}x${height}: ${result.join('; ')}`);
+    assert.equal(await clipName.inputValue(), expectedName, 'clip edit lost on resize');
+    for (const label of ['บันทึก','ทดสอบ','ส่งออก','Assets','Agent','Save to Library','Export','ติดตั้ง G-Maiden']) assert.ok(await page.getByRole('button',{name:label,exact:true}).filter({visible:true}).count(), `${width}: missing visible ${label}`);
+    if (width < 1380) {
+      await page.getByRole('button', {name:'Agent', exact:true}).click();
+      assert.ok(await page.getByPlaceholder('พิมพ์คำสั่ง AI…').isVisible(), 'Agent drawer unavailable');
+      await page.keyboard.press('Escape');
+      assert.equal(await page.getByPlaceholder('พิมพ์คำสั่ง AI…').isVisible(), false);
+    }
+    console.log(`PASS ${width}x${height} browser DPR ${scale}`);
+  }
+  await page.setViewportSize({width: 960, height: 600});
+  await page.evaluate(() => { document.documentElement.style.zoom = '1.5'; });
+  await page.getByRole('button', {name:'Save to Library', exact:true}).click();
+  const dialogBounds = await page.getByText('บันทึกเข้าคลัง — เจ้าของเสียง').evaluate(el => {
+    const panel = el.closest('.fixed').firstElementChild;
+    const rect = panel.getBoundingClientRect();
+    return {top: rect.top, bottom: rect.bottom, viewport: window.innerHeight};
+  });
+  assert.ok(dialogBounds.top >= 0 && dialogBounds.bottom <= dialogBounds.viewport, `zoomed dialog outside viewport: ${JSON.stringify(dialogBounds)}`);
+  const dialog = page.getByText('บันทึกเข้าคลัง — เจ้าของเสียง').locator('xpath=ancestor::div[contains(@class, "fixed")]');
+  const save = dialog.getByRole('button', {name: 'Save', exact: true});
+  const saveBox = await save.boundingBox();
+  assert.ok(saveBox && saveBox.y >= 0 && saveBox.y + saveBox.height <= 600, 'dialog save button is unreachable');
+  const lastName = dialog.locator('input').last();
+  await lastName.scrollIntoViewIfNeeded();
+  assert.ok(await lastName.isVisible(), 'last clip name is unreachable');
+  await dialog.getByRole('button', {name: 'ปิด', exact: true}).click();
+  console.log(`PASS zoomed populated dialog at browser DPR ${scale}`);
+  await context.close();
+ }
+} finally { if (browser) await browser.close(); server.kill(); }
