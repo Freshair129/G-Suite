@@ -11,7 +11,8 @@ import OverlayLab from "./components/OverlayLab";
 import { useStudioStore } from "./store/useStudioStore";
 import { initializeProject } from "./lib/project";
 import { restoreGidSession } from "./lib/gidAuth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { layoutMode, railWidths } from "./responsiveLayout";
 
 export default function App() {
   const view = useStudioStore((s) => s.view);
@@ -21,20 +22,60 @@ export default function App() {
   const [leftW, setLeftW] = useState(220);
   const [rightW, setRightW] = useState(340);
 
-  function startLeftResize(e: React.PointerEvent) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const resizeCleanup = useRef<(() => void) | null>(null);
+  const [shellWidth, setShellWidth] = useState(0);
+  const [drawer, setDrawer] = useState<"assets" | "agent" | null>(null);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const mode = layoutMode(shellWidth);
+  const widths = railWidths(shellWidth, leftW, rightW);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const observer = new ResizeObserver(([entry]) => setShellWidth(entry.contentRect.width));
+    observer.observe(shell);
+    return () => { observer.disconnect(); resizeCleanup.current?.(); };
+  }, []);
+
+  useEffect(() => { setDrawer(null); resizeCleanup.current?.(); }, [mode, view]);
+  useEffect(() => {
+    function close(e: KeyboardEvent) { if (e.key === "Escape") setDrawer(null); }
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
+
+  function resizeKey(e: React.KeyboardEvent, side: "left" | "right") {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
-    const startX = e.clientX; const startW = leftW;
-    function move(ev: PointerEvent) { setLeftW(Math.max(160, Math.min(420, startW + (ev.clientX - startX)))); }
-    function up() { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    const delta = (e.key === "ArrowRight" ? 10 : -10) * (side === "left" ? 1 : -1);
+    if (side === "left") setLeftW(Math.max(200, Math.min(420, widths.left + delta)));
+    else setRightW(Math.max(260, Math.min(560, widths.right + delta)));
   }
 
-  function startRightResize(e: React.PointerEvent) {
+  function startResize(e: React.PointerEvent, side: "left" | "right") {
     e.preventDefault();
-    const startX = e.clientX; const startW = rightW;
-    function move(ev: PointerEvent) { setRightW(Math.max(260, Math.min(560, startW + (startX - ev.clientX)))); }
-    function up() { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); }
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    resizeCleanup.current?.();
+    const startX = e.clientX;
+    const startW = side === "left" ? widths.left : widths.right;
+    function move(ev: PointerEvent) {
+      const proposed = startW + (side === "left" ? ev.clientX - startX : startX - ev.clientX);
+      if (side === "left") setLeftW(Math.max(200, Math.min(420, proposed)));
+      else setRightW(Math.max(260, Math.min(560, proposed)));
+    }
+    function cleanup() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", cleanup);
+      window.removeEventListener("pointercancel", cleanup);
+      window.removeEventListener("blur", cleanup);
+      resizeCleanup.current = null;
+    }
+    resizeCleanup.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", cleanup);
+    window.addEventListener("pointercancel", cleanup);
+    window.addEventListener("blur", cleanup);
   }
 
   useEffect(() => {
@@ -60,7 +101,7 @@ export default function App() {
     <div className="h-screen flex flex-col bg-base text-ink overflow-hidden">
       <Header />
       {projectMessage&&<p role="status" className="px-4 py-2 text-sm">{projectMessage}<button className="ml-3" onClick={()=>setProjectMessage(null)}>ปิด</button></p>}
-      <div className="flex flex-1 min-h-0">
+      <div ref={shellRef} className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
         {view === "creator" ? (
           <PackWorkflow />
         ) : view === "settings" ? (
@@ -71,22 +112,23 @@ export default function App() {
           <EventTestGrid />
         ) : view === "profile" ? (
           <>
-            <SoundLibrary />
+            <div className="w-[220px] shrink-0 flex min-h-0 overflow-hidden"><SoundLibrary /></div>
             <GameProfile />
           </>
         ) : (
-          /* studio = library (left) + source/clips editor (main) + agent chat (right) */
-          <>
-            <div className="shrink-0 flex overflow-hidden" style={{ width: leftW }}><SoundLibrary /></div>
-            <div onPointerDown={startLeftResize} className="w-2 shrink-0 cursor-col-resize bg-line/40 hover:bg-lime/50 transition flex items-center justify-center group" title="ลากปรับความกว้าง">
-              <div className="h-10 w-0.5 rounded-full bg-white/20 group-hover:bg-white/50" />
+          <div className="flex flex-col flex-1 min-w-0 min-h-0">
+            <div className="shrink-0 flex gap-2 p-2 border-b border-line">
+              <button className="px-3 py-2 rounded bg-panel border border-line" aria-expanded={mode === "compact" ? drawer === "assets" : !leftCollapsed} aria-controls="asset-rail" onClick={() => mode === "compact" ? setDrawer(drawer === "assets" ? null : "assets") : setLeftCollapsed(!leftCollapsed)}>Assets</button>
+              <button className="px-3 py-2 rounded bg-panel border border-line" aria-expanded={mode === "wide" ? !rightCollapsed : drawer === "agent"} aria-controls="agent-rail" onClick={() => mode === "wide" ? setRightCollapsed(!rightCollapsed) : setDrawer(drawer === "agent" ? null : "agent")}>Agent</button>
             </div>
-            <SourceView />
-            <div onPointerDown={startRightResize} className="w-2 shrink-0 cursor-col-resize bg-line/40 hover:bg-lime/50 transition flex items-center justify-center group" title="ลากปรับความกว้าง">
-              <div className="h-10 w-0.5 rounded-full bg-white/20 group-hover:bg-white/50" />
+            <div className="relative flex flex-1 min-w-0 min-h-0 overflow-hidden">
+            <div id="asset-rail" className={mode === "compact" ? `absolute z-10 top-0 bottom-0 left-0 flex shadow-xl ${drawer === "assets" ? "" : "hidden"}` : `shrink-0 flex overflow-hidden ${leftCollapsed ? "hidden" : ""}`} style={{ width: mode === "compact" ? 260 : widths.left }}><SoundLibrary /></div>
+            {mode !== "compact" && !leftCollapsed && <div role="separator" tabIndex={0} aria-label="Resize assets" aria-orientation="vertical" aria-valuemin={200} aria-valuemax={mode === "medium" ? 260 : 420} aria-valuenow={widths.left} onKeyDown={(e) => resizeKey(e, "left")} onPointerDown={(e) => startResize(e, "left")} className="w-2 shrink-0 cursor-col-resize bg-line/40 hover:bg-lime/50" title="ลากปรับความกว้าง" />}
+            <div className="flex flex-1 min-w-0 min-h-0"><SourceView /></div>
+            {mode === "wide" && !rightCollapsed && <div role="separator" tabIndex={0} aria-label="Resize agent" aria-orientation="vertical" aria-valuemin={260} aria-valuemax={Math.min(560, shellWidth - widths.left - 576)} aria-valuenow={widths.right} onKeyDown={(e) => resizeKey(e, "right")} onPointerDown={(e) => startResize(e, "right")} className="w-2 shrink-0 cursor-col-resize bg-line/40 hover:bg-lime/50" title="ลากปรับความกว้าง" />}
+            <div id="agent-rail" className={mode !== "wide" ? `absolute z-10 top-0 bottom-0 right-0 flex shadow-xl ${drawer === "agent" ? "" : "hidden"}` : `shrink-0 flex overflow-hidden ${rightCollapsed ? "hidden" : ""}`} style={{ width: mode === "wide" ? widths.right : 340 }}><RightRail /></div>
             </div>
-            <div className="shrink-0 flex overflow-hidden" style={{ width: rightW }}><RightRail /></div>
-          </>
+          </div>
         )}
       </div>
       <StatusBar />

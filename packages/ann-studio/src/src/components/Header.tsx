@@ -3,12 +3,12 @@ import GannPackage from "./GannPackage";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState, useEffect } from "react";
-import { Upload, Download, Sparkles, Gamepad2, AudioWaveform, Settings, Play, Save, FolderOpen, UserCircle2, PanelsTopLeft } from "lucide-react";
+import { Download, Play, Save } from "lucide-react";
 import { useStudioStore } from "../store/useStudioStore";
 import { runExport } from "../lib/actions";
 import { saveProject, openProject } from "../lib/project";
 import { signInWithGoogle, signOutGid } from "../lib/gidAuth";
-import type { AppView } from "../store/useStudioStore";
+
 
 function shortModel(m: string): string {
   return (m.split("/").pop() || m).split(":")[0].replace(/-gguf$/i, "");
@@ -103,157 +103,30 @@ export default function Header() {
 
   return (
     <>
-    {packageOpen && <GannPackage initialPath={packagePath} onClose={()=>setPackageOpen(false)} />}
-    <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-line bg-base">
-      <div className="flex items-center gap-3">
-        <button className="px-3 py-2 rounded border border-line" onClick={()=>setPackageOpen(true)}>เปิด .gann</button>
-        <div className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-tr from-lime to-grass text-black font-extrabold text-lg">
-          G
-        </div>
-        <div className="leading-tight">
-          <h1 className="text-lg font-bold tracking-tight">G-AnnStudio</h1>
-          <p className="text-[11px] text-ink-faint -mt-0.5">Announcer Pack Editor</p>
-        </div>
-      </div>
-
-      <div className="hidden md:flex items-center gap-1">
-        {/* View toggle pills */}
-        <div className="flex bg-panel p-0.5 rounded-full border border-line">
-          <button onClick={() => setView("creator")} className="px-3 py-2 rounded-lg border border-line text-lime">สร้างแพ็ก</button>
-          <button
-            onClick={() => setView("studio")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
-              view === "studio"
-                ? "bg-white/10 text-white"
-                : "text-ink-faint hover:text-ink"
-            }`}
-          >
-            <AudioWaveform size={13} />
-            Studio
-          </button>
-          <button
-            onClick={() => setView("profile")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
-              view === "profile"
-                ? "bg-white/10 text-white"
-                : "text-ink-faint hover:text-ink"
-            }`}
-          >
-            <Gamepad2 size={13} />
-            Profile
-          </button>
-          <button
-            onClick={() => setView("test")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
-              view === "test"
-                ? "bg-white/10 text-white"
-                : "text-ink-faint hover:text-ink"
-            }`}
-          >
-            <Play size={13} />
-            ทดสอบ
-          </button>
-          <button
-            onClick={() => setView("overlay")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
-              view === "overlay"
-                ? "bg-white/10 text-white"
-                : "text-ink-faint hover:text-ink"
-            }`}
-          >
-            <PanelsTopLeft size={13} />
-            Overlay Lab
-          </button>
-          <button
-            onClick={() => setView("settings")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition ${
-              view === "settings"
-                ? "bg-white/10 text-white"
-                : "text-ink-faint hover:text-ink"
-            }`}
-          >
-            <Settings size={13} />
-          </button>
-        </div>
-
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="hidden sm:flex items-center gap-1.5 pl-3 pr-1 py-1 bg-panel rounded-full border border-line text-xs">
-          <Sparkles size={14} className="text-lime shrink-0" />
-          <select
-            value={providerValue}
-            onChange={(e) => onProviderChange(e.target.value)}
-            className="bg-transparent text-ink-muted text-xs outline-none cursor-pointer pr-1 max-w-[160px]"
-            title="เลือก AI provider สำหรับ chat"
-          >
-            <option value="claude">Claude · plan</option>
-            {ollamaModels.map((m) => (
-              <option key={m} value={`ollama:${m}`}>
-                Local · {shortModel(m)}
-              </option>
-            ))}
-            {ollamaModels.length === 0 && <option value="ollama:">Local · (no model)</option>}
-          </select>
-        </div>
-
-        {gidSignedIn ? (
-          <div className="hidden sm:flex items-center gap-1.5 pl-3 pr-1 py-1 bg-panel rounded-full border border-line text-xs">
-            <UserCircle2 size={14} className="text-lime shrink-0" />
-            <span className="text-ink-muted">GID {gid}</span>
-            <button
-              onClick={() => void signOutGid()}
-              className="px-2 py-0.5 rounded-full text-ink-faint hover:text-ink hover:bg-panel-hover transition"
-            >
-              ออกจากระบบ
-            </button>
+      {packageOpen && <GannPackage initialPath={packagePath} onClose={() => setPackageOpen(false)} />}
+      <header className="relative z-30 min-h-16 shrink-0 flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line bg-base">
+        <div className="min-w-0 flex-1 font-bold truncate" title="G-AnnStudio — Announcer Pack Editor">G-AnnStudio</div>
+        <button onClick={async () => alert(await saveProject())} className="header-action"><Save size={15} /> บันทึก</button>
+        <button onClick={() => setView("test")} aria-pressed={view === "test"} className="header-action"><Play size={15} /> ทดสอบ</button>
+        <button onClick={handleExport} disabled={exporting || !wavPath || clips.length === 0} className="header-action bg-white text-black disabled:opacity-40"><Download size={15} /> {exporting ? "กำลังส่งออก…" : "ส่งออก"}</button>
+        <details className="relative">
+          <summary className="header-action cursor-pointer" aria-label="More actions">เมนู</summary>
+          <div onClick={(e) => { if ((e.target as HTMLElement).closest("button")) e.currentTarget.closest("details")?.removeAttribute("open"); }} className="absolute right-0 top-full mt-1 w-64 max-h-[70vh] overflow-y-auto rounded border border-line bg-panel shadow-xl p-2 flex flex-col gap-1">
+            <button className="menu-action" onClick={() => setPackageOpen(true)}>เปิด .gann</button>
+            <button className="menu-action" onClick={async () => alert(await openProject())}>เปิดโปรเจกต์</button>
+            <button className="menu-action" onClick={handleImport} disabled={importing}>{importing ? "กำลังโหลด…" : "นำเข้าไฟล์"}</button>
+            {([ ["creator", "สร้างแพ็ก"], ["studio", "Studio"], ["profile", "Profile"], ["test", "ทดสอบ"], ["overlay", "Overlay Lab"], ["settings", "Settings"] ] as const).map(([id, label]) => <button key={id} className="menu-action" aria-pressed={view === id} onClick={() => setView(id)}>{label}</button>)}
+            <label className="menu-action">AI provider
+              <select value={providerValue} onChange={(e) => onProviderChange(e.target.value)} className="block w-full min-w-0 bg-base text-ink" title="เลือก AI provider สำหรับ chat">
+                <option value="claude">Claude · plan</option>
+                {ollamaModels.map((m) => <option key={m} value={`ollama:${m}`}>Local · {shortModel(m)}</option>)}
+                {ollamaModels.length === 0 && <option value="ollama:">Local · (no model)</option>}
+              </select>
+            </label>
+            {gidSignedIn ? <div className="menu-action break-all">GID {gid}<button className="block" onClick={() => void signOutGid()}>ออกจากระบบ</button></div> : <button className="menu-action" disabled={gidBusy} onClick={handleGidSignIn}>{gidBusy ? "กำลังเชื่อม…" : "เชื่อม GID"}</button>}
           </div>
-        ) : (
-          <button
-            onClick={handleGidSignIn}
-            disabled={gidBusy}
-            className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
-          >
-            <UserCircle2 size={15} className="text-lime" />
-            {gidBusy ? "กำลังเชื่อม…" : "เชื่อม GID"}
-          </button>
-        )}
-
-        <button
-          onClick={async () => alert(await openProject())}
-          className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
-        >
-          <FolderOpen size={15} className="text-lime" />
-          เปิด
-        </button>
-
-        <button
-          onClick={async () => alert(await saveProject())}
-          className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
-        >
-          <Save size={15} className="text-lime" />
-          บันทึก
-        </button>
-
-        <button
-          onClick={handleImport}
-          disabled={importing}
-          className="flex items-center gap-2 px-4 h-9 rounded-full bg-panel hover:bg-panel-hover border border-line text-sm font-medium transition disabled:opacity-50"
-        >
-          <Upload size={15} className="text-lime" />
-          {importing ? "กำลังโหลด…" : "นำเข้าไฟล์"}
-        </button>
-
-        <button
-          onClick={handleExport}
-          disabled={exporting || !wavPath || clips.length === 0}
-          className="flex items-center gap-2 px-5 h-9 rounded-full bg-white text-black text-sm font-semibold hover:bg-gray-200 transition disabled:opacity-40 disabled:hover:bg-white"
-        >
-          <Download size={15} />
-          {exporting ? "กำลังส่งออก…" : "ส่งออก"}
-        </button>
-      </div>
-    </header>
+        </details>
+      </header>
     </>
   );
 }
