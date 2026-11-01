@@ -102,13 +102,14 @@ export default function SaveToLibDialog({ onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[520px] bg-panel border border-line rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-sm">
+      <div className="w-[520px] max-w-full max-h-full flex flex-col bg-panel border border-line rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-line">
           <h3 className="text-sm font-bold">บันทึกเข้าคลัง — เจ้าของเสียง</h3>
           <button
             onClick={onClose}
+            aria-label="ปิด"
             className="grid place-items-center w-7 h-7 rounded-lg hover:bg-panel-hover transition"
           >
             <X size={16} />
@@ -116,7 +117,7 @@ export default function SaveToLibDialog({ onClose }: Props) {
         </div>
 
         {/* Body */}
-        <div className="p-5 space-y-4">
+        <div className="min-h-0 overflow-y-auto p-5 space-y-4">
           <div>
             <label className="block text-[11px] text-ink-faint mb-1.5">
               ชื่อเจ้าของเสียง (voice owner)
@@ -208,7 +209,7 @@ export default function SaveToLibDialog({ onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
+        <div className="shrink-0 flex justify-end gap-2 px-5 py-4 border-t border-line">
           <button
             onClick={onClose}
             className="px-4 h-9 rounded-full bg-panel border border-line text-xs font-medium hover:bg-panel-hover transition"
