@@ -5,7 +5,7 @@ import "./components.css";
 export type GlassVariant = "primary" | "secondary" | "quiet" | "danger";
 export type GlassMaterial = "glass" | "solid";
 
-type PanelProps = HTMLAttributes<HTMLElement> & {
+type PanelProps = Omit<HTMLAttributes<HTMLElement>, "title"> & {
   children: ReactNode;
   title?: ReactNode;
   action?: ReactNode;
