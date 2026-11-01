@@ -52,7 +52,7 @@ export function hydrateProject(result:ProjectOpenResult,path?:string):void {
   for(const asset of editor.bannerProject.assets)asset.source=convertFileSrc(asset.source);
   documentSession+=1;clearTimeout(recoveryTimer);
   hydrating=true;
-  try{useStudioStore.setState({...editor,projectDocument:structuredClone(result.snapshot.project),projectGeneration:result.snapshot.generation,projectAssetPaths:result.assetPaths,projectPath:path??useStudioStore.getState().projectPath,recentProjectId:result.snapshot.project.projectId,projectRecoveryError:null,pastClips:[],futureClips:[],pastBannerProjects:[],futureBannerProjects:[],selectedClipId:null,selectedBannerLayerIds:[]});}
+  try{useStudioStore.setState({...editor,projectDocument:structuredClone(result.snapshot.project),projectSession:documentSession,projectGeneration:result.snapshot.generation,projectAssetPaths:result.assetPaths,projectPath:path??useStudioStore.getState().projectPath,recentProjectId:result.snapshot.project.projectId,projectRecoveryError:null,pastClips:[],futureClips:[],pastBannerProjects:[],futureBannerProjects:[],selectedClipId:null,selectedBannerLayerIds:[]});}
   finally{hydrating=false;}
 }
 

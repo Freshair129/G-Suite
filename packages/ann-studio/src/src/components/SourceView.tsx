@@ -118,7 +118,7 @@ export default function SourceView() {
         <div className="flex flex-col items-center gap-3">
           <div className="text-base font-semibold text-ink">ยังไม่มีไฟล์ต้นฉบับ</div>
           <div className="text-sm text-ink-muted">
-            กด “นำเข้าไฟล์” มุมขวาบน · หรือคลิกขวาที่ pack ในคลัง → เปิดแก้ไข · หรือลากเสียงจากคลังมาวางที่นี่
+            เลือก “นำเข้าไฟล์” จากเมนูด้านบน · หรือคลิกขวาที่ pack ในคลัง → เปิดแก้ไข · หรือลากเสียงจากคลังมาวางที่นี่
           </div>
         </div>
       </div>
@@ -135,11 +135,11 @@ export default function SourceView() {
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-base">
       {/* header */}
-      <div className="shrink-0 bg-base border-b border-line px-6 py-3 flex items-center justify-between gap-4">
+      <div className="shrink-0 bg-base border-b border-line px-4 py-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs text-ink-faint shrink-0">
           {fmt(duration)} · {clips.length} clips · map {mapped}/{clips.length}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <button onClick={() => withBusy(runAnalyzeVideo)} disabled={transcribing || busy}
             title={sourceIsVideo() ? "วิเคราะห์วิดีโอ: ตัดคลิป + ถอดเสียง + อ่านปุ่ม event อัตโนมัติ" : "ถอดเสียงแล้วแยกเป็นคลิป"}
             className="flex items-center gap-2 px-4 h-9 rounded-full bg-lime text-black text-sm font-bold hover:bg-lime/90 transition disabled:opacity-50">
@@ -203,7 +203,7 @@ export default function SourceView() {
                   c.id === selectedClipId ? "border-lime/60 bg-panel/60" : "border-line bg-panel/40 hover:border-white/15"
                 }`}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
                   <span
                     draggable
                     onDragStart={(e) => { dragId.current = c.id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c.id); }}
@@ -220,7 +220,7 @@ export default function SourceView() {
                     onFocus={() => pushHistory()}
                     onChange={(e) => updateClipSilent(c.id, { name: e.target.value })}
                     placeholder="(ตั้งชื่อ clip)"
-                    className="flex-1 min-w-0 text-sm text-ink bg-transparent outline-none border-b border-transparent focus:border-lime/40 transition"
+                    className="flex-1 min-w-[120px] text-sm text-ink bg-transparent outline-none border-b border-transparent focus:border-lime/40 transition"
                   />
                   <span className="text-[11px] font-mono text-ink-faint shrink-0">
                     {fmt(c.start)}–{fmt(c.end)} · {(c.end - c.start).toFixed(2)}s
