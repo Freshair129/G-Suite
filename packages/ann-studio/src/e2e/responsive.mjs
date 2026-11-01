@@ -36,6 +36,18 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('button', {name:'Studio', exact:true}).isVisible(), false, 'Escape should close the menu');
   assert.equal(await menu.evaluate(el => el === document.activeElement), true, 'closing menu should restore focus');
+  await page.setViewportSize({width:1440,height:900});
+  await page.getByPlaceholder('พิมพ์คำสั่ง AI…').focus();
+  await page.setViewportSize({width:1200,height:720});
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Agent');
+  await page.getByTitle('Refresh', {exact:true}).focus();
+  await page.setViewportSize({width:960,height:600});
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Assets');
+  await page.setViewportSize({width:1200,height:720});
+  await page.getByRole('button', {name:'Agent', exact:true}).click();
+  await page.getByPlaceholder('พิมพ์คำสั่ง AI…').focus();
+  await page.setViewportSize({width:960,height:600});
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Agent');
   const clipName = page.getByPlaceholder('(ตั้งชื่อ clip)').first();
   await clipName.fill('แก้ไขแล้ว Mixed English ' + 'ย'.repeat(80));
   const expectedName = await clipName.inputValue();
@@ -118,6 +130,33 @@ try {
   assert.equal(await dialog.isVisible(), false, 'Escape should close the library dialog');
   assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'Save to Library', 'focus should return to the opening control');
   console.log(`PASS zoomed populated dialog at browser DPR ${scale}`);
+  await page.evaluate(async () => {
+    document.documentElement.style.zoom = '';
+    const {useStudioStore} = await import('/src/store/useStudioStore.ts');
+    useStudioStore.setState({view:'profile', gmaidenConnected:true, gmaidenPath:'C:/fixture/' + 'long-path/'.repeat(20), packs:[], activePackId:null});
+  });
+  for (const label of ['G-Maiden Connected', 'ติดตั้ง .gann', 'เพิ่ม Pack']) {
+    const box = await page.getByRole('button', {name:label, exact:true}).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 960, `Profile action outside viewport: ${label} ${JSON.stringify(box)}`);
+    const usable = await page.getByRole('button', {name:label, exact:true}).evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      const panel = el.closest('.overflow-y-auto').getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let textFits = true;
+      while (walker.nextNode()) {
+        if (!walker.currentNode.textContent.trim()) continue;
+        const range = document.createRange(); range.selectNodeContents(walker.currentNode);
+        if (range.getClientRects().length > 1) textFits = false;
+        for (const part of range.getClientRects()) if (part.left < rect.left - 1 || part.right > rect.right + 1 || part.top < rect.top - 1 || part.bottom > rect.bottom + 1) textFits = false;
+      }
+      return rect.left >= panel.left && rect.right <= panel.right && (hit === el || el.contains(hit)) && textFits;
+    });
+    assert.equal(usable, true, `Profile action clipped or covered: ${label}`);
+  }
+  const quickPlay = await page.getByText('Quick Play', {exact:true}).boundingBox();
+  assert.ok(quickPlay && quickPlay.x + quickPlay.width <= 960, `Quick Play outside viewport: ${JSON.stringify(quickPlay)}`);
+  console.log(`PASS compact connected Profile at browser DPR ${scale}`);
   await context.close();
  }
 } finally { if (browser) await browser.close(); server.kill(); }

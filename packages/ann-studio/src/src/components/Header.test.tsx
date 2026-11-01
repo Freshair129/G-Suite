@@ -24,3 +24,14 @@ it("keeps primary actions and every navigation destination reachable through the
   fireEvent.click(screen.getByRole("button", { name: "Overlay Lab" }));
   expect(useStudioStore.getState().view).toBe("overlay");
 });
+
+it("returns focus to the menu after choosing a navigation action", () => {
+  useStudioStore.setState({ view: "studio", clips: [], wavPath: null });
+  render(<Header />);
+  const menu = screen.getByLabelText("More actions");
+  fireEvent.click(menu);
+  const destination = screen.getByRole("button", { name: "Overlay Lab" });
+  destination.focus();
+  fireEvent.click(destination);
+  expect(document.activeElement).toBe(menu);
+});

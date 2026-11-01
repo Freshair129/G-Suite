@@ -41,12 +41,34 @@ export default function App() {
   useEffect(() => {
     const shell = shellRef.current;
     if (!shell) return;
-    const observer = new ResizeObserver(([entry]) => setShellWidth(entry.contentRect.width));
+    let previousMode = layoutMode(0);
+    const observer = new ResizeObserver(([entry]) => {
+      const nextMode = layoutMode(entry.contentRect.width);
+      if (nextMode !== previousMode) {
+        const active = document.activeElement;
+        if (nextMode === "compact" && document.getElementById("asset-rail")?.contains(active)) {
+          assetsButtonRef.current?.focus();
+        } else if (nextMode !== "wide" && document.getElementById("agent-rail")?.contains(active)) {
+          agentButtonRef.current?.focus();
+        }
+      }
+      previousMode = nextMode;
+      setShellWidth(entry.contentRect.width);
+    });
     observer.observe(shell);
     return () => { observer.disconnect(); resizeCleanup.current?.(); };
   }, []);
 
-  useEffect(() => { setDrawer(null); resizeCleanup.current?.(); }, [mode, view]);
+  useEffect(() => {
+    if (drawer) {
+      const rail = document.getElementById(drawer === "agent" ? "agent-rail" : "asset-rail");
+      if (rail?.contains(document.activeElement)) {
+        (drawer === "agent" ? agentButtonRef : assetsButtonRef).current?.focus();
+      }
+    }
+    setDrawer(null);
+    resizeCleanup.current?.();
+  }, [mode, view]);
   useEffect(() => {
     function close(e: KeyboardEvent) {
       if (e.key !== "Escape" || !drawer) return;
