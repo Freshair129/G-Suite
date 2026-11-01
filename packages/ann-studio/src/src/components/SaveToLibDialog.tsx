@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Save, Loader2 } from "lucide-react";
 import { useStudioStore, type LibPkg } from "../store/useStudioStore";
@@ -17,6 +17,32 @@ export default function SaveToLibDialog({ onClose }: Props) {
   // per-clip English name (AI-suggested, editable) → filename <idx>_<en>.wav
   const [nameEns, setNameEns] = useState<Record<string, string>>({});
   const [naming, setNaming] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const ownerRef = useRef<HTMLInputElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    ownerRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        closeRef.current();
+      } else if (event.key === "Tab" && panelRef.current) {
+        const controls = Array.from(panelRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !panelRef.current.contains(document.activeElement))) {
+          event.preventDefault(); last?.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !panelRef.current.contains(document.activeElement))) {
+          event.preventDefault(); first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => { document.removeEventListener("keydown", onKeyDown, true); opener?.focus(); };
+  }, []);
 
   /** Ask the LLM for a short snake_case English name per clip (editable after). */
   async function generateNames() {
@@ -103,10 +129,10 @@ export default function SaveToLibDialog({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-sm">
-      <div className="w-[520px] max-w-full max-h-full flex flex-col bg-panel border border-line rounded-2xl shadow-2xl overflow-hidden">
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby="save-library-title" className="w-[520px] max-w-full max-h-full flex flex-col bg-panel border border-line rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-line">
-          <h3 className="text-sm font-bold">บันทึกเข้าคลัง — เจ้าของเสียง</h3>
+          <h3 id="save-library-title" className="text-sm font-bold">บันทึกเข้าคลัง — เจ้าของเสียง</h3>
           <button
             onClick={onClose}
             aria-label="ปิด"
@@ -123,11 +149,11 @@ export default function SaveToLibDialog({ onClose }: Props) {
               ชื่อเจ้าของเสียง (voice owner)
             </label>
             <input
+              ref={ownerRef}
               value={pkgName}
               onChange={(e) => setPkgName(e.target.value)}
               placeholder="เช่น น้าค่อม, เสียงผมอัดเอง, VRZO"
               className="w-full h-9 px-3 rounded-lg bg-base border border-line text-sm text-ink outline-none focus:border-lime/50 transition"
-              autoFocus
             />
             <p className="text-[10px] text-ink-faint mt-1">แยกคลังตามเจ้าของเสียง — เลือก mapping event ทีหลังได้</p>
           </div>

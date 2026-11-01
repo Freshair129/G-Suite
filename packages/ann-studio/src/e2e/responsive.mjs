@@ -83,13 +83,21 @@ try {
   });
   assert.ok(dialogBounds.top >= 0 && dialogBounds.bottom <= dialogBounds.viewport, `zoomed dialog outside viewport: ${JSON.stringify(dialogBounds)}`);
   const dialog = page.getByText('บันทึกเข้าคลัง — เจ้าของเสียง').locator('xpath=ancestor::div[contains(@class, "fixed")]');
+  const close = dialog.getByRole('button', {name: 'ปิด', exact: true});
+  await close.focus();
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'ยกเลิก', 'reverse Tab should wrap within the dialog');
+  await page.keyboard.press('Tab');
+  assert.equal(await close.evaluate(el => el === document.activeElement), true, 'Tab should wrap within the dialog');
   const save = dialog.getByRole('button', {name: 'Save', exact: true});
   const saveBox = await save.boundingBox();
   assert.ok(saveBox && saveBox.y >= 0 && saveBox.y + saveBox.height <= 600, 'dialog save button is unreachable');
   const lastName = dialog.locator('input').last();
   await lastName.scrollIntoViewIfNeeded();
   assert.ok(await lastName.isVisible(), 'last clip name is unreachable');
-  await dialog.getByRole('button', {name: 'ปิด', exact: true}).click();
+  await page.keyboard.press('Escape');
+  assert.equal(await dialog.isVisible(), false, 'Escape should close the library dialog');
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'Save to Library', 'focus should return to the opening control');
   console.log(`PASS zoomed populated dialog at browser DPR ${scale}`);
   await context.close();
  }
