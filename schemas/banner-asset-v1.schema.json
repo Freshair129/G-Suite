@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://g-maiden.dev/schemas/banner-asset-v1.schema.json",
+  "title": "G-Suite portable banner asset manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schemaVersion", "assetId", "revision", "name", "mediaKind", "files", "editableControls"],
+  "properties": {
+    "format": { "const": "g-suite-banner-asset" },
+    "schemaVersion": { "const": 1 },
+    "assetId": { "$ref": "#/$defs/id" },
+    "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "\\S" },
+    "mediaKind": { "enum": ["editable-template", "baked-video", "still-image"] },
+    "silent": { "type": "boolean" },
+    "durationMs": { "type": "integer", "minimum": 1, "maximum": 18200 },
+    "editableControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "outerMotion"],
+      "properties": {
+        "title": { "type": "boolean" },
+        "outerMotion": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["outerOpacity", "outerTranslateX", "outerTranslateY", "outerScale"] }
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "bannerProject"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "bannerProject": { "$ref": "#/$defs/bannerProject" }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/file" }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["application", "version"],
+      "properties": {
+        "application": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "\\S" }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" },
+    "assetPath": {
+      "type": "string",
+      "pattern": "^assets/(?!.*\\.\\.)(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9¹²³]|[Ll][Pp][Tt][1-9¹²³]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$)(?:\\.|$))[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,158}[A-Za-z0-9_-])?$"
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height", "rotation", "opacity"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 100 },
+        "y": { "type": "number", "minimum": 0, "maximum": 100 },
+        "width": { "type": "number", "minimum": 2, "maximum": 100 },
+        "height": { "type": "number", "minimum": 2, "maximum": 100 },
+        "rotation": { "type": "number", "minimum": -180, "maximum": 180 },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "layerStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fill": { "type": "string" },
+        "stroke": { "type": "string" },
+        "fontSize": { "type": "number", "exclusiveMinimum": 0, "maximum": 1.7976931348623157e308 },
+        "fontWeight": { "type": "number", "exclusiveMinimum": 0, "maximum": 1.7976931348623157e308 },
+        "fontFamily": { "type": "string" },
+        "fontAssetId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "layerContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "assetId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "layerTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startMs", "endMs"],
+      "properties": {
+        "startMs": { "type": "number", "minimum": 0, "maximum": 18200 },
+        "endMs": { "type": "number", "minimum": 0, "maximum": 18200 }
+      }
+    },
+    "keyframe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeMs", "transform", "easing"],
+      "properties": {
+        "timeMs": { "type": "integer", "minimum": 0, "maximum": 18200 },
+        "transform": { "$ref": "#/$defs/transform" },
+        "easing": { "enum": ["linear", "easeInOut"] }
+      }
+    },
+    "layerMotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyframes"],
+      "properties": {
+        "keyframes": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/keyframe" } }
+      }
+    },
+    "bannerLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "parentId", "order", "visible", "locked", "transform", "style", "content"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["group", "text", "shape", "image", "svg", "video"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+        "parentId": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }] },
+        "order": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "visible": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "transform": { "$ref": "#/$defs/transform" },
+        "style": { "$ref": "#/$defs/layerStyle" },
+        "content": { "$ref": "#/$defs/layerContent" },
+        "timing": { "$ref": "#/$defs/layerTiming" },
+        "motion": { "$ref": "#/$defs/layerMotion" }
+      }
+    },
+    "bannerAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "mime", "source"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+        "kind": { "const": "image" },
+        "mime": { "enum": ["image/png", "image/webp", "image/jpeg"] },
+        "source": { "type": "string", "pattern": "^asset:[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" }
+      }
+    },
+    "bannerProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "id", "title", "eventId", "artboard", "assets", "layers", "revision"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "\\S" },
+        "eventId": { "$ref": "#/$defs/id" },
+        "artboard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height", "safeZonePreset"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "height": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "safeZonePreset": { "enum": ["dota-hud", "none"] }
+          }
+        },
+        "assets": { "type": "array", "items": { "$ref": "#/$defs/bannerAsset" } },
+        "layers": { "type": "array", "items": { "$ref": "#/$defs/bannerLayer" } },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "role", "mediaType", "sizeBytes", "sha256"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "$ref": "#/$defs/assetPath" },
+        "role": { "enum": ["runtimeVideo", "stillImage", "supportingAsset"] },
+        "mediaType": { "enum": ["image/png", "image/webp", "image/jpeg", "video/webm"] },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 268435456 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "type": "object", "properties": { "mediaKind": { "const": "baked-video" } }, "required": ["mediaKind"] },
+      "then": {
+        "required": ["silent", "durationMs"],
+        "properties": {
+          "silent": { "const": true },
+          "editableControls": { "type": "object", "properties": { "title": { "const": false } } },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "contains": { "type": "object", "properties": { "role": { "const": "runtimeVideo" } }, "required": ["role"] },
+            "minContains": 1,
+            "maxContains": 1,
+            "items": {
+              "type": "object",
+              "allOf": [
+                { "type": "object", "properties": { "role": { "enum": ["runtimeVideo", "supportingAsset"] } } },
+                { "if": { "type": "object", "properties": { "role": { "const": "runtimeVideo" } }, "required": ["role"] }, "then": { "type": "object", "properties": { "mediaType": { "const": "video/webm" } } } },
+                { "if": { "type": "object", "properties": { "role": { "const": "supportingAsset" } }, "required": ["role"] }, "then": { "type": "object", "properties": { "mediaType": { "enum": ["image/png", "image/webp", "image/jpeg"] } } } }
+              ]
+            }
+          }
+        },
+        "not": { "anyOf": [
+          { "required": ["template"] },
+          { "properties": { "files": { "type": "array", "contains": { "type": "object", "properties": { "role": { "const": "stillImage" } }, "required": ["role"] } } } }
+        ] }
+      }
+    },
+    {
+      "if": { "type": "object", "properties": { "mediaKind": { "const": "still-image" } }, "required": ["mediaKind"] },
+      "then": {
+        "not": { "anyOf": [{ "required": ["durationMs"] }, { "required": ["silent"] }, { "required": ["template"] }] },
+        "properties": {
+          "editableControls": { "type": "object", "properties": { "title": { "const": false } } },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "contains": { "type": "object", "properties": { "role": { "const": "stillImage" } }, "required": ["role"] },
+            "minContains": 1,
+            "maxContains": 1,
+            "items": {
+              "type": "object",
+              "allOf": [
+                { "type": "object", "properties": { "role": { "enum": ["stillImage", "supportingAsset"] } } },
+                { "if": { "type": "object", "properties": { "role": { "const": "stillImage" } }, "required": ["role"] }, "then": { "type": "object", "properties": { "mediaType": { "enum": ["image/png", "image/webp", "image/jpeg"] } } } },
+                { "if": { "type": "object", "properties": { "role": { "const": "supportingAsset" } }, "required": ["role"] }, "then": { "type": "object", "properties": { "mediaType": { "enum": ["image/png", "image/webp", "image/jpeg"] } } } }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "type": "object", "properties": { "mediaKind": { "const": "editable-template" } }, "required": ["mediaKind"] },
+      "then": {
+        "required": ["template"],
+        "not": { "anyOf": [{ "required": ["durationMs"] }, { "required": ["silent"] }] },
+        "properties": {
+        "editableControls": { "type": "object", "properties": { "title": { "const": true } } },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "role": { "const": "supportingAsset" }, "mediaType": { "enum": ["image/png", "image/webp", "image/jpeg"] } }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

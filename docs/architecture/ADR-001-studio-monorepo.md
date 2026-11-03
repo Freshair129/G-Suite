@@ -17,7 +17,7 @@ fixtures in Git. No machine-specific drive path becomes a required dependency.
 ## Target dependencies (not all implemented)
 
 ```text
-ann-studio -------> asset-contracts <------- 3d-studio
+ann-studio -------> banner-contracts <----- 3d-studio
      |                                      |
      +-----------> banner-core <------------+
      +-----------> design-tokens <----------+
@@ -51,7 +51,8 @@ download are downstream stages; no new local-install workflow is introduced here
 ## Delivery sequence
 
 1. CR-SUITE-001: import shell, configurable paths, independent commands/checks.
-2. CR-SUITE-002: asset contract, versioned delivery/import and snapshot validation.
+2. CR-SUITE-002: manifest contract; follow with versioned delivery/import and
+   snapshot validation (the follow-up gates are recorded in that CR).
 3. CR-ANN-WORKFLOW-001: reviewed transcript/range workflow, event cards and paired
    banner/motion authoring, paired preview and verified export. Refer to the current
    design proposal; this is separate from responsive-only CR-ANN-UI-001.
