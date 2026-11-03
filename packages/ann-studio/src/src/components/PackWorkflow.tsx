@@ -8,6 +8,7 @@ import { beginBuild, finishBuild, failBuild, markDraft, canUseArtifact, initialB
 import { importProjectMedia } from "../lib/importMedia";
 import SourceView from './SourceView';
 import BannerEditor from './BannerEditor';
+import BannerAssetImport from './BannerAssetImport';
 import EventPicker from './EventPicker';
 import GannPackage from './GannPackage';
 
@@ -131,6 +132,10 @@ export default function PackWorkflow() {
       {variant&&cueEnd>variant.audioEndMs&&<div role="alert"><p>SFX เลยช่วงเสียง กรุณาเลือกขยายช่วงหรือตัด SFX</p><button className={button} disabled={cueEnd>15000} onClick={()=>updateVariant(variant.id,{audioEndMs:cueEnd,videoEndMs:Math.max(cueEnd,variant.videoEndMs)})}>ขยายช่วงเสียง</button><button className={button} onClick={()=>updateVariant(variant.id,{sfxCues:variant.sfxCues.filter(c=>c.startMs<variant.audioEndMs).map(c=>({...c,trimEndMs:Math.min(c.trimEndMs,c.trimStartMs+variant.audioEndMs-c.startMs)}))})}>ตัดและลบ SFX นอกช่วง</button></div>}
       {selectedLayer&&variant&&<div className="flex gap-2 items-center"><span>โมชั่น: {selectedLayer.name}</span><button className={button} disabled={busy||selectedLayer.kind!=="text"} onClick={()=>void addFont()}>เพิ่มฟอนต์</button><label>เวลา keyframe (ms)<input type="number" min="0" max={variant.videoEndMs} value={keyTime} onChange={e=>setKeyTime(Number(e.target.value))}/></label><button className={button} onClick={()=>keyframe()}>บันทึกตำแหน่งเลเยอร์ ณ เวลานี้</button><button className={button} onClick={()=>keyframe(true)}>ค่อยปรากฏจากด้านล่าง</button><button className={button} onClick={()=>state.setBannerProject({...state.bannerProject,layers:state.bannerProject.layers.map(l=>l.id===selectedLayer.id?{...l,motion:undefined}:l)})}>ล้างโมชั่น</button></div>}
       {variant?.sfxCues.map((cue,i)=><div className="flex gap-2" key={i}><span>SFX {i+1}</span><label>เริ่ม (ms)<input type="number" min="0" value={cue.startMs} onChange={e=>updateVariant(variant.id,{sfxCues:variant.sfxCues.map((c,j)=>j===i?{...c,startMs:Number(e.target.value)}:c)})}/></label><label>ตัดต้น (ms)<input type="number" min="0" value={cue.trimStartMs} onChange={e=>updateVariant(variant.id,{sfxCues:variant.sfxCues.map((c,j)=>j===i?{...c,trimStartMs:Number(e.target.value)}:c)})}/></label><label>ตัดจบ (ms)<input type="number" min="1" value={cue.trimEndMs} onChange={e=>updateVariant(variant.id,{sfxCues:variant.sfxCues.map((c,j)=>j===i?{...c,trimEndMs:Number(e.target.value)}:c)})}/></label><label>Fade in (ms)<input type="number" min="0" value={cue.fadeInMs} onChange={e=>updateVariant(variant.id,{sfxCues:variant.sfxCues.map((c,j)=>j===i?{...c,fadeInMs:Number(e.target.value)}:c)})}/></label><label>Fade out (ms)<input type="number" min="0" value={cue.fadeOutMs} onChange={e=>updateVariant(variant.id,{sfxCues:variant.sfxCues.map((c,j)=>j===i?{...c,fadeOutMs:Number(e.target.value)}:c)})}/></label><label>Gain (dB)<input type="number" value={cue.gainDb} onChange={e=>updateVariant(variant.id,{sfxCues:variant.sfxCues.map((c,j)=>j===i?{...c,gainDb:Number(e.target.value)}:c)})}/></label><button onClick={()=>updateVariant(variant.id,{sfxCues:variant.sfxCues.filter((_,j)=>j!==i)})}>ลบ</button></div>)}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-panel/30 p-3">
+        <div><p className="text-sm font-semibold">แบนเนอร์จาก G Suite</p><p className="text-xs text-ink-muted">ตรวจไฟล์และเลือกคลิปปลายทางก่อนนำเข้า</p></div>
+        <BannerAssetImport/>
+      </div>
       <BannerEditor onOpenHudLayout={()=>state.setView('overlay')}/>
     </>}
     {step===4 && <>

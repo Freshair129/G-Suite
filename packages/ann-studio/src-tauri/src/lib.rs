@@ -1,9 +1,10 @@
+mod banner_asset_archive;
+mod build_jobs;
 mod gann;
 mod gann_authoring;
 mod maiden_client;
-mod project_io;
-mod build_jobs;
 mod media_jobs;
+mod project_io;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
@@ -42,6 +43,50 @@ async fn recover_project(window: tauri::WebviewWindow, app: tauri::AppHandle, pr
     gann::trusted(&window)?;
     let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
     tauri::async_runtime::spawn_blocking(move || project_io::recover(&project_id,&workspace)).await.map_err(|e|e.to_string())?
+}
+
+#[tauri::command]
+async fn inspect_banner_asset_archive(
+    window: tauri::WebviewWindow,
+    path: String,
+) -> Result<banner_asset_archive::BannerAssetPreview, String> {
+    gann::trusted(&window)?;
+    tauri::async_runtime::spawn_blocking(move || banner_asset_archive::inspect(Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn import_banner_asset_archive(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    path: String,
+    manifest_sha256: String,
+    variant_id: String,
+    expected_generation: u64,
+    snapshot: serde_json::Value,
+    asset_paths: std::collections::BTreeMap<String, String>,
+) -> Result<project_io::ProjectOpenResult, String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || {
+        project_io::import_banner_asset_archive(
+            Path::new(&path),
+            &manifest_sha256,
+            &variant_id,
+            expected_generation,
+            snapshot,
+            asset_paths,
+            &workspace,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn ffmpeg_bin() -> Result<PathBuf, String> {
@@ -1622,14 +1667,29 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
-            gann::gann_startup_path, gann::gann_open, gann::gann_read, gann::gann_save_copy,
+            gann::gann_startup_path,
+            gann::gann_open,
+            gann::gann_read,
+            gann::gann_save_copy,
             gann::export_gann_artifact,
-            gann_authoring::create_gann_package, gann_authoring::install_gann_package,
-            maiden_client::discover_maiden_profiles, maiden_client::launch_maiden_profile,
-            prepare_project, save_project, open_project, recover_project,
+            gann_authoring::create_gann_package,
+            gann_authoring::install_gann_package,
+            maiden_client::discover_maiden_profiles,
+            maiden_client::launch_maiden_profile,
+            prepare_project,
+            save_project,
+            open_project,
+            recover_project,
+            inspect_banner_asset_archive,
+            import_banner_asset_archive,
             project_startup_path,
-            build_jobs::start_build, build_jobs::build_status, build_jobs::cancel_build, build_jobs::export_artifact,
-            media_jobs::import_media, media_jobs::inspect_media, media_jobs::build_event_capabilities,
+            build_jobs::start_build,
+            build_jobs::build_status,
+            build_jobs::cancel_build,
+            build_jobs::export_artifact,
+            media_jobs::import_media,
+            media_jobs::inspect_media,
+            media_jobs::build_event_capabilities,
             extract_audio,
             cut_clip,
             transcribe_audio,

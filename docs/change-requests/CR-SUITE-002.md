@@ -1,9 +1,10 @@
 # CR-SUITE-002 — Versioned banner asset handoff
 
-Status: JSON schema and shared manifest/integrity validator implemented; application import/export remains open.
-Depends on CR-SUITE-001 (PR #20). Follow-up implementation should add the
-producer's export and AnnStudio's managed-project import as separately reviewable
-slices. Do not mark this CR complete until both applications round-trip real assets.
+Status: JSON Schema, shared manifest/integrity validator, and AnnStudio managed-project ZIP importer implemented; Studio producer export remains open.
+Depends on CR-SUITE-001 (PR #20). AnnStudio's managed-project importer is a
+separately reviewable consumer slice; the remaining implementation is the Studio
+producer export. Do not mark this CR complete until both applications round-trip
+real assets.
 
 ## Contract now defined
 
@@ -55,6 +56,42 @@ before parsing so the 1 MiB check applies to the actual input, not normalized JS
    verify GANN export uses the existing builder and package verifier.
 7. Tauri/Windows tests cover malicious archive cases, concurrent import, disk failure,
    cancellation and rollback. Native alpha render verification must be separate.
+
+## AnnStudio importer slice — 2026-11-04
+
+`codex/annstudio-banner-import` implements the consumer side against the PR #22
+BannerProject identity contract. It reads a `.zip` containing one root
+`manifest.json` and exactly the indexed `assets/<filename>` entries. Tauri validates
+the checked-in JSON Schema and cross-file invariants, streams each payload through
+size/hash verification into a temporary directory, and re-verifies the previewed
+manifest digest at Apply. It rejects directories, symlinks, extra entries, aliases,
+unsafe/device paths, unsupported media roles, font-file references, and current
+AnnStudio renderer limits before project recovery is updated.
+
+The Pack Workflow offers a read-only preview and explicit apply to one voice clip.
+Editable templates retain their BannerAsset and layer IDs while package file IDs map
+to project-managed content-addressed assets. Still images become image layers and
+silent WebM becomes a video layer. Apply aligns the banner `eventId` to the manually
+selected voice clip, records source `assetId`/revision/manifest digest, and preserves
+voice assets, clip contents, event mappings, banner IDs, SFX and other variants.
+Import uses the existing GANN build pipeline; it does not change `.gann`, Store, or
+G-Maiden contracts.
+
+Importer-specific limits are enforced at the consumer boundary: manifest ≤1 MiB,
+64 files, 256 MiB per file, 512 MiB expanded total, 4096 BannerProject assets/layers,
+and 1920×1080 artboards. V1 font bytes are not indexable (support files are raster
+only), so templates with `fontAssetId` are rejected instead of silently substituting
+a font. The selected variant's existing visual duration remains unchanged; a baked
+video is rendered only across that event's configured visual interval.
+
+Remaining gates: G-AnnStudio/3D Studio still has no producer ZIP export, so no real
+producer-to-consumer round trip is available. Cancellation while the native Apply
+worker is already running is not implemented. A failed multi-file copy leaves the
+previous recovery snapshot intact, but may leave unreferenced content-addressed
+files in the local project cache; cleanup/rollback of those orphan files is future
+work. Native codec/alpha parity, installed-app UI validation and the remaining
+concurrent/disk-full cases are still separate acceptance work. See
+`CR-SUITE-002-VALIDATION.md` for exact checks and evidence.
 
 CR-ANN-WORKFLOW-001 then makes asset selection part of the event card + paired
 voice/banner/motion flow designed in `F:/g-suit/annstudio-design-proposal/v3`.

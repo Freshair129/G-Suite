@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
+import { validateBannerAssetManifest, type BannerAssetManifest } from "@g-suite/banner-contracts";
 import { useStudioStore } from "../store/useStudioStore";
 import { captureProject, createPackProject, duplicatePackProject, resolveProjectEditor, type Asset, type PackProject, type ProjectBuild, type ProjectOpenResult, type ProjectSaveResult, type Variant } from "./packProject";
 import { validateProjectSnapshot } from "./projectValidation";
@@ -46,13 +47,47 @@ export async function snapshotProject(){
   return {snapshot:{project:captured.project,generation:state.projectGeneration,fingerprint},assetPaths:captured.assetPaths};
 }
 
-export function hydrateProject(result:ProjectOpenResult,path?:string):void {
+export interface BannerAssetArchivePreview { manifest:BannerAssetManifest; manifestSha256:string }
+export interface BannerAssetImportContext { projectId:string; announcerId:string; generation:number }
+
+export function captureBannerAssetImportContext():BannerAssetImportContext {
+  const current=document(),state=useStudioStore.getState();
+  return {projectId:current.projectId,announcerId:current.announcerId,generation:state.projectGeneration};
+}
+
+export async function inspectBannerAssetArchive(path:string):Promise<BannerAssetArchivePreview> {
+  const preview=await invoke<BannerAssetArchivePreview>("inspect_banner_asset_archive",{path});
+  const issues=validateBannerAssetManifest(preview.manifest);
+  if(issues.length)throw new Error(`Banner asset contract rejected: ${issues.join("; ")}`);
+  if(!/^[0-9a-f]{64}$/.test(preview.manifestSha256))throw new Error("Banner archive preview has no verified manifest digest");
+  return preview;
+}
+
+export async function applyBannerAssetArchive(path:string,manifestSha256:string,variantId:string,context:BannerAssetImportContext):Promise<boolean> {
+  const before=useStudioStore.getState(),current=before.projectDocument;
+  if(!current||current.projectId!==context.projectId||current.announcerId!==context.announcerId||before.projectGeneration!==context.generation)return false;
+  const expectedOrigin=origin();
+  const captured=await snapshotProject();
+  const afterCapture=useStudioStore.getState();
+  if(!sameOrigin(expectedOrigin)||captured.snapshot.generation!==context.generation||afterCapture.projectGeneration!==context.generation)return false;
+  if(!captured.snapshot.project.variants.some(variant=>variant.id===variantId))throw new Error("Select a clip with a mapped voice variant first");
+  const result=await invoke<ProjectOpenResult>("import_banner_asset_archive",{
+    path,manifestSha256,variantId,expectedGeneration:context.generation,
+    snapshot:captured.snapshot,assetPaths:captured.assetPaths,
+  });
+  const latest=useStudioStore.getState();
+  if(!sameOrigin(expectedOrigin)||latest.projectGeneration!==context.generation)return false;
+  hydrateProject(result,latest.projectPath??"",variantId);
+  return true;
+}
+
+export function hydrateProject(result:ProjectOpenResult,path?:string,selectedVariantId:string|null=null):void {
   validateProjectSnapshot(result.snapshot);
   const editor=resolveProjectEditor(result.snapshot.project,result.assetPaths);
   for(const asset of editor.bannerProject.assets)asset.source=convertFileSrc(asset.source);
   documentSession+=1;clearTimeout(recoveryTimer);
   hydrating=true;
-  try{useStudioStore.setState({...editor,projectDocument:structuredClone(result.snapshot.project),projectGeneration:result.snapshot.generation,projectAssetPaths:result.assetPaths,projectPath:path??useStudioStore.getState().projectPath,recentProjectId:result.snapshot.project.projectId,projectRecoveryError:null,pastClips:[],futureClips:[],pastBannerProjects:[],futureBannerProjects:[],selectedClipId:null,selectedBannerLayerIds:[]});}
+  try{useStudioStore.setState({...editor,projectDocument:structuredClone(result.snapshot.project),projectGeneration:result.snapshot.generation,projectAssetPaths:result.assetPaths,projectPath:path??useStudioStore.getState().projectPath,recentProjectId:result.snapshot.project.projectId,projectRecoveryError:null,pastClips:[],futureClips:[],pastBannerProjects:[],futureBannerProjects:[],selectedClipId:selectedVariantId,selectedBannerLayerIds:[]});}
   finally{hydrating=false;}
 }
 

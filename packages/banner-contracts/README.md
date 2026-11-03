@@ -38,10 +38,14 @@ aggregate byte ceilings and serialized manifest size in addition to the schema. 
 schema-only pass is not an import acceptance check.
 
 Proposed v1 limits: manifest 1 MiB, 64 entries, 256 MiB each, 512 MiB total, render
-≤18.2 seconds. The byte limits are design ceilings, not measured application limits
-or Store quotas; check real media sizes before implementing import/export. The
-producer/consumer applications and archive extraction flow are not yet connected;
-this package currently validates manifests and supplied bytes.
+≤18.2 seconds. These are design ceilings, not measured Store quotas; check real
+media sizes before implementing producer export. AnnStudio consumes this contract
+through an explicit preview/apply flow. Its native ZIP reader expects one root
+`manifest.json` plus exactly the listed files, streams and hashes each file, then
+copies verified bytes into project-managed storage. V1 packages with `fontAssetId`
+references are rejected by AnnStudio because the contract indexes raster supporting
+files only. G-AnnStudio/3D Studio producer export is still open, so the applications
+do not yet round-trip a real asset.
 
 ```powershell
 node --test packages/banner-contracts/src/index.test.js

@@ -52,6 +52,9 @@ importers:
 
   packages/ann-studio/src:
     dependencies:
+      '@g-suite/banner-contracts':
+        specifier: workspace:*
+        version: link:../../banner-contracts
       '@supabase/supabase-js':
         specifier: 2.110.7
         version: 2.110.7

@@ -78,3 +78,39 @@ The hosted PR #20 workflow validates its own head, not this follow-up branch. PR
 workflow validates the code head noted above. No AnnStudio native app, Studio exporter,
 archive extraction, install flow, G-Maiden process or external asset data was exercised
 or changed by this contract-only fix.
+
+## AnnStudio managed importer validation — 2026-11-04
+
+Implementation branch `codex/annstudio-banner-import` is stacked on PR #22
+(`codex/banner-asset-integration`, head `0a948e3ebc6cb86117def45c3ca7a8429ee782ad`).
+The checks below cover the importer slice and its source tree; no AnnStudio native
+window was launched and no G-Maiden process or data was touched.
+
+| Check | Result |
+| --- | --- |
+| `corepack pnpm install --frozen-lockfile --ignore-scripts` (pinned pnpm 9.0.0) | PASS |
+| `corepack pnpm -C packages/ann-studio/src test` | PASS, 140 tests across 23 files |
+| `corepack pnpm -C packages/ann-studio/src exec tsc --noEmit` | PASS |
+| `corepack pnpm -C packages/ann-studio/src build` | PASS; Vite reports the emitted 650 kB app chunk exceeds its 500 kB advisory threshold |
+| `corepack pnpm -C packages/banner-contracts test` | PASS, 26 tests |
+| `cargo test --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml` | PASS, 32 tests |
+| `cargo check --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml` | PASS |
+| `rustfmt --check` on `banner_asset_archive.rs`, `project_io.rs`, and `project_io_tests.rs` | PASS |
+| `git diff --check` | PASS |
+| `cargo fmt --manifest-path packages/ann-studio/src-tauri/Cargo.toml --check` | FAILS on pre-existing formatting in `lib.rs`; the unchanged base version fails the same check. No broad reformat was applied to that legacy file. |
+
+The first global pnpm 11 install stopped at the non-interactive modules-dir
+confirmation; a retry proceeded and failed because pnpm 11 rejects this
+repository's `packageExtensions` checksum. The root
+`banner-contracts:test` alias also resolved its nested `pnpm` to that global
+version and stopped before test execution due to a non-interactive modules-dir
+confirmation. The package-local contract test above was rerun directly with the
+repository-pinned pnpm 9 and passed.
+
+Not exercised: native-window keyboard/focus behavior, packaged/installed app,
+import of a ZIP produced by 3D Studio (producer export is still open), live video
+codec/alpha parity, cancellation after the Apply worker starts, a true disk-full
+condition, and orphan-file cleanup after a partial managed-cache copy. Unit tests
+cover archive validation, stale-generation rejection, lock/copy failure recovery,
+and preservation of voice and event data; these do not replace those native and
+producer-to-consumer acceptance gates.

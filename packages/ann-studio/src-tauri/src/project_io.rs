@@ -318,6 +318,224 @@ pub fn prepare(
     Ok(prepared)
 }
 
+fn prepare_if_current(
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    expected_generation: u64,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    validate(&snapshot)?;
+    if snapshot["generation"].as_u64() != Some(expected_generation) {
+        return Err("Project generation changed before banner import".into());
+    }
+    let id = project_id(&snapshot)?;
+    let root = workspace.join(id);
+    let _guard = lock(&root)?;
+    if let Some(latest) = latest_snapshot(id, workspace)? {
+        let latest_generation = latest["generation"]
+            .as_u64()
+            .ok_or("Invalid recovery generation")?;
+        if latest_generation > expected_generation
+            || (latest_generation == expected_generation
+                && project_fingerprint(&latest)? != project_fingerprint(&snapshot)?)
+        {
+            return Err("Project changed while the banner import was pending".into());
+        }
+    }
+    let prepared = prepare_locked(snapshot, asset_paths, &root)?;
+    persist_if_current(&prepared.snapshot, workspace, &root)?;
+    Ok(prepared)
+}
+
+fn asset_extension(media_type: &str) -> Result<&'static str, String> {
+    match media_type {
+        "image/png" => Ok("png"),
+        "image/webp" => Ok("webp"),
+        "image/jpeg" => Ok("jpg"),
+        "video/webm" => Ok("webm"),
+        _ => Err(format!("Unsupported banner media type {media_type}")),
+    }
+}
+
+fn import_banner_project(
+    manifest: &Value,
+    target_event: &str,
+    managed_ids: &BTreeMap<String, String>,
+    files: &BTreeMap<String, Value>,
+    manifest_sha256: &str,
+) -> Result<Value, String> {
+    if manifest["mediaKind"] == "editable-template" {
+        let mut project = manifest["template"]["bannerProject"].clone();
+        project["eventId"] = Value::from(target_event);
+        for asset in project["assets"]
+            .as_array_mut()
+            .ok_or("BannerProject assets are missing")?
+        {
+            let source = asset["source"]
+                .as_str()
+                .and_then(|source| source.strip_prefix("asset:"))
+                .ok_or("Invalid BannerProject asset source")?;
+            let managed_id = managed_ids
+                .get(source)
+                .ok_or("BannerProject source file was not staged")?;
+            asset["source"] = Value::from(format!("asset:{managed_id}"));
+        }
+        return Ok(project);
+    }
+
+    let role = if manifest["mediaKind"] == "still-image" {
+        "stillImage"
+    } else {
+        "runtimeVideo"
+    };
+    let file = files
+        .values()
+        .find(|file| file["role"] == role)
+        .ok_or("Banner runtime media file is missing")?;
+    let file_id = file["id"]
+        .as_str()
+        .ok_or("Banner runtime file ID is missing")?;
+    let asset_id = managed_ids
+        .get(file_id)
+        .ok_or("Banner runtime file was not staged")?;
+    let media_type = file["mediaType"]
+        .as_str()
+        .ok_or("Banner runtime media type is missing")?;
+    let image = manifest["mediaKind"] == "still-image";
+    let suffix = &manifest_sha256[..24];
+    let layer_kind = if image { "image" } else { "video" };
+    let project_id = format!("banner-project-{suffix}");
+    let asset_editor_id = format!("banner-source-{suffix}");
+    let layer_id = format!("banner-layer-{suffix}");
+    let name = manifest["name"].as_str().ok_or("Banner name is missing")?;
+    Ok(serde_json::json!({
+        "schemaVersion": 1,
+        "id": project_id,
+        "title": name,
+        "eventId": target_event,
+        "artboard": {"width": 1280, "height": 720, "safeZonePreset": "dota-hud"},
+        "revision": manifest["revision"],
+        "assets": [{"id": asset_editor_id, "name": name, "kind": if image {"image"} else {"video"}, "mime": media_type, "source": format!("asset:{asset_id}")}],
+        "layers": [{
+            "id": layer_id,
+            "kind": layer_kind,
+            "name": name,
+            "parentId": null,
+            "order": 0,
+            "visible": true,
+            "locked": false,
+            "transform": {"x": 50, "y": 50, "width": 100, "height": 100, "rotation": 0, "opacity": 1},
+            "style": {},
+            "content": {"assetId": asset_editor_id}
+        }]
+    }))
+}
+
+pub fn import_banner_asset_archive(
+    path: &Path,
+    manifest_sha256: &str,
+    variant_id: &str,
+    expected_generation: u64,
+    mut snapshot: Value,
+    mut asset_paths: BTreeMap<String, String>,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    use super::banner_asset_archive;
+
+    let verified = banner_asset_archive::extract_verified(path, Some(manifest_sha256))?;
+    if snapshot["generation"].as_u64() != Some(expected_generation) {
+        return Err("Project generation changed before banner import".into());
+    }
+    let manifest = &verified.manifest;
+    let file_records = manifest["files"]
+        .as_array()
+        .ok_or("Banner manifest files are missing")?;
+    let mut managed_ids = BTreeMap::new();
+    let assets = snapshot["project"]["assets"]
+        .as_array_mut()
+        .ok_or("Project assets are missing")?;
+    if assets.len() + file_records.len() > MAX_ASSETS {
+        return Err("Project asset count exceeds 4096".into());
+    }
+    for record in file_records {
+        let file_id = record["id"].as_str().ok_or("Banner file ID is missing")?;
+        let sha = record["sha256"]
+            .as_str()
+            .ok_or("Banner file digest is missing")?;
+        let media_type = record["mediaType"]
+            .as_str()
+            .ok_or("Banner file media type is missing")?;
+        let extension = asset_extension(media_type)?;
+        let name = record["path"]
+            .as_str()
+            .and_then(|path| Path::new(path).file_name())
+            .and_then(|name| name.to_str())
+            .ok_or("Banner source filename is invalid")?;
+        let asset_id = format!("banner-{sha}");
+        if let Some(existing) = assets.iter().find(|asset| asset["id"] == asset_id) {
+            if existing["sha256"] != sha || existing["mediaType"] != media_type {
+                return Err("Content-identical banner assets have conflicting media types".into());
+            }
+        } else {
+            assets.push(serde_json::json!({
+                "id": asset_id,
+                "relativePath": format!("assets/{sha}.{extension}"),
+                "sha256": sha,
+                "mediaType": media_type,
+                "sourceMetadata": {"originalName": name}
+            }));
+        }
+        let staged = verified
+            .files
+            .get(file_id)
+            .ok_or("Verified banner file is missing")?;
+        asset_paths.insert(asset_id.clone(), staged.to_string_lossy().into_owned());
+        managed_ids.insert(file_id.to_owned(), asset_id);
+    }
+
+    let project = &mut snapshot["project"];
+    let variant = project["variants"]
+        .as_array_mut()
+        .ok_or("Project variants are missing")?
+        .iter_mut()
+        .find(|variant| variant["id"] == variant_id)
+        .ok_or("Select an existing voice variant before importing a banner")?;
+    let event = variant["voiceClip"]["event"]
+        .as_str()
+        .ok_or("Target variant has no voice event")?;
+    if event.is_empty()
+        || !event.is_ascii()
+        || !event
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte))
+    {
+        return Err("Target voice event cannot be represented by BannerProject v1".into());
+    }
+    let files = manifest["files"]
+        .as_array()
+        .ok_or("Banner manifest files are missing")?
+        .iter()
+        .filter_map(|file| Some((file["path"].as_str()?.to_owned(), file.clone())))
+        .collect::<BTreeMap<_, _>>();
+    let banner_project = import_banner_project(
+        manifest,
+        event,
+        &managed_ids,
+        &files,
+        &verified.manifest_sha256,
+    )?;
+    variant["bannerProject"] = banner_project.clone();
+    variant["bannerSource"] = serde_json::json!({
+        "assetId": manifest["assetId"],
+        "revision": manifest["revision"],
+        "manifestSha256": verified.manifest_sha256
+    });
+    project["editor"]["bannerProject"] = banner_project;
+    project["editor"]["bannerVariantId"] = Value::from(variant_id);
+
+    prepare_if_current(snapshot, asset_paths, expected_generation, workspace)
+}
+
 fn archive_bytes(
     path: &Path,
     snapshot: &Value,

@@ -5,7 +5,8 @@ import type { Clip, BannerOverride, LibSound, TrackItem } from "../store/useStud
 
 export interface Asset { id:string; relativePath:string; sha256:string; mediaType:string; sourceMetadata:{originalName:string} }
 export interface SfxCue { assetId:string; startMs:number; gainDb:number; trimStartMs:number; trimEndMs:number; fadeInMs:number; fadeOutMs:number }
-export interface Variant { id:string; originalSoundId:string; mixedSoundId:string; bannerId:string; voiceAssetId:string; voiceClip:Clip; bannerProject:BannerProject; sfxCues:SfxCue[]; audioEndMs:number; videoEndMs:number }
+export interface BannerSource { assetId:string; revision:number; manifestSha256:string }
+export interface Variant { id:string; originalSoundId:string; mixedSoundId:string; bannerId:string; voiceAssetId:string; voiceClip:Clip; bannerProject:BannerProject; bannerSource?:BannerSource; sfxCues:SfxCue[]; audioEndMs:number; videoEndMs:number }
 export interface EventMapping { eventKey:string; variantIds:string[] }
 export interface ProjectTemplate { id:string; version:string; fontFamily?:string; assetIds:string[] }
 export interface ProjectBuild { revision:number; digest:string; artifactId:string; projectFingerprint:string; toolchainFingerprint:string; [key:string]:unknown }
