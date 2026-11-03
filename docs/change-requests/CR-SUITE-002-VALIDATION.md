@@ -52,8 +52,10 @@ workflow passed at base head `48633b9`; PR #21's hosted workflow was still pendi
 
 ## AnnStudio compatibility validation — 2026-11-04
 
-Follow-up branch `codex/banner-asset-integration` is based on PR #20's current
-head `83717f15b339d64ce98768fadb83400782a89f95`. It corrects the BannerProject
+Follow-up branch `codex/banner-asset-integration` is based on PR #20's head
+`83717f15b339d64ce98768fadb83400782a89f95` and is submitted as stacked PR #22.
+The compatibility fix was validated at code revision
+`07730369b2418b71f47eedf21576a92d303dc23d`. It corrects the BannerProject
 asset join to match AnnStudio's model: `BannerAsset.id` is the editor identity,
 while `BannerAsset.source` references the independent managed package file ID.
 The runtime contract also requires a one-to-one source/file join and matching
@@ -65,13 +67,14 @@ BannerAsset MIME and indexed file media type.
 | Strict JSON Schema Draft 2020 validation through Ajv | PASS in the package test suite; cross-field mismatch remains a runtime check |
 | `git diff --check` | PASS |
 | PR #20 hosted Studio packages workflow #41688633809 at head `83717f1` | PASS, all four jobs |
-| Hosted checks for this follow-up branch | Pending until its PR is opened |
+| PR #22 hosted workflow #41690119765 at code head `0773036` | PASS, all four jobs |
 
 The regression first failed because the runtime validator accepted a BannerAsset
 whose declared MIME differed from the indexed file, then passed after the validator
 change. The test also preserves the distinct-ID fixture and rejects two BannerAssets
 claiming the same package file.
 
-The hosted PR #20 workflow validates its own head, not this follow-up branch. No
-AnnStudio native app, Studio exporter, archive extraction, install flow, G-Maiden
-process or external asset data was exercised or changed by this contract-only fix.
+The hosted PR #20 workflow validates its own head, not this follow-up branch. PR #22's
+workflow validates the code head noted above. No AnnStudio native app, Studio exporter,
+archive extraction, install flow, G-Maiden process or external asset data was exercised
+or changed by this contract-only fix.
