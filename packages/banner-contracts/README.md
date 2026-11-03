@@ -22,16 +22,20 @@ Kinds communicate capabilities honestly:
 - `still-image` is PNG, WebP or JPEG and makes no claim about animation or audio.
   An event may still apply supported outer motion where that capability is shown.
 
-Editable templates carry the real BannerProject v1 envelope. Raster media sources
-must use `asset:<id>` and match an indexed file ID; local paths, URLs, data URLs and
-SVG/other non-raster media are rejected by v1.
+Editable templates carry the real BannerProject v1 envelope. Each `BannerAsset.id`
+remains the editor identity used by layer references. Its `source` must use
+`asset:<file-id>` to reference exactly one indexed package file; that file ID is
+allowed to differ from the `BannerAsset.id`. The indexed file's media type must
+match the BannerAsset MIME type. Local paths, URLs, data URLs and SVG/other
+non-raster media are rejected by v1.
 
 The JSON Schema validates the portable JSON shape, field ranges and media-kind
 rules. It cannot express every cross-field invariant, so importers must also run
 `validateBannerAssetManifest` and `verifyBannerAssetFiles`. The runtime validator
-checks ID/reference joins, parent groups, ordered keyframes, case-insensitive path
-aliases, aggregate byte ceilings and serialized manifest size in addition to the
-schema. A schema-only pass is not an import acceptance check.
+checks ID/reference joins, BannerAsset-to-file one-to-one mapping and media-type
+agreement, parent groups, ordered keyframes, case-insensitive path aliases,
+aggregate byte ceilings and serialized manifest size in addition to the schema. A
+schema-only pass is not an import acceptance check.
 
 Proposed v1 limits: manifest 1 MiB, 64 entries, 256 MiB each, 512 MiB total, render
 ≤18.2 seconds. The byte limits are design ceilings, not measured application limits

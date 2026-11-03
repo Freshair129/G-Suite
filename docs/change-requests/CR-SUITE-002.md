@@ -21,9 +21,11 @@ schemaVersion 1. Voice/event pairing occurs later in AnnStudio and is not guesse
 or stored as independent random selection here.
 
 `editable-template` can expose title and data-backed outer motion. Its inline
-BannerProject must use the actual fields from AnnStudio and each referenced raster
-asset ID must match a hashed package file; external/data/remote paths are rejected.
-V1 intentionally excludes SVG and other unsupported source media. `baked-video`
+BannerProject must use the actual fields from AnnStudio. `BannerAsset.id` remains the
+editor identity used by layer references; `BannerAsset.source` points to a hashed
+package file ID, which may differ from the BannerAsset ID. Each source must map to
+exactly one file, with matching MIME/media type. External/data/remote paths are
+rejected. V1 intentionally excludes SVG and other unsupported source media. `baked-video`
 must be silent WebM and may advertise only the outer opacity/translation/scale
 operations the consumer actually implements. Editing baked text requires a
 source template and a render. `still-image` is explicitly static.

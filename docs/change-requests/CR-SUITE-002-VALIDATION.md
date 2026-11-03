@@ -1,4 +1,6 @@
-# CR-SUITE-002 contract validation — 2026-11-03
+# CR-SUITE-002 contract validation — history and follow-up
+
+## Initial contract validation — 2026-11-03
 
 Branch `codex/banner-asset-contract`, based on PR #20 head
 `48633b9d0c4f3042e30ea1ec9dec131a79e082fe`. This PR adds the contract foundation;
@@ -44,6 +46,32 @@ The file-count, byte-size and duration limits are documented as proposed bounds.
 The file size limits have not been measured against a production asset sample and
 must be rechecked before wiring them into export/import UX.
 
-No native app was launched and no G-Maiden or external asset data was changed.
-PR #20's hosted Studio packages workflow passed at base head `48633b9`; PR #21's
-hosted workflow is the gate for the complete workspace build/test matrix.
+At the time of this initial validation, no native app was launched and no
+G-Maiden or external asset data was changed. PR #20's hosted Studio packages
+workflow passed at base head `48633b9`; PR #21's hosted workflow was still pending.
+
+## AnnStudio compatibility validation — 2026-11-04
+
+Follow-up branch `codex/banner-asset-integration` is based on PR #20's current
+head `83717f15b339d64ce98768fadb83400782a89f95`. It corrects the BannerProject
+asset join to match AnnStudio's model: `BannerAsset.id` is the editor identity,
+while `BannerAsset.source` references the independent managed package file ID.
+The runtime contract also requires a one-to-one source/file join and matching
+BannerAsset MIME and indexed file media type.
+
+| Check | Result |
+| --- | --- |
+| `pnpm banner-contracts:test` using pinned pnpm 9 | PASS, 26 Node tests |
+| Strict JSON Schema Draft 2020 validation through Ajv | PASS in the package test suite; cross-field mismatch remains a runtime check |
+| `git diff --check` | PASS |
+| PR #20 hosted Studio packages workflow #41688633809 at head `83717f1` | PASS, all four jobs |
+| Hosted checks for this follow-up branch | Pending until its PR is opened |
+
+The regression first failed because the runtime validator accepted a BannerAsset
+whose declared MIME differed from the indexed file, then passed after the validator
+change. The test also preserves the distinct-ID fixture and rejects two BannerAssets
+claiming the same package file.
+
+The hosted PR #20 workflow validates its own head, not this follow-up branch. No
+AnnStudio native app, Studio exporter, archive extraction, install flow, G-Maiden
+process or external asset data was exercised or changed by this contract-only fix.

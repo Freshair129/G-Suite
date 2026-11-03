@@ -23,10 +23,12 @@ export interface BannerTransform {
 }
 
 export interface BannerProjectAsset {
+  /** Stable BannerProject identity used by layers; independent of the indexed file ID. */
   id: string;
   name: string;
   kind: "image";
   mime: "image/png" | "image/webp" | "image/jpeg";
+  /** Managed package reference in the form asset:<BannerAssetFile.id>. */
   source: `asset:${string}`;
 }
 
