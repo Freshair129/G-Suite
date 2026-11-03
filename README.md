@@ -9,6 +9,7 @@ Where this is headed: [`ROADMAP.md`](ROADMAP.md).
 
 | Package | Description | Status |
 | --- | --- | --- |
+| [`banner-contracts`](packages/banner-contracts) | Versioned authoring banner manifest, capability and byte verification foundation. | CR-SUITE-002 |
 | [`3d-studio`](packages/3d-studio) | Independent Blender-connected Studio shell; production assets remain external. | Migration / CR-SUITE-001 |
 | [`ann-studio`](packages/ann-studio) | **G-AnnStudio** — Tauri desktop app to author Dota 2 announcer packs for G-Maiden: import audio/video, AI auto-split, AI event mapping, and one-click install into G-Maiden. | v0.1.0 |
 
