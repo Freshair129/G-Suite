@@ -97,7 +97,7 @@ window was launched and no G-Maiden process or data was touched.
 | `cargo check --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml` | PASS |
 | `rustfmt --check` on `banner_asset_archive.rs`, `project_io.rs`, and `project_io_tests.rs` | PASS |
 | `git diff --check` | PASS |
-| `cargo fmt --manifest-path packages/ann-studio/src-tauri/Cargo.toml --check` | FAILS on pre-existing formatting in `lib.rs`; the unchanged base version fails the same check. No broad reformat was applied to that legacy file. |
+| `cargo fmt --manifest-path packages/ann-studio/src-tauri/Cargo.toml --check` | PASS after the formatting follow-up on `lib.rs` |
 
 The first global pnpm 11 install stopped at the non-interactive modules-dir
 confirmation; a retry proceeded and failed because pnpm 11 rejects this
@@ -114,3 +114,11 @@ condition, and orphan-file cleanup after a partial managed-cache copy. Unit test
 cover archive validation, stale-generation rejection, lock/copy failure recovery,
 and preservation of voice and event data; these do not replace those native and
 producer-to-consumer acceptance gates.
+
+### Formatting follow-up — 2026-11-04
+
+The initial crate-wide `cargo fmt --check` exposed more than 30 rustfmt differences
+in the legacy AnnStudio `lib.rs`; the same check failed on its unchanged base
+revision. The entrypoint was formatted in a separate style-only commit. The
+crate-wide format check now passes, and `cargo test --locked` was rerun afterward:
+32 passed.
