@@ -426,6 +426,39 @@ fn reopening_an_older_archive_can_save_a_copy_without_erasing_newer_recovery() {
 }
 
 #[test]
+fn edits_after_opening_older_archive_do_not_replace_newer_recovery() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("original.ann");
+    save(&destination, snapshot(), paths.clone(), &workspace).unwrap();
+    let mut newer = snapshot();
+    newer["generation"] = json!(5);
+    newer["project"]["name"] = json!("Newer recovery");
+    let recovery = prepare(newer, paths, &workspace).unwrap();
+
+    let mut opened = open(&destination, &workspace).unwrap();
+    opened.snapshot["generation"] = json!(6);
+    opened.snapshot["project"]["name"] = json!("Edits from older archive");
+    prepare(opened.snapshot, opened.asset_paths, &workspace).unwrap();
+    let candidates = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    let mut found = false;
+    for candidate in candidates {
+        let reopened = open(Path::new(&candidate.path), &workspace).unwrap();
+        if reopened.snapshot["project"]["name"] == recovery.snapshot["project"]["name"] {
+            found = true;
+        }
+    }
+    assert!(
+        found,
+        "newer recovery must remain accessible after editing the older archive"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");

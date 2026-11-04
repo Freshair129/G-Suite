@@ -20,6 +20,15 @@ describe("portable project UI integration",()=>{
     const before=useStudioStore.getState().clips;vi.mocked(open).mockResolvedValue("D:/broken.ann");vi.mocked(invoke).mockResolvedValue({snapshot:{project:{schemaVersion:1}},assetPaths:{}});
     expect(await openProject()).toContain("เปิดไม่สำเร็จ");expect(useStudioStore.getState().clips).toBe(before);
   });
+  it("does not discard edits made while an archive is opening",async()=>{
+    const archive=await snapshotProject();vi.mocked(open).mockResolvedValue("D:/older.ann");
+    let finish!:(value:unknown)=>void;
+    vi.mocked(invoke).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+    const pending=openProject();while(!finish)await new Promise(resolve=>setTimeout(resolve,0));
+    useStudioStore.getState().updateClip("two",{name:"edited while opening"});
+    finish(archive);await pending;
+    expect(useStudioStore.getState().clips[1].name).toBe("edited while opening");
+  });
   it("saves the full snapshot through native archive IO and retains concurrent edits",async()=>{
     vi.mocked(save).mockResolvedValue("D:/saved.ann");
     vi.mocked(invoke).mockImplementation(async(command,args)=>{
