@@ -411,6 +411,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_truncated_png_with_valid_signature() {
+        let root = root();
+        project(&root);
+        let source = root.join("truncated.png");
+        fs::write(&source, b"\x89PNG\r\n\x1a\n").unwrap();
+        assert!(super::export_still_banner_asset(
+            &root,
+            "sample-project",
+            "banner-001",
+            "Banner",
+            1,
+            &source,
+        )
+        .is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn rejects_invalid_ids_projects_and_non_raster_inputs_before_export() {
         let root = root();
         project(&root);

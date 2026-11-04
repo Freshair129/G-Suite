@@ -703,6 +703,20 @@ mod tests {
     }
 
     #[test]
+    fn rejects_external_archive_with_truncated_png_and_matching_hash() {
+        let root = root();
+        let path = root.join("truncated.zip");
+        let image = b"\x89PNG\r\n\x1a\n";
+        archive(
+            &path,
+            &manifest(image),
+            &[("assets/banner.png", image, None)],
+        );
+        assert!(super::inspect(&path).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn rejects_unindexed_and_case_alias_archive_paths() {
         let root = root();
         let path = root.join("alias.zip");
