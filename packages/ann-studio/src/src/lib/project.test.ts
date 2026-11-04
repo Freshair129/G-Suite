@@ -29,6 +29,29 @@ describe("portable project UI integration",()=>{
     finish(archive);await pending;
     expect(useStudioStore.getState().clips[1].name).toBe("edited while opening");
   });
+  it.each(["startup","recover"] as const)("does not discard edits while %s opens a project",async operation=>{
+    const archive=await snapshotProject();let finish!:(value:unknown)=>void;
+    vi.mocked(invoke).mockImplementation(async command=>{
+      if(command==="project_startup_path")return "D:/older.ann";
+      if(command==="recover_project")return [{path:"D:/recovery.ann"}];
+      return new Promise(resolve=>{finish=resolve;});
+    });
+    const pending=operation==="startup"?initializeProject():recoverProject();
+    while(!finish)await new Promise(resolve=>setTimeout(resolve,0));
+    useStudioStore.getState().updateClip("two",{name:"edited during recovery"});
+    finish(archive);await pending;
+    expect(useStudioStore.getState().clips[1].name).toBe("edited during recovery");
+  });
+  it("does not discard overlay edits made while opening an archive",async()=>{
+    const archive=await snapshotProject();vi.mocked(open).mockResolvedValue("D:/older.ann");
+    let finish!:(value:unknown)=>void;
+    vi.mocked(invoke).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+    const pending=openProject();while(!finish)await new Promise(resolve=>setTimeout(resolve,0));
+    const layout=structuredClone(useStudioStore.getState().overlayLayout);layout.alert.x=42;
+    useStudioStore.getState().setOverlayLayout(layout);
+    finish(archive);await pending;
+    expect(useStudioStore.getState().overlayLayout.alert.x).toBe(42);
+  });
   it("saves the full snapshot through native archive IO and retains concurrent edits",async()=>{
     vi.mocked(save).mockResolvedValue("D:/saved.ann");
     vi.mocked(invoke).mockImplementation(async(command,args)=>{
