@@ -352,6 +352,40 @@ fn delayed_pre_import_recovery_cannot_replace_imported_banner() {
 }
 
 #[test]
+fn delayed_pre_import_save_does_not_replace_newer_archive() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let baseline = prepare(snapshot(), paths.clone(), &workspace).unwrap();
+    let (archive, digest, _) = editable_banner_archive(&root);
+    let imported = import_banner_asset_archive(
+        &archive,
+        &digest,
+        "second",
+        4,
+        baseline.snapshot.clone(),
+        paths.clone(),
+        &workspace,
+    )
+    .unwrap();
+    let destination = root.join("project.ann");
+    save(
+        &destination,
+        imported.snapshot.clone(),
+        imported.asset_paths,
+        &workspace,
+    )
+    .unwrap();
+    let before = fs::read(&destination).unwrap();
+
+    assert!(save(&destination, baseline.snapshot, paths, &workspace).is_err());
+    assert_eq!(fs::read(&destination).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");
