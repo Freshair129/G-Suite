@@ -26,6 +26,8 @@
 - Concurrent project sessions targeting the same destination need an explicit destination-level conflict policy.
 - Candidate listing must not eagerly generate project-sized archives; materialize only the explicitly selected candidate, bound its writes and validate any existing artifact before use.
 - Recovery history remains discoverable when the active recovery document is missing; synchronize listing and selected-candidate materialization with project writes.
+- Report damaged or unreadable candidates as visible warnings without hiding other valid candidates; never delete damaged evidence.
+- Read recovery data from bounded, verified handles with reparse-point protections, not a path check followed by an unbounded path read; define deterministic ordering and candidate identity.
 
 ## Task 1: Recovery candidates and session fencing
 
