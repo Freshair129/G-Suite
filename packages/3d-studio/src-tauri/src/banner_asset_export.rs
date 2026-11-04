@@ -413,6 +413,20 @@ mod tests {
     }
 
     #[test]
+    fn inspected_source_is_stable_after_original_changes() {
+        let root = root();
+        let source = root.join("source.png");
+        fs::write(&source, PNG).unwrap();
+        let mut inspected = super::hash_source(&source).unwrap();
+        fs::write(&source, vec![0_u8; PNG.len()]).unwrap();
+        let mut bytes = Vec::new();
+        inspected.file.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, PNG);
+        drop(inspected);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn rejects_truncated_png_with_valid_signature() {
         let root = root();
         project(&root);
