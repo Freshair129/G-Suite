@@ -19,6 +19,10 @@ foreach ($name in $environmentNames) {
 
 New-Item -ItemType Directory -Path $runRoot | Out-Null
 try {
+    $nodePath = (Get-Command node -ErrorAction Stop).Source
+    & $nodePath (Join-Path $repositoryRoot 'tools/prepare-ann-media.mjs') --check
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned AnnStudio media tools must be prepared before the round trip.' }
+
     $env:G_SUITE_BANNER_E2E_SOURCE = $sourcePath
     $env:G_SUITE_BANNER_E2E_CAPTURE = $archivePath
     & cargo test --locked --manifest-path (Join-Path $repositoryRoot 'packages/3d-studio/src-tauri/Cargo.toml') 'banner_asset_export::tests::exports_a_verified_still_asset_into_an_immutable_project_revision' -- --exact

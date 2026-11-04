@@ -139,9 +139,10 @@ ran, and removes only its uniquely named temporary directory.
 | `project_io::tests::imports_studio_producer_archive_and_reopens_the_saved_project` | PASS, 1 test; produced ZIP imported and saved/reopened as `.ann` |
 | `tools/test-banner-roundtrip.ps1` | PASS on Windows |
 
-The Windows hosted workflow now runs this round-trip after the Studio exporter
-checks. Hosted evidence is pending for the updated PR head. This is an application
-code integration test, not a native-window UI test.
+The Windows hosted workflow prepares the pinned AnnStudio media toolchain before
+its native Rust checks, then runs this round-trip in that job. Hosted evidence is
+head-specific and is recorded by the PR checks. This is an application-code
+integration test, not a native-window UI test.
 
 ## Native UI and DPI acceptance gap — 2026-11-04
 
