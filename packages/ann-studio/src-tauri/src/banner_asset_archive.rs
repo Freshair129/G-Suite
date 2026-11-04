@@ -550,6 +550,13 @@ fn extract(
                 "Banner asset {id} SHA-256 does not match its manifest"
             ));
         }
+        if let Some(media_type) = file_record["mediaType"].as_str() {
+            if media_type.starts_with("image/") {
+                let source =
+                    File::open(&target).map_err(|e| format!("Cannot open banner image: {e}"))?;
+                banner_image_validation::validate(source, media_type)?;
+            }
+        }
         staged.insert(id.to_owned(), target);
     }
     Ok(VerifiedBannerAssetArchive {
@@ -586,7 +593,7 @@ mod tests {
     };
     use zip::{write::SimpleFileOptions, ZipWriter};
 
-    const IMAGE: &[u8] = b"png!";
+    const IMAGE: &[u8] = include_bytes!("../icons/32x32.png");
 
     fn root() -> PathBuf {
         static NEXT: AtomicUsize = AtomicUsize::new(0);

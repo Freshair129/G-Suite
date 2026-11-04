@@ -21,7 +21,7 @@ fn snapshot() -> Value {
 }
 
 fn editable_banner_archive(root: &Path) -> (PathBuf, String, Vec<u8>) {
-    let bytes = b"banner image bytes".to_vec();
+    let bytes = include_bytes!("../icons/32x32.png").to_vec();
     let manifest = json!({
         "format": "g-suite-banner-asset",
         "schemaVersion": 1,
@@ -69,7 +69,7 @@ fn runtime_banner_archive(root: &Path, media_kind: &str) -> (PathBuf, String, St
             "assets/static.webp",
             "image/webp",
             "stillImage",
-            b"static image".as_slice(),
+            include_bytes!("../../src/public/dota-hud-reference.webp").as_slice(),
         )
     } else {
         (

@@ -95,6 +95,8 @@ fn hash_source(path: &Path) -> Result<RasterSource, String> {
     }
 
     file.rewind().map_err(|error| error.to_string())?;
+    banner_image_validation::validate(&mut file, mime)?;
+    file.rewind().map_err(|error| error.to_string())?;
     let mut hasher = Sha256::new();
     let mut count = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
@@ -317,7 +319,7 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    const PNG: &[u8] = b"\x89PNG\r\n\x1a\nfixture-image-bytes";
+    const PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
     fn root() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);

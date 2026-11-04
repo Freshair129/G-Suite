@@ -15,6 +15,24 @@ permissions:
   contents: read
 
 jobs:
+  temporary-banner-image-lockfiles:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve added image decoder without building
+        shell: pwsh
+        run: |
+          cargo metadata --format-version 1 --manifest-path packages/ann-studio/src-tauri/Cargo.toml | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo metadata --format-version 1 --manifest-path packages/3d-studio/src-tauri/Cargo.toml | Out-Null
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: temporary-banner-image-lockfiles
+          path: |
+            packages/ann-studio/src-tauri/Cargo.lock
+            packages/3d-studio/src-tauri/Cargo.lock
   frontends:
     runs-on: windows-latest
     strategy:
