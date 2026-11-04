@@ -386,6 +386,33 @@ fn delayed_pre_import_save_does_not_replace_newer_archive() {
 }
 
 #[test]
+fn reopening_an_older_archive_can_save_a_copy_without_erasing_newer_recovery() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("original.ann");
+    save(&destination, snapshot(), paths.clone(), &workspace).unwrap();
+    let mut newer = snapshot();
+    newer["generation"] = json!(5);
+    newer["project"]["name"] = json!("Newer recovery");
+    let recovery = prepare(newer, paths, &workspace).unwrap();
+
+    let opened = open(&destination, &workspace).unwrap();
+    let copy = root.join("copy.ann");
+    save(&copy, opened.snapshot, opened.asset_paths, &workspace).unwrap();
+    assert!(copy.is_file());
+    assert_eq!(
+        latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
+            .unwrap()
+            .unwrap(),
+        recovery.snapshot
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");
