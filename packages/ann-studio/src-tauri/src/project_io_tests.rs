@@ -401,8 +401,21 @@ fn reopening_an_older_archive_can_save_a_copy_without_erasing_newer_recovery() {
 
     let opened = open(&destination, &workspace).unwrap();
     let copy = root.join("copy.ann");
-    save(&copy, opened.snapshot, opened.asset_paths, &workspace).unwrap();
+    save(
+        &copy,
+        opened.snapshot.clone(),
+        opened.asset_paths.clone(),
+        &workspace,
+    )
+    .unwrap();
     assert!(copy.is_file());
+    save(
+        &destination,
+        opened.snapshot,
+        opened.asset_paths,
+        &workspace,
+    )
+    .unwrap();
     assert_eq!(
         latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
             .unwrap()
