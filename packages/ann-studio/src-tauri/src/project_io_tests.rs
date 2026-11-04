@@ -502,14 +502,67 @@ fn retained_recovery_document_opens_with_managed_assets() {
         .join("recovery-history");
     fs::create_dir_all(&history).unwrap();
     let bytes = serde_json::to_vec(&prepared.snapshot).unwrap();
-    let path = history.join(format!("{}.json", g_ann_package::sha256(&bytes)));
+    let digest = g_ann_package::sha256(&bytes);
+    let path = history.join(format!("{digest}.json"));
     fs::write(&path, bytes).unwrap();
-    let opened = open(&path, &workspace).unwrap();
+    let opened =
+        open_retained_candidate("00000000-0000-4000-8000-000000000001", &digest, &workspace)
+            .unwrap();
     assert_eq!(opened.snapshot, prepared.snapshot);
     assert_eq!(
         fs::read(&opened.asset_paths["asset-one"]).unwrap(),
         b"preserved voice"
     );
+    fs::write(&opened.asset_paths["asset-one"], b"damaged voice").unwrap();
+    assert!(
+        open_retained_candidate("00000000-0000-4000-8000-000000000001", &digest, &workspace,)
+            .is_err()
+    );
+    fs::write(&opened.asset_paths["asset-one"], b"preserved voice").unwrap();
+    assert!(open_retained_candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "../escape",
+        &workspace,
+    )
+    .is_err());
+    fs::write(&path, b"damaged").unwrap();
+    assert!(
+        open_retained_candidate("00000000-0000-4000-8000-000000000001", &digest, &workspace,)
+            .is_err()
+    );
+    assert_eq!(fs::read(&path).unwrap(), b"damaged");
+    let mut aliased = prepared.snapshot.clone();
+    let mut second = aliased["project"]["assets"][0].clone();
+    second["id"] = json!("asset-two");
+    aliased["project"]["assets"]
+        .as_array_mut()
+        .unwrap()
+        .push(second);
+    aliased["fingerprint"] = json!(project_fingerprint(&aliased).unwrap());
+    let bytes = serde_json::to_vec(&aliased).unwrap();
+    let alias_digest = g_ann_package::sha256(&bytes);
+    fs::write(history.join(format!("{alias_digest}.json")), bytes).unwrap();
+    let reopened = open_retained_candidate(
+        "00000000-0000-4000-8000-000000000001",
+        &alias_digest,
+        &workspace,
+    )
+    .unwrap();
+    assert_eq!(
+        reopened.asset_paths["asset-one"],
+        reopened.asset_paths["asset-two"]
+    );
+    aliased["project"]["assets"][1]["sha256"] = json!("a".repeat(64));
+    aliased["fingerprint"] = json!(project_fingerprint(&aliased).unwrap());
+    let bytes = serde_json::to_vec(&aliased).unwrap();
+    let conflict_digest = g_ann_package::sha256(&bytes);
+    fs::write(history.join(format!("{conflict_digest}.json")), bytes).unwrap();
+    assert!(open_retained_candidate(
+        "00000000-0000-4000-8000-000000000001",
+        &conflict_digest,
+        &workspace,
+    )
+    .is_err());
     fs::remove_dir_all(root).unwrap();
 }
 

@@ -768,6 +768,143 @@ pub fn latest_snapshot(project_id: &str, workspace: &Path) -> Result<Option<Valu
     Ok(Some(snapshot))
 }
 
+// This function is an internal building block; candidate listing and session
+// activation must be wired separately before retained history is exposed.
+// Intermediate project directories are assumed to be owned by this app and not
+// concurrently replaced by an adversarial same-user process.
+pub fn open_retained_candidate(
+    project_id: &str,
+    digest: &str,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    use sha2::{Digest, Sha256};
+    if !g_ann_package::valid_id(project_id, "")
+        || digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|value| value.is_ascii_digit() || (b'a'..=b'f').contains(&value))
+    {
+        return Err("Invalid recovery candidate identity".into());
+    }
+    let root = workspace.join(project_id);
+    let _guard = lock(&root)?;
+    let history = root.join("recovery-history");
+    let metadata = fs::symlink_metadata(&history).map_err(err)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Invalid recovery history directory".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Recovery history cannot be a reparse point".into());
+        }
+    }
+    fn verified_file(path: &Path, limit: u64) -> Result<File, String> {
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
+        #[cfg(not(windows))]
+        if fs::symlink_metadata(path)
+            .map_err(err)?
+            .file_type()
+            .is_symlink()
+        {
+            return Err("Recovery file cannot be a symbolic link".into());
+        }
+        let file = options.open(path).map_err(err)?;
+        let metadata = file.metadata().map_err(err)?;
+        if !metadata.is_file() || metadata.len() > limit {
+            return Err("Invalid recovery file or size".into());
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 {
+                return Err("Recovery file cannot be a reparse point".into());
+            }
+        }
+        Ok(file)
+    }
+    let mut document = Vec::new();
+    copy_bounded(
+        verified_file(&history.join(format!("{digest}.json")), MAX_DOCUMENT)?,
+        &mut document,
+        MAX_DOCUMENT,
+    )?;
+    if g_ann_package::sha256(&document) != digest {
+        return Err("Recovery candidate changed after listing".into());
+    }
+    let snapshot: Value = serde_json::from_slice(&document).map_err(err)?;
+    validate(&snapshot)?;
+    if self::project_id(&snapshot)? != project_id
+        || snapshot["fingerprint"].as_str() != Some(project_fingerprint(&snapshot)?.as_str())
+    {
+        return Err("Recovery identity or fingerprint mismatch".into());
+    }
+    let mut paths = BTreeMap::new();
+    let mut seen = BTreeMap::<String, (String, String)>::new();
+    let mut total_assets = 0u64;
+    for asset in snapshot["project"]["assets"]
+        .as_array()
+        .ok_or("Missing assets")?
+    {
+        let name = text(asset, "relativePath")?;
+        let expected_hash = text(asset, "sha256")?;
+        let path = root.join(name);
+        let key = name.to_ascii_lowercase();
+        if let Some((previous_name, previous_hash)) = seen.get(&key) {
+            if previous_name != name || previous_hash != expected_hash {
+                return Err("Conflicting recovery asset aliases".into());
+            }
+            paths.insert(
+                text(asset, "id")?.to_owned(),
+                path.to_string_lossy().into_owned(),
+            );
+            continue;
+        }
+        let mut file = verified_file(&path, MAX_ASSET)?;
+        let mut hasher = Sha256::new();
+        let mut total = 0u64;
+        let mut buffer = [0u8; 65536];
+        loop {
+            let count = file.read(&mut buffer).map_err(err)?;
+            if count == 0 {
+                break;
+            }
+            total = total
+                .checked_add(count as u64)
+                .ok_or("Asset size overflow")?;
+            if total > MAX_ASSET {
+                return Err("Recovery asset exceeds size limit".into());
+            }
+            total_assets = total_assets
+                .checked_add(count as u64)
+                .ok_or("Recovery size overflow")?;
+            if total_assets > MAX_PROJECT {
+                return Err("Recovery assets exceed total size limit".into());
+            }
+            hasher.update(&buffer[..count]);
+        }
+        if format!("{:x}", hasher.finalize()) != expected_hash {
+            return Err("Recovery asset digest mismatch".into());
+        }
+        seen.insert(key, (name.to_owned(), expected_hash.to_owned()));
+        paths.insert(
+            text(asset, "id")?.to_owned(),
+            path.to_string_lossy().into_owned(),
+        );
+    }
+    Ok(ProjectOpenResult {
+        snapshot,
+        asset_paths: paths,
+    })
+}
+
 pub fn save(
     path: &Path,
     snapshot: Value,
