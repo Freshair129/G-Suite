@@ -915,89 +915,33 @@ pub fn recover(project_id: &str, workspace: &Path) -> Result<Vec<RecoveryCandida
     if !g_ann_package::valid_id(project_id, "") {
         return Err("Invalid project identity".into());
     }
+    let Some(snapshot) = latest_snapshot(project_id, workspace)? else {
+        return Ok(vec![]);
+    };
     let root = workspace.join(project_id);
-    let mut candidates = Vec::new();
-    if let Some(snapshot) = latest_snapshot(project_id, workspace)? {
-        let paths = snapshot["project"]["assets"]
-            .as_array()
-            .ok_or("Missing assets")?
-            .iter()
-            .map(|asset| {
-                Ok((
-                    text(asset, "id")?.to_owned(),
-                    root.join(text(asset, "relativePath")?)
-                        .to_string_lossy()
-                        .into_owned(),
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>, String>>()?;
-        let path = root.join("recovery.ann");
-        archive_bytes(&path, &snapshot, &paths)?;
-        let recovered = open(&path, workspace)?;
-        candidates.push(RecoveryCandidate {
-            project_id: project_id.into(),
-            path: path.to_string_lossy().into_owned(),
-            generation: recovered.snapshot["generation"]
-                .as_u64()
-                .ok_or("Missing generation")?,
-        });
-    }
-    let history = root.join("recovery-history");
-    if history.exists() {
-        let metadata = fs::symlink_metadata(&history).map_err(err)?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return Err("Invalid recovery history directory".into());
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            if metadata.file_attributes() & 0x400 != 0 {
-                return Err("Recovery history cannot be a reparse point".into());
-            }
-        }
-        for entry in fs::read_dir(&history).map_err(err)? {
-            let path = entry.map_err(err)?.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                continue;
-            }
-            let metadata = fs::symlink_metadata(&path).map_err(err)?;
-            if !metadata.is_file()
-                || metadata.file_type().is_symlink()
-                || metadata.len() > MAX_DOCUMENT
-            {
-                return Err("Invalid retained recovery document".into());
-            }
-            #[cfg(windows)]
-            if {
-                use std::os::windows::fs::MetadataExt;
-                metadata.file_attributes() & 0x400 != 0
-            } {
-                return Err("Retained recovery cannot be a reparse point".into());
-            }
-            let bytes = fs::read(&path).map_err(err)?;
-            if path.file_stem().and_then(|value| value.to_str())
-                != Some(g_ann_package::sha256(&bytes).as_str())
-            {
-                return Err("Retained recovery digest mismatch".into());
-            }
-            let retained: Value = serde_json::from_slice(&bytes).map_err(err)?;
-            validate(&retained)?;
-            if self::project_id(&retained)? != project_id
-                || retained["fingerprint"].as_str()
-                    != Some(project_fingerprint(&retained)?.as_str())
-            {
-                return Err("Retained recovery project identity or fingerprint mismatch".into());
-            }
-            candidates.push(RecoveryCandidate {
-                project_id: project_id.into(),
-                path: path.to_string_lossy().into_owned(),
-                generation: retained["generation"]
-                    .as_u64()
-                    .ok_or("Missing generation")?,
-            });
-        }
-    }
-    Ok(candidates)
+    let paths = snapshot["project"]["assets"]
+        .as_array()
+        .ok_or("Missing assets")?
+        .iter()
+        .map(|asset| {
+            Ok((
+                text(asset, "id")?.to_owned(),
+                root.join(text(asset, "relativePath")?)
+                    .to_string_lossy()
+                    .into_owned(),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, String>>()?;
+    let path = root.join("recovery.ann");
+    archive_bytes(&path, &snapshot, &paths)?;
+    let recovered = open(&path, workspace)?;
+    Ok(vec![RecoveryCandidate {
+        project_id: project_id.into(),
+        path: path.to_string_lossy().into_owned(),
+        generation: recovered.snapshot["generation"]
+            .as_u64()
+            .ok_or("Missing generation")?,
+    }])
 }
 
 #[cfg(test)]
