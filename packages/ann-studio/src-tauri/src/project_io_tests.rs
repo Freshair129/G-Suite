@@ -514,6 +514,37 @@ fn retained_recovery_document_opens_with_managed_assets() {
 }
 
 #[test]
+fn previous_session_cannot_save_after_same_archive_is_reopened_and_saved() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("project.ann");
+    save(&destination, snapshot(), paths, &workspace).unwrap();
+
+    let previous = open(&destination, &workspace).unwrap();
+    let current = open(&destination, &workspace).unwrap();
+    save(
+        &destination,
+        current.snapshot,
+        current.asset_paths,
+        &workspace,
+    )
+    .unwrap();
+    let before = fs::read(&destination).unwrap();
+    assert!(save(
+        &destination,
+        previous.snapshot,
+        previous.asset_paths,
+        &workspace
+    )
+    .is_err());
+    assert_eq!(fs::read(&destination).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");
