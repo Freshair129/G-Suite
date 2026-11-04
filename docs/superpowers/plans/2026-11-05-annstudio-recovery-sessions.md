@@ -24,6 +24,8 @@
 - Editing while open is pending does not silently discard user changes or revoke their active session.
 - Divergent recovery at the same generation and archived candidates survive application restart.
 - Concurrent project sessions targeting the same destination need an explicit destination-level conflict policy.
+- Candidate listing must not eagerly generate project-sized archives; materialize only the explicitly selected candidate, bound its writes and validate any existing artifact before use.
+- Recovery history remains discoverable when the active recovery document is missing; synchronize listing and selected-candidate materialization with project writes.
 
 ## Task 1: Recovery candidates and session fencing
 
@@ -31,7 +33,7 @@
 
 - [ ] Confirm the existing older-archive regression fails at the guard and add tests for same-generation divergence, retained-candidate enumeration after restart, activation failure and safe-integer overflow.
 - [ ] Define a native session token generated on accepted activation, checked under the project lock before save, prepare, import and build commit. Add delayed-writer regressions for each path.
-- [ ] Retain a divergent recovery as an atomically written uniquely named candidate before replacing active recovery; return all candidates through recovery APIs without activating a session during enumeration.
+- [ ] Retain a divergent recovery as an atomically written uniquely named document before replacing active recovery; list candidate metadata without activating a session or building archives. Materialize and verify only the selected candidate under the project lock, including the history-only case.
 - [ ] Activate a validated archive in two phases, assign a generation above all relevant snapshots, preserve lineage and expose the session token. Recheck the caller's accepted origin before activation.
 - [ ] Run hosted Windows Rust CI; verify every new regression and existing round-trip passes. Commit scoped changes.
 
