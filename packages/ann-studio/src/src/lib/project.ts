@@ -201,18 +201,19 @@ export async function recoverProject():Promise<string>{
 
 export async function importLegacyProject():Promise<string>{
   try{
-    const expected=origin();
+    const expected=origin(),generation=useStudioStore.getState().projectGeneration;
+    const unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation;
     const path=await open({title:"นำเข้าโปรเจกต์เก่า — ต้นฉบับไม่ถูกแก้",filters:[{name:"G-Ann Project",extensions:["ann"]}]});if(!path||typeof path!=="string")return "ยกเลิกแล้ว";
-    if(!sameOrigin(expected))return changedProject;
+    if(!unchanged())return changedProject;
     const legacy=JSON.parse(await invoke<string>("read_text_file",{path}));
-    if(!sameOrigin(expected))return changedProject;
+    if(!unchanged())return changedProject;
     if(legacy.version!==1||!Array.isArray(legacy.clips))throw new Error("Expected .ann v1 project");
     const media=await open({title:"เลือกสื่อต้นฉบับเพื่อเชื่อมใหม่",filters:[{name:"Media",extensions:["wav","mp3","flac","ogg","webm","mp4"]}]});if(!media||typeof media!=="string")return "ยกเลิกแล้ว";
-    if(!sameOrigin(expected))return changedProject;
+    if(!unchanged())return changedProject;
     const extracted=await invoke<{path:string;duration:number}>("extract_audio",{inputPath:media});
-    if(!sameOrigin(expected))return changedProject;
+    if(!unchanged())return changedProject;
     const state=useStudioStore.getState(),captured=captureProject(createPackProject(),{...state,sourcePath:media,wavPath:extracted.path,duration:extracted.duration,clips:legacy.clips,packBuilder:{},trackItems:[]},{});
-    const result=await invoke<ProjectOpenResult>("prepare_project",{snapshot:{project:captured.project,generation:0,fingerprint:""},assetPaths:captured.assetPaths});if(!sameOrigin(expected))return changedProject;hydrateProject(result,"");
+    const result=await invoke<ProjectOpenResult>("prepare_project",{snapshot:{project:captured.project,generation:0,fingerprint:""},assetPaths:captured.assetPaths});if(!unchanged())return changedProject;hydrateProject(result,"");
     return "นำเข้าโปรเจกต์เก่าแล้ว — บันทึกเป็น .ann v2 ใหม่";
   }catch(error){return `นำเข้าไม่สำเร็จ: ${error}`;}
 }
