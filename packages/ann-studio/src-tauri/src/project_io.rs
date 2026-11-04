@@ -322,6 +322,7 @@ fn prepare_if_current(
     snapshot: Value,
     asset_paths: BTreeMap<String, String>,
     expected_generation: u64,
+    expected_baseline_fingerprint: &str,
     workspace: &Path,
 ) -> Result<ProjectOpenResult, String> {
     validate(&snapshot)?;
@@ -337,7 +338,7 @@ fn prepare_if_current(
             .ok_or("Invalid recovery generation")?;
         if latest_generation > expected_generation
             || (latest_generation == expected_generation
-                && project_fingerprint(&latest)? != project_fingerprint(&snapshot)?)
+                && project_fingerprint(&latest)? != expected_baseline_fingerprint)
         {
             return Err("Project changed while the banner import was pending".into());
         }
@@ -446,6 +447,10 @@ pub fn import_banner_asset_archive(
     if snapshot["generation"].as_u64() != Some(expected_generation) {
         return Err("Project generation changed before banner import".into());
     }
+    // The import intentionally changes the project document below. Compare recovery against
+    // the untouched editor snapshot so a same-generation recovery does not look stale merely
+    // because this operation is adding the banner asset.
+    let baseline_fingerprint = project_fingerprint(&snapshot)?;
     let manifest = &verified.manifest;
     let file_records = manifest["files"]
         .as_array()
@@ -533,7 +538,13 @@ pub fn import_banner_asset_archive(
     project["editor"]["bannerProject"] = banner_project;
     project["editor"]["bannerVariantId"] = Value::from(variant_id);
 
-    prepare_if_current(snapshot, asset_paths, expected_generation, workspace)
+    prepare_if_current(
+        snapshot,
+        asset_paths,
+        expected_generation,
+        &baseline_fingerprint,
+        workspace,
+    )
 }
 
 fn archive_bytes(

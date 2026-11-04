@@ -281,6 +281,44 @@ fn applies_verified_banner_to_one_variant_without_changing_voice_or_event_mappin
 }
 
 #[test]
+fn imports_banner_when_recovery_has_same_generation_baseline() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let baseline = prepare(snapshot(), paths.clone(), &workspace).unwrap();
+    let (archive, manifest_digest, _) = editable_banner_archive(&root);
+
+    let imported = import_banner_asset_archive(
+        &archive,
+        &manifest_digest,
+        "second",
+        4,
+        baseline.snapshot.clone(),
+        paths,
+        &workspace,
+    );
+
+    assert!(
+        imported.is_ok(),
+        "same-generation recovery baseline should permit banner apply: {imported:?}"
+    );
+    let imported = imported.unwrap();
+    assert_eq!(
+        latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
+            .unwrap()
+            .unwrap(),
+        imported.snapshot
+    );
+    assert_eq!(
+        imported.snapshot["project"]["variants"][0]["bannerProject"]["eventId"],
+        "kill"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");
