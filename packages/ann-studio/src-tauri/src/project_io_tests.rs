@@ -319,6 +319,29 @@ fn imports_banner_when_recovery_has_same_generation_baseline() {
 }
 
 #[test]
+fn delayed_pre_import_recovery_cannot_replace_imported_banner() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let baseline = prepare(snapshot(), paths.clone(), &workspace).unwrap();
+    let (archive, digest, _) = editable_banner_archive(&root);
+    let imported = import_banner_asset_archive(
+        &archive, &digest, "second", 4, baseline.snapshot.clone(), paths.clone(), &workspace,
+    )
+    .unwrap();
+
+    // Simulate an earlier prepare request that reaches the lock after the import.
+    prepare(baseline.snapshot, paths, &workspace).unwrap();
+    let latest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
+        .unwrap()
+        .unwrap();
+    assert_eq!(latest["project"]["variants"][0]["bannerSource"], imported.snapshot["project"]["variants"][0]["bannerSource"]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");
