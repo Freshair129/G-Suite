@@ -4,7 +4,7 @@ vi.mock("@tauri-apps/plugin-dialog",()=>({open:vi.fn(),save:vi.fn()}));
 import { invoke } from "@tauri-apps/api/core";
 import { open,save } from "@tauri-apps/plugin-dialog";
 import { useStudioStore } from "../store/useStudioStore";
-import { newProject,snapshotProject,selectProjectVariant,saveProject,openProject,recoverProject,initializeProject,updateProjectBinding,acceptProjectBuild,inspectBannerAssetArchive,captureBannerAssetImportContext,applyBannerAssetArchive } from "./project";
+import { newProject,snapshotProject,selectProjectVariant,saveProject,openProject,recoverProject,initializeProject,importLegacyProject,updateProjectBinding,acceptProjectBuild,inspectBannerAssetArchive,captureBannerAssetImportContext,applyBannerAssetArchive } from "./project";
 
 beforeEach(()=>{vi.mocked(invoke).mockReset();vi.mocked(open).mockReset();vi.mocked(save).mockReset();newProject();useStudioStore.setState({sourcePath:"C:/เสียง.wav",wavPath:"C:/เสียง.wav",clips:[{id:"one",name:"หนึ่ง",start:0,end:1,event:"kill",color:"red"},{id:"two",name:"สอง",start:1,end:2,event:"kill",color:"blue"}]});});
 describe("portable project UI integration",()=>{
@@ -51,6 +51,20 @@ describe("portable project UI integration",()=>{
     useStudioStore.getState().setOverlayLayout(layout);
     finish(archive);await pending;
     expect(useStudioStore.getState().overlayLayout.alert.x).toBe(42);
+  });
+  it("does not replace edits made while importing a legacy project",async()=>{
+    vi.mocked(open).mockResolvedValueOnce("D:/older.ann").mockResolvedValueOnce("D:/voice.wav");
+    let finish!:(value:unknown)=>void;
+    vi.mocked(invoke).mockImplementation(async command=>{
+      if(command==="read_text_file")return JSON.stringify({version:1,clips:[]});
+      if(command==="extract_audio")return new Promise(resolve=>{finish=resolve;});
+      throw new Error(`Unexpected command ${command}`);
+    });
+    const pending=importLegacyProject();while(!finish)await new Promise(resolve=>setTimeout(resolve,0));
+    useStudioStore.getState().updateClip("two",{name:"edited during legacy import"});
+    finish({path:"D:/extracted.wav",duration:1});await pending;
+    expect(useStudioStore.getState().clips[1].name).toBe("edited during legacy import");
+    expect(vi.mocked(invoke).mock.calls.some(([command])=>command==="prepare_project")).toBe(false);
   });
   it("saves the full snapshot through native archive IO and retains concurrent edits",async()=>{
     vi.mocked(save).mockResolvedValue("D:/saved.ann");
