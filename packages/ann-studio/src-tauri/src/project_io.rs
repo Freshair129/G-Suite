@@ -319,7 +319,7 @@ pub fn prepare(
 }
 
 fn prepare_if_current(
-    snapshot: Value,
+    mut snapshot: Value,
     asset_paths: BTreeMap<String, String>,
     expected_generation: u64,
     expected_baseline_fingerprint: &str,
@@ -343,6 +343,14 @@ fn prepare_if_current(
             return Err("Project changed while the banner import was pending".into());
         }
     }
+    // Import changes the document. Advance its generation under the same lock as
+    // the recovery comparison and commit, so earlier pending snapshots cannot
+    // overwrite this import or be accepted as the current build.
+    let generation = expected_generation
+        .checked_add(1)
+        .filter(|value| *value <= 9_007_199_254_740_991)
+        .ok_or("Project generation limit reached")?;
+    snapshot["generation"] = Value::from(generation);
     let prepared = prepare_locked(snapshot, asset_paths, &root)?;
     persist_if_current(&prepared.snapshot, workspace, &root)?;
     Ok(prepared)

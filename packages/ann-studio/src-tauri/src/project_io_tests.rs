@@ -338,6 +338,7 @@ fn delayed_pre_import_recovery_cannot_replace_imported_banner() {
     )
     .unwrap();
 
+    assert_eq!(imported.snapshot["generation"], 5);
     // Simulate an earlier prepare request that reaches the lock after the import.
     prepare(baseline.snapshot, paths, &workspace).unwrap();
     let latest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
