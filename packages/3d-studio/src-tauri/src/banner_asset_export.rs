@@ -78,25 +78,9 @@ fn hash_source(path: &Path) -> Result<RasterSource, String> {
         return Err("Image size must be between 1 byte and 256 MiB".into());
     }
     let size = file_metadata.len();
-    let mut signature = [0_u8; 12];
-    let signature_len = file
-        .read(&mut signature)
-        .map_err(|error| error.to_string())?;
-    let signature_matches = match mime {
-        "image/png" => signature_len >= 8 && signature[..8] == [137, 80, 78, 71, 13, 10, 26, 10],
-        "image/webp" => {
-            signature_len >= 12 && &signature[..4] == b"RIFF" && &signature[8..12] == b"WEBP"
-        }
-        "image/jpeg" => signature_len >= 3 && signature[..3] == [0xff, 0xd8, 0xff],
-        _ => false,
-    };
-    if !signature_matches {
-        return Err("Image extension and file signature do not match".into());
-    }
-
-    file.rewind().map_err(|error| error.to_string())?;
-    banner_image_validation::validate(&mut file, mime)?;
-    file.rewind().map_err(|error| error.to_string())?;
+    // Stage once: decoding and archive writing must use the same bytes even if
+    // another process changes the selected source while this export is running.
+    let mut staged = tempfile::tempfile().map_err(|error| error.to_string())?;
     let mut hasher = Sha256::new();
     let mut count = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
@@ -112,13 +96,18 @@ fn hash_source(path: &Path) -> Result<RasterSource, String> {
             return Err("Image size exceeds 256 MiB".into());
         }
         hasher.update(&buffer[..read]);
+        staged
+            .write_all(&buffer[..read])
+            .map_err(|error| error.to_string())?;
     }
     if count != size {
         return Err("Image changed while being inspected".into());
     }
-    file.rewind().map_err(|error| error.to_string())?;
+    staged.rewind().map_err(|error| error.to_string())?;
+    banner_image_validation::validate(&mut staged, mime)?;
+    staged.rewind().map_err(|error| error.to_string())?;
     Ok(RasterSource {
-        file,
+        file: staged,
         mime,
         extension,
         size,
