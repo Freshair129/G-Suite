@@ -784,6 +784,13 @@ pub fn save(
     validate(&snapshot)?;
     let root = workspace.join(project_id(&snapshot)?);
     let _guard = lock(&root)?;
+    if let Some(latest) = latest_snapshot(project_id(&snapshot)?, workspace)? {
+        if latest["generation"].as_u64() > snapshot["generation"].as_u64() {
+            return Err(
+                "Project changed while the save was pending; save the current project again".into(),
+            );
+        }
+    }
     let prepared = prepare_locked(snapshot, asset_paths, &root)?;
     // Recovery is committed first, so a failed destination write still retains this snapshot.
     persist_if_current(&prepared.snapshot, workspace, &root)?;
