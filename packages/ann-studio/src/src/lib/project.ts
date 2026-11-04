@@ -167,10 +167,11 @@ export async function saveProject(saveAs=false):Promise<string>{
 
 export async function openProject():Promise<string>{
   try{
-    const expected=origin();
+    const expected=origin(),generation=useStudioStore.getState().projectGeneration;
+    const unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation;
     const path=await open({filters:[{name:"G-Ann Project",extensions:["ann"]}]});if(!path||typeof path!=="string")return "ยกเลิกแล้ว";
-    if(!sameOrigin(expected))return changedProject;
-    const result=await invoke<ProjectOpenResult>("open_project",{path});if(!sameOrigin(expected))return changedProject;hydrateProject(result,path);
+    if(!unchanged())return changedProject;
+    const result=await invoke<ProjectOpenResult>("open_project",{path});if(!unchanged())return changedProject;hydrateProject(result,path);
     return `เปิดโปรเจกต์แล้ว ✅ ${result.snapshot.project.variants.length} variants`;
   }catch(error){return `เปิดไม่สำเร็จ: ${error}`;}
 }
