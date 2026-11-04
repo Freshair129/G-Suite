@@ -490,6 +490,30 @@ fn recovery_history_is_listed_without_materializing_archives_when_active_is_miss
 }
 
 #[test]
+fn retained_recovery_document_opens_with_managed_assets() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let prepared = prepare(snapshot(), paths, &workspace).unwrap();
+    let history = workspace
+        .join("00000000-0000-4000-8000-000000000001")
+        .join("recovery-history");
+    fs::create_dir_all(&history).unwrap();
+    let bytes = serde_json::to_vec(&prepared.snapshot).unwrap();
+    let path = history.join(format!("{}.json", g_ann_package::sha256(&bytes)));
+    fs::write(&path, bytes).unwrap();
+    let opened = open(&path, &workspace).unwrap();
+    assert_eq!(opened.snapshot, prepared.snapshot);
+    assert_eq!(
+        fs::read(&opened.asset_paths["asset-one"]).unwrap(),
+        b"preserved voice"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");
