@@ -28,6 +28,8 @@
 - Recovery history remains discoverable when the active recovery document is missing; synchronize listing and selected-candidate materialization with project writes.
 - Report damaged or unreadable candidates as visible warnings without hiding other valid candidates; never delete damaged evidence.
 - Read recovery data from bounded, verified handles with reparse-point protections, not a path check followed by an unbounded path read; define deterministic ordering and candidate identity.
+- Limit scans and total metadata bytes, expose truncation or pagination, and retain valid candidates when another candidate is damaged or active recovery is unavailable.
+- On Windows a no-follow final-file handle alone does not protect intermediate directory swaps; use handle-relative traversal or document and review the app-owned-root trust boundary.
 
 ## Task 1: Recovery candidates and session fencing
 
@@ -35,7 +37,7 @@
 
 - [ ] Confirm the existing older-archive regression fails at the guard and add tests for same-generation divergence, retained-candidate enumeration after restart, activation failure and safe-integer overflow.
 - [ ] Define a native session token generated on accepted activation, checked under the project lock before save, prepare, import and build commit. Add delayed-writer regressions for each path.
-- [ ] Retain a divergent recovery as an atomically written uniquely named document before replacing active recovery; list candidate metadata without activating a session or building archives. Materialize and verify only the selected candidate under the project lock, including the history-only case.
+- [ ] Retain a divergent recovery as an atomically written uniquely named document before replacing active recovery. List stable candidate IDs, metadata and per-entry warnings without paths or archives; use a bounded scan and explicit truncation. Open and revalidate only the selected candidate and its managed assets under the project lock, including the history-only case.
 - [ ] Activate a validated archive in two phases, assign a generation above all relevant snapshots, preserve lineage and expose the session token. Recheck the caller's accepted origin before activation.
 - [ ] Run hosted Windows Rust CI; verify every new regression and existing round-trip passes. Commit scoped changes.
 
