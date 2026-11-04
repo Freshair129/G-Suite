@@ -459,6 +459,37 @@ fn edits_after_opening_older_archive_do_not_replace_newer_recovery() {
 }
 
 #[test]
+fn recovery_history_is_listed_without_materializing_archives_when_active_is_missing() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let prepared = prepare(snapshot(), paths, &workspace).unwrap();
+    let project_root = workspace.join("00000000-0000-4000-8000-000000000001");
+    let history = project_root.join("recovery-history");
+    fs::create_dir_all(&history).unwrap();
+    let bytes = serde_json::to_vec(&prepared.snapshot).unwrap();
+    fs::write(
+        history.join(format!("{}.json", g_ann_package::sha256(&bytes))),
+        bytes,
+    )
+    .unwrap();
+    fs::remove_file(project_root.join("recovery.json")).unwrap();
+
+    let candidates = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(Path::new(&candidates[0].path).extension().unwrap(), "json");
+    assert!(fs::read_dir(&history).unwrap().all(|entry| entry
+        .unwrap()
+        .path()
+        .extension()
+        .unwrap()
+        == "json"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let root = root();
     let source = root.join("voice.wav");
