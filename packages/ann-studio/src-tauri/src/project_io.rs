@@ -768,47 +768,6 @@ pub fn latest_snapshot(project_id: &str, workspace: &Path) -> Result<Option<Valu
     Ok(Some(snapshot))
 }
 
-// Keep a durable, content-addressed recovery document before the user opens a
-// divergent older archive. Its referenced managed assets remain in the project.
-fn retain_recovery(snapshot: &Value, root: &Path) -> Result<(), String> {
-    let bytes = serde_json::to_vec(snapshot).map_err(err)?;
-    let history = root.join("recovery-history");
-    fs::create_dir_all(&history).map_err(err)?;
-    let metadata = fs::symlink_metadata(&history).map_err(err)?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err("Invalid recovery history directory".into());
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if metadata.file_attributes() & 0x400 != 0 {
-            return Err("Recovery history cannot be a reparse point".into());
-        }
-    }
-    let final_path = history.join(format!("{}.json", g_ann_package::sha256(&bytes)));
-    if final_path.exists() {
-        if fs::read(&final_path).map_err(err)? != bytes {
-            return Err("Retained recovery document is corrupt".into());
-        }
-        return Ok(());
-    }
-    let temporary = unique(&history, "recovery-history");
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary)
-            .map_err(err)?;
-        file.write_all(&bytes).map_err(err)?;
-        file.sync_all().map_err(err)?;
-        drop(file);
-        fs::hard_link(&temporary, &final_path).map_err(err)?;
-        Ok(())
-    })();
-    let _ = fs::remove_file(&temporary);
-    result
-}
-
 pub fn save(
     path: &Path,
     snapshot: Value,
@@ -946,13 +905,6 @@ pub fn open(path: &Path, workspace: &Path) -> Result<ProjectOpenResult, String> 
     if expected != names {
         return Err("Unindexed project archive payload".into());
     }
-    if let Some(latest) = latest_snapshot(project_id(&snapshot)?, workspace)? {
-        if latest["generation"].as_u64() >= snapshot["generation"].as_u64()
-            && project_fingerprint(&latest)? != project_fingerprint(&snapshot)?
-        {
-            retain_recovery(&latest, &root)?;
-        }
-    }
     Ok(ProjectOpenResult {
         snapshot,
         asset_paths: paths,
@@ -983,77 +935,13 @@ pub fn recover(project_id: &str, workspace: &Path) -> Result<Vec<RecoveryCandida
     let path = root.join("recovery.ann");
     archive_bytes(&path, &snapshot, &paths)?;
     let recovered = open(&path, workspace)?;
-    let mut candidates = vec![RecoveryCandidate {
+    Ok(vec![RecoveryCandidate {
         project_id: project_id.into(),
         path: path.to_string_lossy().into_owned(),
         generation: recovered.snapshot["generation"]
             .as_u64()
             .ok_or("Missing generation")?,
-    }];
-    let history = root.join("recovery-history");
-    if history.is_dir() {
-        let metadata = fs::symlink_metadata(&history).map_err(err)?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return Err("Invalid recovery history directory".into());
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            if metadata.file_attributes() & 0x400 != 0 {
-                return Err("Recovery history cannot be a reparse point".into());
-            }
-        }
-        for entry in fs::read_dir(&history).map_err(err)? {
-            let entry = entry.map_err(err)?;
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                continue;
-            }
-            let metadata = fs::symlink_metadata(&path).map_err(err)?;
-            if !metadata.is_file()
-                || metadata.file_type().is_symlink()
-                || metadata.len() > MAX_DOCUMENT
-            {
-                return Err("Invalid retained recovery document".into());
-            }
-            let bytes = fs::read(&path).map_err(err)?;
-            if path.file_stem().and_then(|value| value.to_str())
-                != Some(g_ann_package::sha256(&bytes).as_str())
-            {
-                return Err("Retained recovery digest mismatch".into());
-            }
-            let retained: Value = serde_json::from_slice(&bytes).map_err(err)?;
-            validate(&retained)?;
-            if self::project_id(&retained)? != project_id {
-                return Err("Retained recovery project identity mismatch".into());
-            }
-            let paths = retained["project"]["assets"]
-                .as_array()
-                .ok_or("Missing assets")?
-                .iter()
-                .map(|asset| {
-                    Ok((
-                        text(asset, "id")?.to_owned(),
-                        root.join(text(asset, "relativePath")?)
-                            .to_string_lossy()
-                            .into_owned(),
-                    ))
-                })
-                .collect::<Result<BTreeMap<_, _>, String>>()?;
-            let archive = path.with_extension("ann");
-            if !archive.exists() {
-                archive_bytes(&archive, &retained, &paths)?;
-            }
-            candidates.push(RecoveryCandidate {
-                project_id: project_id.into(),
-                path: archive.to_string_lossy().into_owned(),
-                generation: retained["generation"]
-                    .as_u64()
-                    .ok_or("Missing generation")?,
-            });
-        }
-    }
-    Ok(candidates)
+    }])
 }
 
 #[cfg(test)]
