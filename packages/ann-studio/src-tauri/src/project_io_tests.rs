@@ -1,4 +1,5 @@
 use super::*;
+use crate::banner_asset_archive;
 use serde_json::json;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -345,6 +346,96 @@ fn imports_still_images_and_silent_video_as_their_real_media_layer_kinds() {
             source_id
         );
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "run through tools/test-banner-roundtrip.ps1 with a Studio-produced ZIP"]
+fn imports_studio_producer_archive_and_reopens_the_saved_project() {
+    let archive = PathBuf::from(
+        std::env::var_os("G_SUITE_BANNER_E2E_ARCHIVE")
+            .expect("round-trip runner must provide the producer archive"),
+    );
+    let root = root();
+    let voice = root.join("voice.wav");
+    fs::write(&voice, b"preserved AnnStudio voice bytes").unwrap();
+    let workspace = root.join("app-data");
+    let source_paths = BTreeMap::from([("asset-one".into(), voice.to_string_lossy().into_owned())]);
+    let original = snapshot();
+    let original_variant = original["project"]["variants"][0].clone();
+    let original_mappings = original["project"]["eventMappings"].clone();
+    let preview = banner_asset_archive::inspect(&archive).unwrap();
+    assert_eq!(preview.manifest["mediaKind"], "still-image");
+
+    let imported = import_banner_asset_archive(
+        &archive,
+        &preview.manifest_sha256,
+        "second",
+        4,
+        original,
+        source_paths,
+        &workspace,
+    )
+    .unwrap();
+    let project = &imported.snapshot["project"];
+    let variant = &project["variants"][0];
+    assert_eq!(variant["voiceClip"], original_variant["voiceClip"]);
+    assert_eq!(variant["voiceAssetId"], original_variant["voiceAssetId"]);
+    assert_eq!(variant["bannerId"], original_variant["bannerId"]);
+    assert_eq!(variant["sfxCues"], original_variant["sfxCues"]);
+    assert_eq!(project["eventMappings"], original_mappings);
+    assert_eq!(
+        variant["bannerSource"]["assetId"],
+        preview.manifest["assetId"]
+    );
+    assert_eq!(
+        variant["bannerSource"]["revision"],
+        preview.manifest["revision"]
+    );
+    assert_eq!(
+        variant["bannerSource"]["manifestSha256"],
+        preview.manifest_sha256
+    );
+    assert_eq!(variant["bannerProject"]["eventId"], "kill");
+    assert_eq!(variant["bannerProject"]["assets"][0]["kind"], "image");
+    let managed_id = variant["bannerProject"]["assets"][0]["source"]
+        .as_str()
+        .unwrap()
+        .strip_prefix("asset:")
+        .unwrap()
+        .to_owned();
+    let imported_image = fs::read(imported.asset_paths.get(&managed_id).unwrap()).unwrap();
+    assert_eq!(
+        imported_image.len() as u64,
+        preview.manifest["files"][0]["sizeBytes"].as_u64().unwrap()
+    );
+    assert_eq!(
+        g_ann_package::sha256(&imported_image),
+        preview.manifest["files"][0]["sha256"].as_str().unwrap()
+    );
+
+    let project_file = root.join("round-trip.ann");
+    let saved = save(
+        &project_file,
+        imported.snapshot,
+        imported.asset_paths,
+        &workspace,
+    )
+    .unwrap();
+    let reopened = open(&project_file, &workspace).unwrap();
+    assert_eq!(reopened.snapshot, saved.snapshot);
+    assert_eq!(
+        reopened.snapshot["project"]["eventMappings"],
+        original_mappings
+    );
+    assert_eq!(
+        reopened.snapshot["project"]["variants"][0]["voiceClip"],
+        original_variant["voiceClip"]
+    );
+    assert_eq!(
+        fs::read(reopened.asset_paths.get(&managed_id).unwrap()).unwrap(),
+        imported_image
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

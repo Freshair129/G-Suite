@@ -1,8 +1,9 @@
 # G-Maiden 3D Studio
 
-Independent Tauri 2 / React 19 app within G-Suite. This is the imported Studio shell:
-status, project listing and creation of review-pending project folders/manifests.
-It is not yet an interactive 3D editor or an AnnStudio asset-import bridge.
+Independent Tauri 2 / React 19 app within G-Suite. This package owns the imported
+Studio shell and the first Banner Asset v1 producer: project status/listing/creation
+plus immutable still-image `.banner.zip` export for AnnStudio. It is not an
+interactive 3D editor or an editable-template/video renderer.
 
 ## Development
 
@@ -39,6 +40,16 @@ Paths with spaces are passed as executable paths, without a command shell.
 Project names use 1–64 ASCII letters/digits/hyphens/underscores, excluding Windows
 reserved names. Existing destinations are never reused or overwritten.
 Failed writes may leave an incomplete new project folder; it remains review-pending.
+
+## Banner Asset export
+
+Select a Studio project, a stable asset ID, a display name, a revision and one PNG,
+WebP or JPEG source. Export writes
+`<project>/exports/<asset-id>/r<revision>.banner.zip` and refuses to replace an
+existing revision. The ZIP contains a v1 manifest and the verified raster bytes;
+the source filename and absolute source path are not included. The AnnStudio user
+chooses the voice clip/event pairing during import. V1 does not export editable
+BannerProject templates or rendered motion/video.
 
 ## Source provenance
 

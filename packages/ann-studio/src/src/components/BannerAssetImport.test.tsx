@@ -77,6 +77,49 @@ describe("BannerAssetImport", () => {
     expect(applyBannerAssetArchive).not.toHaveBeenCalled();
   });
 
+  it("keeps keyboard focus inside the dialog and returns it to the opener", async () => {
+    render(<BannerAssetImport />);
+    const opener = screen.getByRole("button", { name: /นำเข้า Banner Asset/ });
+    fireEvent.click(opener);
+
+    const dialog = await screen.findByRole("dialog");
+    const cancel = screen.getByRole("button", { name: "ยกเลิก" });
+    const apply = screen.getByRole("button", { name: "นำไปใช้กับคลิปนี้" });
+    const target = screen.getByLabelText("คลิปปลายทาง");
+    expect(document.activeElement).toBe(cancel);
+
+    apply.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(target);
+
+    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(apply);
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+
+  it("keeps focus in the dialog while Apply is pending and restores the opener after success", async () => {
+    let finishApply!: (value: boolean) => void;
+    vi.mocked(applyBannerAssetArchive).mockReturnValue(new Promise(resolve => { finishApply = resolve; }));
+    render(<BannerAssetImport />);
+    const opener = screen.getByRole("button", { name: /นำเข้า Banner Asset/ });
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "นำไปใช้กับคลิปนี้" }));
+
+    await waitFor(() => expect(applyBannerAssetArchive).toHaveBeenCalled());
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
+    fireEvent.keyDown(dialog, { key: "Tab" });
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBe(dialog);
+
+    finishApply(true);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("shows archive verification errors and does not apply invalid input", async () => {
     vi.mocked(inspectBannerAssetArchive).mockRejectedValue(new Error("SHA-256 mismatch"));
     render(<BannerAssetImport />);

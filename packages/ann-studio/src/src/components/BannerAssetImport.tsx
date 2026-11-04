@@ -40,10 +40,13 @@ export default function BannerAssetImport() {
   const [status, setStatus] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    if (inspection) cancelRef.current?.focus();
-  }, [inspection]);
+    if (inspection && busy) dialogRef.current?.focus();
+    else if (inspection) cancelRef.current?.focus();
+    else openerRef.current?.focus();
+  }, [inspection, busy]);
 
   async function chooseArchive() {
     setError("");
@@ -99,7 +102,7 @@ export default function BannerAssetImport() {
   const manifest = inspection?.preview.manifest;
   const target = clips.find(clip => clip.id === targetVariantId);
   return <div className="relative">
-    <button type="button" disabled={busy} onClick={() => void chooseArchive()} className="rounded border border-line px-3 py-2 text-xs text-ink-muted hover:border-lime hover:text-ink disabled:opacity-40">
+    <button type="button" disabled={busy} onClick={event => { openerRef.current = event.currentTarget; void chooseArchive(); }} className="rounded border border-line px-3 py-2 text-xs text-ink-muted hover:border-lime hover:text-ink disabled:opacity-40">
       นำเข้า Banner Asset (.zip)
     </button>
     {error && <p role="alert" className="mt-2 text-xs text-red-300">{error}</p>}
@@ -117,7 +120,8 @@ export default function BannerAssetImport() {
           if (event.key === "Tab" && dialogRef.current) {
             const controls = [...dialogRef.current.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled)")];
             const first = controls[0], last = controls[controls.length - 1];
-            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+            if (controls.length === 0) event.preventDefault();
+            else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last?.focus(); }
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
           }
         }}

@@ -1,10 +1,11 @@
 # CR-SUITE-002 — Versioned banner asset handoff
 
-Status: JSON Schema, shared manifest/integrity validator, and AnnStudio managed-project ZIP importer implemented; Studio producer export remains open.
-Depends on CR-SUITE-001 (PR #20). AnnStudio's managed-project importer is a
-separately reviewable consumer slice; the remaining implementation is the Studio
-producer export. Do not mark this CR complete until both applications round-trip
-real assets.
+Status: JSON Schema, shared manifest/integrity validator, AnnStudio managed-project
+ZIP importer, and a bounded 3D Studio still-image producer are implemented on the
+stacked PR branch. Real native producer-to-consumer/reopen evidence is still a
+completion gate. Editable-template and baked-video producer paths remain future work.
+Depends on CR-SUITE-001 (PR #20). Do not mark this CR complete until both
+applications round-trip a real asset.
 
 ## Contract now defined
 
@@ -84,14 +85,30 @@ only), so templates with `fontAssetId` are rejected instead of silently substitu
 a font. The selected variant's existing visual duration remains unchanged; a baked
 video is rendered only across that event's configured visual interval.
 
-Remaining gates: G-AnnStudio/3D Studio still has no producer ZIP export, so no real
-producer-to-consumer round trip is available. Cancellation while the native Apply
+Remaining gates: the still-image producer is implemented, but native
+producer-to-consumer/reopen evidence is pending. Cancellation while the native Apply
 worker is already running is not implemented. A failed multi-file copy leaves the
 previous recovery snapshot intact, but may leave unreferenced content-addressed
 files in the local project cache; cleanup/rollback of those orphan files is future
 work. Native codec/alpha parity, installed-app UI validation and the remaining
 concurrent/disk-full cases are still separate acceptance work. See
 `CR-SUITE-002-VALIDATION.md` for exact checks and evidence.
+
+## 3D Studio producer slice — 2026-11-04
+
+The producer exports one selected PNG, WebP or JPEG from a named local Studio
+project as an immutable `still-image` Banner Asset v1 ZIP. It validates the project
+identity, rejects linked/reparse-point project and export paths, checks the source
+regular-file status, media signature, 256 MiB bound and SHA-256 while streaming.
+Archive names and manifest paths are fixed; the source filename and local path are
+not serialized. Revisions are created with a no-overwrite final step under
+`<project>/exports/<assetId>/`. The AnnStudio user explicitly selects the voice
+clip/event pairing during import.
+
+Editable BannerProject templates and rendered silent WebM are not produced in this
+slice. The code-level Studio producer → AnnStudio importer → `.ann` save/reopen
+round trip passes on an isolated fixture. Native-window, installed-app UI and DPI
+acceptance remain separate completion gates.
 
 CR-ANN-WORKFLOW-001 then makes asset selection part of the event card + paired
 voice/banner/motion flow designed in `F:/g-suit/annstudio-design-proposal/v3`.
