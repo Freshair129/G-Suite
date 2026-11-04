@@ -13,7 +13,7 @@ const changedProject="โปรเจกต์เปลี่ยนแล้ว 
 let recoveryTimer:ReturnType<typeof setTimeout>|undefined;
 useStudioStore.subscribe((state,prior)=>{
   if(hydrating)return;
-  const keys=["sourcePath","wavPath","duration","clips","bannerProject","bannerOverrides","packBuilder","trackItems","trackCount","masterVolume","projectDocument"] as const;
+  const keys=["sourcePath","wavPath","duration","clips","bannerProject","bannerOverrides","packBuilder","trackItems","trackCount","masterVolume","overlayLayout","projectDocument"] as const;
   if(keys.some(key=>state[key]!==prior[key])){
     useStudioStore.setState({projectGeneration:state.projectGeneration+1});
     if(typeof window!=="undefined"&&"__TAURI_INTERNALS__" in window){
@@ -178,16 +178,17 @@ export async function openProject():Promise<string>{
 
 export async function initializeProject():Promise<string|null>{
   try{
-    const expected=origin();
+    const expected=origin(),generation=useStudioStore.getState().projectGeneration;
+    const unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation;
     const path=await invoke<string|null>("project_startup_path");
-    if(!sameOrigin(expected))return changedProject;
-    if(path){const result=await invoke<ProjectOpenResult>("open_project",{path});if(!sameOrigin(expected))return changedProject;hydrateProject(result,path);return `เปิดโปรเจกต์แล้ว ✅ ${path}`;}
+    if(!unchanged())return changedProject;
+    if(path){const result=await invoke<ProjectOpenResult>("open_project",{path});if(!unchanged())return changedProject;hydrateProject(result,path);return `เปิดโปรเจกต์แล้ว ✅ ${path}`;}
     const projectId=useStudioStore.getState().recentProjectId;
     if(projectId&&typeof window!=="undefined"){
       const candidates=await invoke<Array<{path:string}>>("recover_project",{projectId});
-      if(!sameOrigin(expected))return changedProject;
+      if(!unchanged())return changedProject;
       if(candidates.length&&window.confirm("พบสำเนากู้คืนของโปรเจกต์ล่าสุด ต้องการเปิดเพื่อตรวจและบันทึกหรือไม่?")){
-        const result=await invoke<ProjectOpenResult>("open_project",{path:candidates[0].path});if(!sameOrigin(expected))return changedProject;hydrateProject(result,"");return "เปิดสำเนากู้คืนแล้ว — บันทึก .ann เพื่อเก็บงาน";
+        const result=await invoke<ProjectOpenResult>("open_project",{path:candidates[0].path});if(!unchanged())return changedProject;hydrateProject(result,"");return "เปิดสำเนากู้คืนแล้ว — บันทึก .ann เพื่อเก็บงาน";
       }
     }
     return null;
@@ -195,7 +196,7 @@ export async function initializeProject():Promise<string|null>{
 }
 
 export async function recoverProject():Promise<string>{
-  try{const expected=origin(),state=useStudioStore.getState(),projectId=state.projectDocument?.projectId||state.recentProjectId;if(!projectId)return "ไม่พบสำเนากู้คืน";const candidates=await invoke<Array<{path:string}>>("recover_project",{projectId});if(!sameOrigin(expected))return changedProject;if(!candidates.length)return "ไม่พบสำเนากู้คืน";const result=await invoke<ProjectOpenResult>("open_project",{path:candidates[0].path});if(!sameOrigin(expected))return changedProject;hydrateProject(result,"");return "เปิดสำเนากู้คืนแล้ว — บันทึกเป็น .ann เพื่อเก็บงาน";}catch(error){return `กู้คืนไม่สำเร็จ: ${error}`;}
+  try{const expected=origin(),state=useStudioStore.getState(),generation=state.projectGeneration,unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation,projectId=state.projectDocument?.projectId||state.recentProjectId;if(!projectId)return "ไม่พบสำเนากู้คืน";const candidates=await invoke<Array<{path:string}>>("recover_project",{projectId});if(!unchanged())return changedProject;if(!candidates.length)return "ไม่พบสำเนากู้คืน";const result=await invoke<ProjectOpenResult>("open_project",{path:candidates[0].path});if(!unchanged())return changedProject;hydrateProject(result,"");return "เปิดสำเนากู้คืนแล้ว — บันทึกเป็น .ann เพื่อเก็บงาน";}catch(error){return `กู้คืนไม่สำเร็จ: ${error}`;}
 }
 
 export async function importLegacyProject():Promise<string>{
