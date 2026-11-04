@@ -1,47 +1,143 @@
+mod banner_asset_archive;
+mod build_jobs;
 mod gann;
 mod gann_authoring;
 mod maiden_client;
-mod project_io;
-mod build_jobs;
 mod media_jobs;
+mod project_io;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-
 #[tauri::command]
-fn project_startup_path(window:tauri::WebviewWindow)->Result<Option<String>,String> {
+fn project_startup_path(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
     gann::trusted(&window)?;
-    Ok(std::env::args().skip(1).find(|path|Path::new(path).extension().and_then(|s|s.to_str()).is_some_and(|s|s.eq_ignore_ascii_case("ann"))))
+    Ok(std::env::args().skip(1).find(|path| {
+        Path::new(path)
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("ann"))
+    }))
 }
 
 #[tauri::command]
-async fn prepare_project(window: tauri::WebviewWindow, app: tauri::AppHandle, snapshot: serde_json::Value, asset_paths: std::collections::BTreeMap<String,String>) -> Result<project_io::ProjectOpenResult,String> {
+async fn prepare_project(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    snapshot: serde_json::Value,
+    asset_paths: std::collections::BTreeMap<String, String>,
+) -> Result<project_io::ProjectOpenResult, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
-    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
-    tauri::async_runtime::spawn_blocking(move || project_io::prepare(snapshot,asset_paths,&workspace)).await.map_err(|e|e.to_string())?
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || {
+        project_io::prepare(snapshot, asset_paths, &workspace)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-async fn save_project(window: tauri::WebviewWindow, app: tauri::AppHandle, path: String, snapshot: serde_json::Value, asset_paths: std::collections::BTreeMap<String,String>) -> Result<project_io::ProjectSaveResult,String> {
+async fn save_project(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    path: String,
+    snapshot: serde_json::Value,
+    asset_paths: std::collections::BTreeMap<String, String>,
+) -> Result<project_io::ProjectSaveResult, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
-    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
-    tauri::async_runtime::spawn_blocking(move || project_io::save(Path::new(&path),snapshot,asset_paths,&workspace)).await.map_err(|e|e.to_string())?
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || {
+        project_io::save(Path::new(&path), snapshot, asset_paths, &workspace)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-async fn open_project(window: tauri::WebviewWindow, app: tauri::AppHandle, path: String) -> Result<project_io::ProjectOpenResult,String> {
+async fn open_project(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<project_io::ProjectOpenResult, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
-    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
-    tauri::async_runtime::spawn_blocking(move || project_io::open(Path::new(&path),&workspace)).await.map_err(|e|e.to_string())?
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || project_io::open(Path::new(&path), &workspace))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-async fn recover_project(window: tauri::WebviewWindow, app: tauri::AppHandle, project_id: String) -> Result<Vec<project_io::RecoveryCandidate>,String> {
+async fn recover_project(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    project_id: String,
+) -> Result<Vec<project_io::RecoveryCandidate>, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
-    let workspace=app.path().app_local_data_dir().map_err(|e|e.to_string())?.join("projects");
-    tauri::async_runtime::spawn_blocking(move || project_io::recover(&project_id,&workspace)).await.map_err(|e|e.to_string())?
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || project_io::recover(&project_id, &workspace))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn inspect_banner_asset_archive(
+    window: tauri::WebviewWindow,
+    path: String,
+) -> Result<banner_asset_archive::BannerAssetPreview, String> {
+    gann::trusted(&window)?;
+    tauri::async_runtime::spawn_blocking(move || banner_asset_archive::inspect(Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn import_banner_asset_archive(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    path: String,
+    manifest_sha256: String,
+    variant_id: String,
+    expected_generation: u64,
+    snapshot: serde_json::Value,
+    asset_paths: std::collections::BTreeMap<String, String>,
+) -> Result<project_io::ProjectOpenResult, String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || {
+        project_io::import_banner_asset_archive(
+            Path::new(&path),
+            &manifest_sha256,
+            &variant_id,
+            expected_generation,
+            snapshot,
+            asset_paths,
+            &workspace,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn ffmpeg_bin() -> Result<PathBuf, String> {
@@ -69,11 +165,15 @@ async fn extract_audio(input_path: String) -> Result<AudioInfo, String> {
         .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-y",
-            "-i", &input_path,
+            "-i",
+            &input_path,
             "-vn",
-            "-acodec", "pcm_s16le",
-            "-ar", "44100",
-            "-ac", "1",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "44100",
+            "-ac",
+            "1",
             wav_path.to_str().unwrap(),
         ])
         .output()
@@ -143,10 +243,14 @@ async fn cut_clip(
         .creation_flags(CREATE_NO_WINDOW)
         .args([
             "-y",
-            "-i", &source_path,
-            "-ss", &format!("{start:.3}"),
-            "-t", &format!("{duration:.3}"),
-            "-acodec", "pcm_s16le",
+            "-i",
+            &source_path,
+            "-ss",
+            &format!("{start:.3}"),
+            "-t",
+            &format!("{duration:.3}"),
+            "-acodec",
+            "pcm_s16le",
             &output_path,
         ])
         .output()
@@ -169,7 +273,13 @@ fn round2(x: f64) -> f64 {
 
 fn sanitize_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -300,16 +410,31 @@ async fn analyze_video(
     let lang = lang.unwrap_or_else(|| "th".into());
 
     // 1. W1 — vision line boundaries from the video
-    let b = spawn_sidecar(&py, sidecar.join("detect_boundaries.py"), vec![video_path.clone()]).await?;
+    let b = spawn_sidecar(
+        &py,
+        sidecar.join("detect_boundaries.py"),
+        vec![video_path.clone()],
+    )
+    .await?;
     let b_json: serde_json::Value = serde_json::from_str(String::from_utf8_lossy(&b.stdout).trim())
-        .map_err(|e| format!("detect_boundaries: {e}\n{}", String::from_utf8_lossy(&b.stderr)))?;
+        .map_err(|e| {
+            format!(
+                "detect_boundaries: {e}\n{}",
+                String::from_utf8_lossy(&b.stderr)
+            )
+        })?;
     let lines = b_json["lines"].as_array().cloned().unwrap_or_default();
     if lines.is_empty() {
         return Ok(vec![]);
     }
     let windows: Vec<(f64, f64)> = lines
         .iter()
-        .map(|l| (l["startMs"].as_f64().unwrap_or(0.0) / 1000.0, l["endMs"].as_f64().unwrap_or(0.0) / 1000.0))
+        .map(|l| {
+            (
+                l["startMs"].as_f64().unwrap_or(0.0) / 1000.0,
+                l["endMs"].as_f64().unwrap_or(0.0) / 1000.0,
+            )
+        })
         .collect();
 
     // 2. whisper — transcript segments from the wav
@@ -326,20 +451,35 @@ async fn analyze_video(
     // 3. W4 — active button label per window (best-effort; empty on failure)
     let windows_ms: Vec<[f64; 2]> = lines
         .iter()
-        .map(|l| [l["startMs"].as_f64().unwrap_or(0.0), l["endMs"].as_f64().unwrap_or(0.0)])
+        .map(|l| {
+            [
+                l["startMs"].as_f64().unwrap_or(0.0),
+                l["endMs"].as_f64().unwrap_or(0.0),
+            ]
+        })
         .collect();
     let labels: Vec<String> = match spawn_sidecar(
         &py,
         sidecar.join("detect_buttons.py"),
-        vec![video_path, "--windows".into(), serde_json::to_string(&windows_ms).unwrap()],
+        vec![
+            video_path,
+            "--windows".into(),
+            serde_json::to_string(&windows_ms).unwrap(),
+        ],
     )
     .await
     {
-        Ok(o) => serde_json::from_str::<serde_json::Value>(String::from_utf8_lossy(&o.stdout).trim())
-            .ok()
-            .and_then(|v| v["labels"].as_array().cloned())
-            .map(|arr| arr.iter().map(|x| x["label"].as_str().unwrap_or("").to_string()).collect())
-            .unwrap_or_default(),
+        Ok(o) => {
+            serde_json::from_str::<serde_json::Value>(String::from_utf8_lossy(&o.stdout).trim())
+                .ok()
+                .and_then(|v| v["labels"].as_array().cloned())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|x| x["label"].as_str().unwrap_or("").to_string())
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
         Err(_) => Vec::new(),
     };
 
@@ -363,7 +503,12 @@ async fn analyze_video(
                 .filter(|t| !t.is_empty())
                 .collect::<Vec<_>>()
                 .join(" ");
-            AnalyzedClip { start: s, end: e, text, label: labels.get(i).cloned().unwrap_or_default() }
+            AnalyzedClip {
+                start: s,
+                end: e,
+                text,
+                label: labels.get(i).cloned().unwrap_or_default(),
+            }
         })
         .collect();
     Ok(clips)
@@ -427,19 +572,28 @@ fn clip_audio_filter(c: &InstallClip, dur: f64) -> Option<String> {
         parts.push(format!("bass=g={:.2}", db(m("eqLow"), 12.0)));
     }
     if m("eqMid").abs() > 0.5 {
-        parts.push(format!("equalizer=f=1000:width_type=o:width=1:g={:.2}", db(m("eqMid"), 12.0)));
+        parts.push(format!(
+            "equalizer=f=1000:width_type=o:width=1:g={:.2}",
+            db(m("eqMid"), 12.0)
+        ));
     }
     if m("eqHigh").abs() > 0.5 {
         parts.push(format!("treble=g={:.2}", db(m("eqHigh"), 12.0)));
     }
     if m("presence").abs() > 0.5 {
-        parts.push(format!("equalizer=f=4000:width_type=o:width=1.2:g={:.2}", db(m("presence"), 8.0)));
+        parts.push(format!(
+            "equalizer=f=4000:width_type=o:width=1.2:g={:.2}",
+            db(m("presence"), 8.0)
+        ));
     }
     // dynamics
     let comp = m("compression");
     if comp > 1.0 {
         let ratio = 1.0 + (comp / 100.0) * 7.0; // 1..8
-        parts.push(format!("acompressor=threshold=-18dB:ratio={:.2}:attack=20:release=200", ratio));
+        parts.push(format!(
+            "acompressor=threshold=-18dB:ratio={:.2}:attack=20:release=200",
+            ratio
+        ));
     }
     let ch = m("character");
     if ch > 1.0 {
@@ -462,7 +616,11 @@ fn clip_audio_filter(c: &InstallClip, dur: f64) -> Option<String> {
     }
     if c.fade_out > 0.001 {
         let d = c.fade_out.min(dur);
-        parts.push(format!("afade=t=out:st={:.3}:d={:.3}", (dur - d).max(0.0), d));
+        parts.push(format!(
+            "afade=t=out:st={:.3}:d={:.3}",
+            (dur - d).max(0.0),
+            d
+        ));
     }
     // playback speed last, so fades/EQ apply on the original then scale together
     let sp = if c.speed <= 0.0 { 1.0 } else { c.speed };
@@ -527,7 +685,10 @@ fn detect_installed_gmaiden() -> Option<PathBuf> {
     if target.is_empty() {
         return None;
     }
-    Path::new(&target).parent().map(Path::to_path_buf).filter(|p| p.exists())
+    Path::new(&target)
+        .parent()
+        .map(Path::to_path_buf)
+        .filter(|p| p.exists())
 }
 
 /// The dev sibling repo (`../G-Maiden` next to G-Suite), if present.
@@ -620,7 +781,11 @@ async fn bake_animated_webp(
     let loop_count = loop_count.unwrap_or(1);
 
     // unique temp dir (pid + monotonic counter — no wall-clock needed)
-    let uid = format!("{}_{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
+    let uid = format!(
+        "{}_{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
     let dir = std::env::temp_dir().join(format!("gann_bake_{uid}"));
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir temp: {e}"))?;
 
@@ -714,7 +879,9 @@ async fn generate_banner_image(
         .timeout(std::time::Duration::from_secs(300))
         .send()
         .await
-        .map_err(|e| format!("เชื่อม SD ไม่ได้ ({e}) — เปิด Stable Diffusion WebUI แบบ --api ที่ {ep} หรือยัง?"))?;
+        .map_err(|e| {
+            format!("เชื่อม SD ไม่ได้ ({e}) — เปิด Stable Diffusion WebUI แบบ --api ที่ {ep} หรือยัง?")
+        })?;
 
     if !resp.status().is_success() {
         let code = resp.status();
@@ -810,19 +977,59 @@ struct VoiceCacheScan {
 /// Show only event pairs admitted from installed GANN containers.
 #[tauri::command]
 fn scan_voice_cache(gmaiden_dir: Option<String>) -> Result<VoiceCacheScan, String> {
- let base=resolve_gmaiden_dir(&gmaiden_dir).ok_or("หา G-Maiden ไม่พบ")?;let root=voice_cache_root(&base);
- let mut events:std::collections::BTreeMap<String,Vec<String>>=Default::default();
- if let Ok(entries)=std::fs::read_dir(root.join("packs")) {for entry in entries.flatten(){
-  let id=entry.file_name().to_string_lossy().into_owned();if !g_ann_package::valid_id(&id,"ann_"){continue}
-  let Some(origin)=std::fs::read(entry.path().join("local-gann.json")).ok().and_then(|b|serde_json::from_slice::<serde_json::Value>(&b).ok()) else{continue};
-  let Some(hash)=origin["container_sha256"].as_str() else{continue};if hash.len()!=64||!hash.bytes().all(|b|b.is_ascii_hexdigit()){continue}
-  let Ok(package)=g_ann_package::Package::open(&root.join("containers").join(format!("{hash}.gann"))) else{continue};
-  if package.index.announcer_id!=id || package.validate_playback().is_err(){continue}
-  if let Some(mapped)=package.registry["events"].as_object(){for (event,pairs) in mapped{if let Some(pairs)=pairs.as_array(){for pair in pairs{if let Some(sound)=pair["sound_id"].as_str(){events.entry(event.clone()).or_default().push(format!("{id}/audio/{sound}.wav"));}}}}}
- }}
- Ok(VoiceCacheScan{voice_cache_path:root.to_string_lossy().into_owned(),entries:events.into_iter().map(|(event,files)|VoiceCacheEntry{event,files}).collect()})
+    let base = resolve_gmaiden_dir(&gmaiden_dir).ok_or("หา G-Maiden ไม่พบ")?;
+    let root = voice_cache_root(&base);
+    let mut events: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    if let Ok(entries) = std::fs::read_dir(root.join("packs")) {
+        for entry in entries.flatten() {
+            let id = entry.file_name().to_string_lossy().into_owned();
+            if !g_ann_package::valid_id(&id, "ann_") {
+                continue;
+            }
+            let Some(origin) = std::fs::read(entry.path().join("local-gann.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            else {
+                continue;
+            };
+            let Some(hash) = origin["container_sha256"].as_str() else {
+                continue;
+            };
+            if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
+            let Ok(package) =
+                g_ann_package::Package::open(&root.join("containers").join(format!("{hash}.gann")))
+            else {
+                continue;
+            };
+            if package.index.announcer_id != id || package.validate_playback().is_err() {
+                continue;
+            }
+            if let Some(mapped) = package.registry["events"].as_object() {
+                for (event, pairs) in mapped {
+                    if let Some(pairs) = pairs.as_array() {
+                        for pair in pairs {
+                            if let Some(sound) = pair["sound_id"].as_str() {
+                                events
+                                    .entry(event.clone())
+                                    .or_default()
+                                    .push(format!("{id}/audio/{sound}.wav"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(VoiceCacheScan {
+        voice_cache_path: root.to_string_lossy().into_owned(),
+        entries: events
+            .into_iter()
+            .map(|(event, files)| VoiceCacheEntry { event, files })
+            .collect(),
+    })
 }
-
 
 // ---- Sound Library (SQLite) & Pack Management ----------------------------
 
@@ -844,10 +1051,8 @@ fn sounds_dir() -> PathBuf {
 
 fn open_db() -> Result<rusqlite::Connection, String> {
     let path = db_path();
-    std::fs::create_dir_all(path.parent().unwrap())
-        .map_err(|e| format!("mkdir db: {e}"))?;
-    let conn =
-        rusqlite::Connection::open(&path).map_err(|e| format!("open db: {e}"))?;
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| format!("mkdir db: {e}"))?;
+    let conn = rusqlite::Connection::open(&path).map_err(|e| format!("open db: {e}"))?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS packages (
             id          TEXT PRIMARY KEY,
@@ -935,7 +1140,10 @@ fn migrate_sounds(conn: &rusqlite::Connection) -> Result<(), String> {
             .map_err(|e| format!("read legacy events: {e}"))?;
         for (id, ev) in rows {
             let arr = serde_json::to_string(&vec![ev]).unwrap_or_else(|_| "[]".into());
-            let _ = conn.execute("UPDATE sounds SET events=?1 WHERE id=?2", rusqlite::params![arr, id]);
+            let _ = conn.execute(
+                "UPDATE sounds SET events=?1 WHERE id=?2",
+                rusqlite::params![arr, id],
+            );
         }
     }
     Ok(())
@@ -1131,9 +1339,24 @@ async fn save_clips_to_library(
             _ => vec!["-q:a".into(), "5".into()],
         },
         _ => match opts.quality.as_str() {
-            "low" => vec!["-ar".into(), "22050".into(), "-acodec".into(), "pcm_s16le".into()],
-            "high" => vec!["-ar".into(), "48000".into(), "-acodec".into(), "pcm_s16le".into()],
-            _ => vec!["-ar".into(), "44100".into(), "-acodec".into(), "pcm_s16le".into()],
+            "low" => vec![
+                "-ar".into(),
+                "22050".into(),
+                "-acodec".into(),
+                "pcm_s16le".into(),
+            ],
+            "high" => vec![
+                "-ar".into(),
+                "48000".into(),
+                "-acodec".into(),
+                "pcm_s16le".into(),
+            ],
+            _ => vec![
+                "-ar".into(),
+                "44100".into(),
+                "-acodec".into(),
+                "pcm_s16le".into(),
+            ],
         },
     };
 
@@ -1152,7 +1375,11 @@ async fn save_clips_to_library(
             if !canon.starts_with(sounds_dir()) {
                 return Err(format!("ไฟล์อยู่นอกคลัง: {}", clip.file_path));
             }
-            (canon.to_string_lossy().into_owned(), vec![], round2(clip.end - clip.start))
+            (
+                canon.to_string_lossy().into_owned(),
+                vec![],
+                round2(clip.end - clip.start),
+            )
         } else {
             let padded_start = (clip.start - opts.padding).max(0.0);
             let padded_end = (clip.end + opts.padding).min(total_duration);
@@ -1162,7 +1389,12 @@ async fn save_clips_to_library(
             }
             (
                 source_path.clone(),
-                vec!["-ss".into(), format!("{padded_start:.3}"), "-t".into(), format!("{d:.3}")],
+                vec![
+                    "-ss".into(),
+                    format!("{padded_start:.3}"),
+                    "-t".into(),
+                    format!("{d:.3}"),
+                ],
                 round2(d),
             )
         };
@@ -1171,7 +1403,10 @@ async fn save_clips_to_library(
         let base = {
             let s = slug_ascii(&clip.name_en);
             if s.is_empty() {
-                clip.events.first().cloned().unwrap_or_else(|| "clip".into())
+                clip.events
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "clip".into())
             } else {
                 s
             }
@@ -1198,7 +1433,11 @@ async fn save_clips_to_library(
         let rel_path = format!("{pkg_id}/{filename}");
         let events_json = serde_json::to_string(&clip.events).unwrap_or_else(|_| "[]".into());
         // per-clip origin: the clip's own source (library sound) or the import
-        let source = if clip.source.is_empty() { opts.origin.clone() } else { clip.source.clone() };
+        let source = if clip.source.is_empty() {
+            opts.origin.clone()
+        } else {
+            clip.source.clone()
+        };
         cut_results.push((
             (i + 1) as i64,
             clip.name_th.clone(),
@@ -1221,7 +1460,10 @@ async fn save_clips_to_library(
         }
     }
 
-    Ok(SaveToLibResult { pkg_id, saved: cut_results.len() })
+    Ok(SaveToLibResult {
+        pkg_id,
+        saved: cut_results.len(),
+    })
 }
 
 #[tauri::command]
@@ -1278,8 +1520,7 @@ struct PackManifest {
 #[tauri::command]
 fn save_pack(manifest: PackManifest) -> Result<String, String> {
     let conn = open_db()?;
-    let events_json =
-        serde_json::to_string(&manifest.events).map_err(|e| format!("json: {e}"))?;
+    let events_json = serde_json::to_string(&manifest.events).map_err(|e| format!("json: {e}"))?;
     let mappings_json =
         serde_json::to_string(&manifest.mappings).map_err(|e| format!("json: {e}"))?;
     conn.execute(
@@ -1303,7 +1544,11 @@ fn rebuild_pack_usage(
         .map_err(|e| format!("clear usage: {e}"))?;
     for (event, m) in mappings {
         let sid: Option<i64> = conn
-            .query_row("SELECT id FROM sounds WHERE file_path = ?1", [&m.sound_path], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM sounds WHERE file_path = ?1",
+                [&m.sound_path],
+                |r| r.get(0),
+            )
             .optional()
             .map_err(|e| format!("resolve sound: {e}"))?;
         if let Some(id) = sid {
@@ -1339,7 +1584,11 @@ fn sound_usage(sound_id: i64) -> Result<Vec<SoundUsage>, String> {
         .map_err(|e| format!("query: {e}"))?;
     let rows: Vec<SoundUsage> = stmt
         .query_map([sound_id], |r| {
-            Ok(SoundUsage { pack_id: r.get(0)?, pack_name: r.get(1)?, event: r.get(2)? })
+            Ok(SoundUsage {
+                pack_id: r.get(0)?,
+                pack_name: r.get(1)?,
+                event: r.get(2)?,
+            })
         })
         .map_err(|e| format!("map: {e}"))?
         .filter_map(|r| r.ok())
@@ -1414,8 +1663,7 @@ async fn get_system_stats(state: tauri::State<'_, SysInfoState>) -> Result<Syste
     };
 
     // GPU via nvidia-smi (best-effort)
-    let (gpu_percent, vram_used_mb, vram_total_mb) =
-        read_nvidia_smi().await.unwrap_or((0.0, 0, 0));
+    let (gpu_percent, vram_used_mb, vram_total_mb) = read_nvidia_smi().await.unwrap_or((0.0, 0, 0));
     let vram_percent = if vram_total_mb > 0 {
         (vram_used_mb as f32 / vram_total_mb as f32) * 100.0
     } else {
@@ -1622,14 +1870,29 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
-            gann::gann_startup_path, gann::gann_open, gann::gann_read, gann::gann_save_copy,
+            gann::gann_startup_path,
+            gann::gann_open,
+            gann::gann_read,
+            gann::gann_save_copy,
             gann::export_gann_artifact,
-            gann_authoring::create_gann_package, gann_authoring::install_gann_package,
-            maiden_client::discover_maiden_profiles, maiden_client::launch_maiden_profile,
-            prepare_project, save_project, open_project, recover_project,
+            gann_authoring::create_gann_package,
+            gann_authoring::install_gann_package,
+            maiden_client::discover_maiden_profiles,
+            maiden_client::launch_maiden_profile,
+            prepare_project,
+            save_project,
+            open_project,
+            recover_project,
+            inspect_banner_asset_archive,
+            import_banner_asset_archive,
             project_startup_path,
-            build_jobs::start_build, build_jobs::build_status, build_jobs::cancel_build, build_jobs::export_artifact,
-            media_jobs::import_media, media_jobs::inspect_media, media_jobs::build_event_capabilities,
+            build_jobs::start_build,
+            build_jobs::build_status,
+            build_jobs::cancel_build,
+            build_jobs::export_artifact,
+            media_jobs::import_media,
+            media_jobs::inspect_media,
+            media_jobs::build_event_capabilities,
             extract_audio,
             cut_clip,
             transcribe_audio,
@@ -1657,16 +1920,32 @@ pub fn run() {
             gid_oauth_listen,
         ])
         .manage(gann::OpenPackage::default())
-        .manage(SysInfoState(std::sync::Mutex::new(sysinfo::System::new_all())))
+        .manage(SysInfoState(std::sync::Mutex::new(
+            sysinfo::System::new_all(),
+        )))
         .run(tauri::generate_context!())
         .expect("error running G-AnnStudio");
 }
 
 /// Explicit headless authoring uses the same package builder/installer as the UI.
-pub fn run_gann_job(args: &[String]) -> Option<Result<String,String>> {
- let command=args.get(1)?;if !matches!(command.as_str(),"--gann-build"|"--gann-install"){return None}
- Some((||{let path=args.get(2).ok_or("Supply job.json")?;let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
- if command=="--gann-build" {let report=gann_authoring::build(serde_json::from_slice(&bytes).map_err(|e|e.to_string())?)?;serde_json::to_string(&report).map_err(|e|e.to_string())}
- else {let runtime=tokio::runtime::Runtime::new().map_err(|e|e.to_string())?;let report=runtime.block_on(gann_authoring::install(serde_json::from_slice(&bytes).map_err(|e|e.to_string())?))?;serde_json::to_string(&report).map_err(|e|e.to_string())}
- })())
+pub fn run_gann_job(args: &[String]) -> Option<Result<String, String>> {
+    let command = args.get(1)?;
+    if !matches!(command.as_str(), "--gann-build" | "--gann-install") {
+        return None;
+    }
+    Some((|| {
+        let path = args.get(2).ok_or("Supply job.json")?;
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        if command == "--gann-build" {
+            let report =
+                gann_authoring::build(serde_json::from_slice(&bytes).map_err(|e| e.to_string())?)?;
+            serde_json::to_string(&report).map_err(|e| e.to_string())
+        } else {
+            let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+            let report = runtime.block_on(gann_authoring::install(
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?,
+            ))?;
+            serde_json::to_string(&report).map_err(|e| e.to_string())
+        }
+    })())
 }

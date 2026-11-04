@@ -78,3 +78,103 @@ The hosted PR #20 workflow validates its own head, not this follow-up branch. PR
 workflow validates the code head noted above. No AnnStudio native app, Studio exporter,
 archive extraction, install flow, G-Maiden process or external asset data was exercised
 or changed by this contract-only fix.
+
+## AnnStudio managed importer validation — 2026-11-04
+
+Implementation branch `codex/annstudio-banner-import` is stacked on PR #22
+(`codex/banner-asset-integration`, head `0a948e3ebc6cb86117def45c3ca7a8429ee782ad`).
+The checks below cover the importer slice and its source tree; no AnnStudio native
+window was launched and no G-Maiden process or data was touched.
+
+| Check | Result |
+| --- | --- |
+| `corepack pnpm install --frozen-lockfile --ignore-scripts` (pinned pnpm 9.0.0) | PASS |
+| `corepack pnpm -C packages/ann-studio/src test` | PASS, 140 tests across 23 files |
+| `corepack pnpm -C packages/ann-studio/src exec tsc --noEmit` | PASS |
+| `corepack pnpm -C packages/ann-studio/src build` | PASS; Vite reports the emitted 650 kB app chunk exceeds its 500 kB advisory threshold |
+| `corepack pnpm -C packages/banner-contracts test` | PASS, 26 tests |
+| `cargo test --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml` | PASS, 32 tests |
+| `cargo check --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml` | PASS |
+| `rustfmt --check` on `banner_asset_archive.rs`, `project_io.rs`, and `project_io_tests.rs` | PASS |
+| `git diff --check` | PASS |
+| `cargo fmt --manifest-path packages/ann-studio/src-tauri/Cargo.toml --check` | PASS after the formatting follow-up on `lib.rs` |
+
+The first global pnpm 11 install stopped at the non-interactive modules-dir
+confirmation; a retry proceeded and failed because pnpm 11 rejects this
+repository's `packageExtensions` checksum. The root
+`banner-contracts:test` alias also resolved its nested `pnpm` to that global
+version and stopped before test execution due to a non-interactive modules-dir
+confirmation. The package-local contract test above was rerun directly with the
+repository-pinned pnpm 9 and passed.
+
+Not exercised at this checkpoint: native-window keyboard/focus behavior,
+packaged/installed app UI, live video codec/alpha parity, cancellation after the
+Apply worker starts, a true disk-full condition, and orphan-file cleanup after a
+partial managed-cache copy. Unit tests cover archive validation, stale-generation
+rejection, lock/copy failure recovery, and preservation of voice and event data;
+the later source-level round-trip evidence is recorded below.
+
+### Formatting follow-up — 2026-11-04
+
+The initial crate-wide `cargo fmt --check` exposed more than 30 rustfmt differences
+in the legacy AnnStudio `lib.rs`; the same check failed on its unchanged base
+revision. The entrypoint was formatted in a separate style-only commit. The
+crate-wide format check now passes, and `cargo test --locked` was rerun afterward:
+32 passed.
+
+## Studio producer to AnnStudio project round-trip — 2026-11-04
+
+`tools/test-banner-roundtrip.ps1` connects the production exporter and importer
+implementations without using external G-Maiden data. It asks the 3D Studio Rust
+exporter to package the checked-in 128×128 PNG fixture, then passes that emitted
+ZIP to AnnStudio's archive inspector and managed-project apply path. The test
+saves the result as `.ann`, reopens it, and checks the source asset ID/revision,
+manifest digest, target event, voice clip/asset, event mapping and exact image
+bytes/hash. The runner also asserts that the AnnStudio round-trip test actually
+ran, and removes only its uniquely named temporary directory.
+
+| Check | Result |
+| --- | --- |
+| `cargo test` for the 3D Studio exporter fixture | PASS, 1 test; immutable revision and exact archive bytes |
+| `project_io::tests::imports_studio_producer_archive_and_reopens_the_saved_project` | PASS, 1 test; produced ZIP imported and saved/reopened as `.ann` |
+| `tools/test-banner-roundtrip.ps1` | PASS on Windows |
+
+The Windows hosted workflow prepares the pinned AnnStudio media toolchain before
+its native Rust checks, then runs this round-trip in that job. Hosted evidence is
+head-specific and is recorded by the PR checks. This is an application-code
+integration test, not a native-window UI test.
+
+## Native UI and DPI acceptance gap — 2026-11-04
+
+Both release Tauri executables compiled locally with `--no-bundle`. An installed
+Tauri keyboard/focus run and screenshots were not captured. The required
+`computer-use` node runtime failed initialization twice and again after a kernel
+reset with `failed to write kernel assets (os error 3)`. The primary display scale
+reports 100%; 125% and 150% were not available on this host, and display settings
+were not changed. NSIS and WiX bundle tools were not installed, so installer-based
+UI acceptance remains unrun. No G-Maiden process was found during the read-only
+preflight; no G-Maiden app, runtime data or external production assets were
+modified.
+
+## Final PR #23 local checks — 2026-11-04
+
+| Check | Result |
+| --- | --- |
+| Frozen pnpm install (pnpm 9, scripts disabled) | PASS |
+| AnnStudio UI | PASS, 142 tests across 23 files |
+| AnnStudio TypeScript check and production build | PASS; Vite reports the existing 650 kB chunk-size advisory |
+| 3D Studio frontend production build | PASS |
+| Banner contract suite | PASS, 26 tests |
+| 3D Studio workspace regression suite | PASS, 6 tests |
+| 3D Studio Rust suite | PASS, 2 tests |
+| AnnStudio Rust suite | PASS, 32 tests; the producer round-trip test is separately invoked by the Windows runner |
+| Both Rust `cargo check --locked` and `cargo fmt --check` | PASS |
+| Studio-produced ZIP → AnnStudio import → `.ann` save/reopen | PASS, 1 producer test + 1 consumer/reopen test |
+| Release Tauri builds (`--no-bundle`) | PASS for both applications; outputs are executables, not installers |
+| `git diff --check` | PASS |
+
+The release executables were built with task-specific application identifiers.
+They were not launched because the required Windows Computer Use runtime could
+not initialize. No native screenshot, keyboard/focus, or 125%/150% DPI result is
+claimed. Hosted checks must be read from the exact pushed PR head after this
+change is uploaded.

@@ -4,7 +4,7 @@ vi.mock("@tauri-apps/plugin-dialog",()=>({open:vi.fn(),save:vi.fn()}));
 import { invoke } from "@tauri-apps/api/core";
 import { open,save } from "@tauri-apps/plugin-dialog";
 import { useStudioStore } from "../store/useStudioStore";
-import { newProject,snapshotProject,selectProjectVariant,saveProject,openProject,recoverProject,initializeProject,updateProjectBinding,acceptProjectBuild } from "./project";
+import { newProject,snapshotProject,selectProjectVariant,saveProject,openProject,recoverProject,initializeProject,updateProjectBinding,acceptProjectBuild,inspectBannerAssetArchive,captureBannerAssetImportContext,applyBannerAssetArchive } from "./project";
 
 beforeEach(()=>{vi.mocked(invoke).mockReset();vi.mocked(open).mockReset();vi.mocked(save).mockReset();newProject();useStudioStore.setState({sourcePath:"C:/เสียง.wav",wavPath:"C:/เสียง.wav",clips:[{id:"one",name:"หนึ่ง",start:0,end:1,event:"kill",color:"red"},{id:"two",name:"สอง",start:1,end:2,event:"kill",color:"blue"}]});});
 describe("portable project UI integration",()=>{
@@ -48,6 +48,46 @@ describe("portable project UI integration",()=>{
     const second=await snapshotProject();
     expect(second.snapshot.generation).toBe(first.snapshot.generation);expect(second.snapshot.fingerprint).toBe(first.snapshot.fingerprint);
     expect(second.snapshot.project.installBindings.profile).toBe("opaque-binding");expect(second.snapshot.project.currentRevision).toBe(1);
+  });
+  it("validates the preview contract and imports only to the confirmed variant",async()=>{
+    const manifest={format:"g-suite-banner-asset",schemaVersion:1,assetId:"source-banner",revision:2,name:"Static",mediaKind:"still-image",editableControls:{title:false,outerMotion:["outerOpacity"]},files:[{id:"still-file",path:"assets/still.png",role:"stillImage",mediaType:"image/png",sizeBytes:4,sha256:"a".repeat(64)}]};
+    vi.mocked(invoke).mockImplementation(async(command,args)=>{
+      if(command==="inspect_banner_asset_archive")return {manifest,manifestSha256:"b".repeat(64)};
+      expect(command).toBe("import_banner_asset_archive");
+      const input=args as {variantId:string;expectedGeneration:number;manifestSha256:string};
+      expect(input.variantId).toBe("two");expect(input.manifestSha256).toBe("b".repeat(64));
+      const captured=await snapshotProject();
+      const result=structuredClone(captured);
+      result.snapshot.project.variants[1].bannerSource={assetId:"source-banner",revision:2,manifestSha256:"b".repeat(64)};
+      result.snapshot.project.editor.bannerVariantId="two";
+      return result;
+    });
+    const inspected=await inspectBannerAssetArchive("D:/banner.zip");
+    expect(inspected.manifest.assetId).toBe("source-banner");
+    useStudioStore.setState({sourcePath:"C:/voice.wav",wavPath:"C:/voice.wav"});
+    await snapshotProject();selectProjectVariant("two");
+    const context=captureBannerAssetImportContext();
+    expect(await applyBannerAssetArchive("D:/banner.zip","b".repeat(64),"two",context)).toBe(true);
+    expect(useStudioStore.getState().selectedClipId).toBe("two");
+    expect(useStudioStore.getState().projectDocument?.variants[1].bannerSource?.assetId).toBe("source-banner");
+    expect(useStudioStore.getState().projectDocument?.eventMappings).toEqual([{eventKey:"kill",variantIds:["one","two"]}]);
+  });
+
+  it("does not hydrate an import after the project changes during the native apply",async()=>{
+    useStudioStore.setState({sourcePath:"C:/voice.wav",wavPath:"C:/voice.wav"});
+    await snapshotProject();selectProjectVariant("two");
+    const context=captureBannerAssetImportContext();
+    const captured=await snapshotProject();
+    const result=structuredClone(captured);result.snapshot.project.variants[1].bannerSource={assetId:"source-banner",revision:2,manifestSha256:"c".repeat(64)};
+    let finish!:(value:unknown)=>void;
+    vi.mocked(invoke).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+    const pending=applyBannerAssetArchive("D:/banner.zip","c".repeat(64),"two",context);
+    while(!finish)await new Promise(resolve=>setTimeout(resolve,0));
+    useStudioStore.getState().updateClip("two",{name:"edited while importing"});
+    const current=useStudioStore.getState().projectDocument;
+    finish(result);expect(await pending).toBe(false);
+    expect(useStudioStore.getState().projectDocument).toBe(current);
+    expect(useStudioStore.getState().clips[1].name).toBe("edited while importing");
   });
   it("never attaches project A's finished build to project B even when generations collide",async()=>{
     const origin=await snapshotProject();newProject();useStudioStore.setState({projectGeneration:origin.snapshot.generation});
