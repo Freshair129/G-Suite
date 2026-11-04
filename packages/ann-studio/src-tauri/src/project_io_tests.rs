@@ -328,7 +328,13 @@ fn delayed_pre_import_recovery_cannot_replace_imported_banner() {
     let baseline = prepare(snapshot(), paths.clone(), &workspace).unwrap();
     let (archive, digest, _) = editable_banner_archive(&root);
     let imported = import_banner_asset_archive(
-        &archive, &digest, "second", 4, baseline.snapshot.clone(), paths.clone(), &workspace,
+        &archive,
+        &digest,
+        "second",
+        4,
+        baseline.snapshot.clone(),
+        paths.clone(),
+        &workspace,
     )
     .unwrap();
 
@@ -337,7 +343,10 @@ fn delayed_pre_import_recovery_cannot_replace_imported_banner() {
     let latest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
         .unwrap()
         .unwrap();
-    assert_eq!(latest["project"]["variants"][0]["bannerSource"], imported.snapshot["project"]["variants"][0]["bannerSource"]);
+    assert_eq!(
+        latest["project"]["variants"][0]["bannerSource"],
+        imported.snapshot["project"]["variants"][0]["bannerSource"]
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
