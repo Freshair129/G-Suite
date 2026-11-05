@@ -7,6 +7,19 @@ import { validateProjectSnapshot } from "./projectValidation";
 
 let hydrating=false;
 let documentSession=0;
+export interface RecoveryCandidate { id:string; projectId:string; kind:"active"|"history"; name:string; generation:number; fingerprint:string }
+export interface RecoveryListing { candidates:RecoveryCandidate[]; warnings:{id:string|null;message:string}[]; truncated:boolean }
+let recoveryPicker:((listing:RecoveryListing)=>Promise<string|null>)|null=null;
+export function registerRecoveryPicker(picker:(listing:RecoveryListing)=>Promise<string|null>):()=>void {
+  recoveryPicker=picker;
+  return ()=>{if(recoveryPicker===picker)recoveryPicker=null;};
+}
+async function selectRecoveryCandidate(listing:RecoveryListing):Promise<string|null> {
+  if(!listing.candidates.length)return null;
+  if(recoveryPicker)return recoveryPicker(listing);
+  return listing.candidates.length===1?listing.candidates[0].id:null;
+}
+function isNative():boolean{return typeof window!=="undefined"&&"__TAURI_INTERNALS__" in window;}
 function origin(){const current=useStudioStore.getState().projectDocument;return {session:documentSession,projectId:current?.projectId??null,announcerId:current?.announcerId??null};}
 function sameOrigin(expected:ReturnType<typeof origin>):boolean{const current=origin();return current.session===expected.session&&current.projectId===expected.projectId&&current.announcerId===expected.announcerId;}
 const changedProject="โปรเจกต์เปลี่ยนแล้ว — ไม่ใช้ผลลัพธ์กับโปรเจกต์ที่เปิดอยู่";
@@ -16,9 +29,9 @@ useStudioStore.subscribe((state,prior)=>{
   const keys=["sourcePath","wavPath","duration","clips","bannerProject","bannerOverrides","packBuilder","trackItems","trackCount","masterVolume","overlayLayout","projectDocument"] as const;
   if(keys.some(key=>state[key]!==prior[key])){
     useStudioStore.setState({projectGeneration:state.projectGeneration+1});
-    if(typeof window!=="undefined"&&"__TAURI_INTERNALS__" in window){
+    if(isNative()){
       clearTimeout(recoveryTimer);
-      recoveryTimer=setTimeout(()=>{const expected=origin();void snapshotProject().then(async captured=>{if(!sameOrigin(expected))return;await invoke<ProjectOpenResult>("prepare_project",captured);if(sameOrigin(expected))useStudioStore.setState({projectRecoveryError:null});}).catch(error=>{if(sameOrigin(expected))useStudioStore.setState({projectRecoveryError:String(error)});});},5000);
+      recoveryTimer=setTimeout(()=>{const expected=origin();void snapshotProject().then(async captured=>{if(!sameOrigin(expected))return;const prepared=await invoke<ProjectOpenResult>("prepare_project",captured);if(syncPreparedProject(prepared,expected,captured.snapshot.generation))useStudioStore.setState({projectRecoveryError:null});}).catch(error=>{if(sameOrigin(expected))useStudioStore.setState({projectRecoveryError:String(error)});});},5000);
     }
   }
 });
@@ -44,7 +57,43 @@ export async function snapshotProject(){
   const content={...captured.project,currentRevision:0,buildHistory:[],installBindings:{}};
   const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(canonical(content)));
   const fingerprint=Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,"0")).join("");
-  return {snapshot:{project:captured.project,generation:state.projectGeneration,fingerprint},assetPaths:captured.assetPaths};
+  const result={snapshot:{project:captured.project,generation:state.projectGeneration,fingerprint},assetPaths:captured.assetPaths,sessionToken:state.projectSessionToken};
+  if(isNative()&&!state.projectSessionToken){
+    const expected=origin(),generation=state.projectGeneration;
+    useStudioStore.setState({projectTransitionPending:true});
+    try{
+      const activated=await invoke<ProjectOpenResult>("activate_project_session",{snapshot:result.snapshot,assetPaths:result.assetPaths,expectedSessionToken:null});
+      if(!activated.sessionToken)throw new Error("Native project activation returned no session token");
+      if(!sameOrigin(expected)||useStudioStore.getState().projectGeneration!==generation)throw new Error(changedProject);
+      if(!syncPreparedProject(activated,expected,generation))throw new Error(changedProject);
+    }finally{useStudioStore.setState({projectTransitionPending:false});}
+    return snapshotProject();
+  }
+  return result;
+}
+
+async function activateInspectedProject(result:ProjectOpenResult,path:string,expected:ReturnType<typeof origin>,generation:number):Promise<boolean>{
+  if(!sameOrigin(expected)||useStudioStore.getState().projectGeneration!==generation)return false;
+  if(!isNative()){hydrateProject(result,path);return true;}
+  const state=useStudioStore.getState();
+  const expectedSessionToken=state.projectDocument?.projectId===result.snapshot.project.projectId?state.projectSessionToken:null;
+  useStudioStore.setState({projectTransitionPending:true});
+  try{
+    const active=await invoke<ProjectOpenResult>("activate_project_session",{snapshot:result.snapshot,assetPaths:result.assetPaths,expectedSessionToken});
+    if(!active.sessionToken)throw new Error("Native project activation returned no session token");
+    if(!sameOrigin(expected)||useStudioStore.getState().projectGeneration!==generation)return false;
+    hydrateProject(active,path);
+    return true;
+  }finally{useStudioStore.setState({projectTransitionPending:false});}
+}
+
+export function syncPreparedProject(result:ProjectOpenResult,expected:ReturnType<typeof origin>,generation:number):boolean {
+  const state=useStudioStore.getState();
+  if(!sameOrigin(expected)||state.projectGeneration!==generation||result.snapshot.generation<generation||state.projectDocument?.projectId!==result.snapshot.project.projectId)return false;
+  hydrating=true;
+  try{useStudioStore.setState({projectDocument:structuredClone(result.snapshot.project),projectGeneration:result.snapshot.generation,projectAssetPaths:result.assetPaths,projectSessionToken:result.sessionToken??state.projectSessionToken});}
+  finally{hydrating=false;}
+  return true;
 }
 
 export interface BannerAssetArchivePreview { manifest:BannerAssetManifest; manifestSha256:string }
@@ -73,7 +122,7 @@ export async function applyBannerAssetArchive(path:string,manifestSha256:string,
   if(!captured.snapshot.project.variants.some(variant=>variant.id===variantId))throw new Error("Select a clip with a mapped voice variant first");
   const result=await invoke<ProjectOpenResult>("import_banner_asset_archive",{
     path,manifestSha256,variantId,expectedGeneration:context.generation,
-    snapshot:captured.snapshot,assetPaths:captured.assetPaths,
+    sessionToken:captured.sessionToken,snapshot:captured.snapshot,assetPaths:captured.assetPaths,
   });
   const latest=useStudioStore.getState();
   if(!sameOrigin(expectedOrigin)||latest.projectGeneration!==context.generation)return false;
@@ -87,7 +136,7 @@ export function hydrateProject(result:ProjectOpenResult,path?:string,selectedVar
   for(const asset of editor.bannerProject.assets)asset.source=convertFileSrc(asset.source);
   documentSession+=1;clearTimeout(recoveryTimer);
   hydrating=true;
-  try{useStudioStore.setState({...editor,projectDocument:structuredClone(result.snapshot.project),projectGeneration:result.snapshot.generation,projectAssetPaths:result.assetPaths,projectPath:path??useStudioStore.getState().projectPath,recentProjectId:result.snapshot.project.projectId,projectRecoveryError:null,pastClips:[],futureClips:[],pastBannerProjects:[],futureBannerProjects:[],selectedClipId:selectedVariantId,selectedBannerLayerIds:[]});}
+  try{useStudioStore.setState({...editor,projectDocument:structuredClone(result.snapshot.project),projectGeneration:result.snapshot.generation,projectAssetPaths:result.assetPaths,projectSessionToken:result.sessionToken??null,projectTransitionPending:false,projectPath:path??useStudioStore.getState().projectPath,recentProjectId:result.snapshot.project.projectId,projectRecoveryError:null,pastClips:[],futureClips:[],pastBannerProjects:[],futureBannerProjects:[],selectedClipId:selectedVariantId,selectedBannerLayerIds:[]});}
   finally{hydrating=false;}
 }
 
@@ -155,7 +204,7 @@ export async function saveProject(saveAs=false):Promise<string>{
     if(!sameOrigin(expected))return changedProject;
     const captured=await snapshotProject();
     if(!sameOrigin(expected))return changedProject;
-    const result=await invoke<ProjectSaveResult>("save_project",{path,...captured});
+    const result=await invoke<ProjectSaveResult>("save_project",{path,...captured,sessionToken:captured.sessionToken});
     if(!sameOrigin(expected))return changedProject;
     validateProjectSnapshot(result.snapshot);
     if(result.snapshot.project.projectId!==expected.projectId||result.snapshot.project.announcerId!==expected.announcerId)throw new Error("Saved project identity mismatch");
@@ -171,7 +220,8 @@ export async function openProject():Promise<string>{
     const unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation;
     const path=await open({filters:[{name:"G-Ann Project",extensions:["ann"]}]});if(!path||typeof path!=="string")return "ยกเลิกแล้ว";
     if(!unchanged())return changedProject;
-    const result=await invoke<ProjectOpenResult>("open_project",{path});if(!unchanged())return changedProject;hydrateProject(result,path);
+    const result=await invoke<ProjectOpenResult>("open_project",{path});if(!unchanged())return changedProject;
+    if(!await activateInspectedProject(result,path,expected,generation))return changedProject;
     return `เปิดโปรเจกต์แล้ว ✅ ${result.snapshot.project.variants.length} variants`;
   }catch(error){return `เปิดไม่สำเร็จ: ${error}`;}
 }
@@ -182,13 +232,16 @@ export async function initializeProject():Promise<string|null>{
     const unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation;
     const path=await invoke<string|null>("project_startup_path");
     if(!unchanged())return changedProject;
-    if(path){const result=await invoke<ProjectOpenResult>("open_project",{path});if(!unchanged())return changedProject;hydrateProject(result,path);return `เปิดโปรเจกต์แล้ว ✅ ${path}`;}
+    if(path){const result=await invoke<ProjectOpenResult>("open_project",{path});if(!unchanged())return changedProject;if(!await activateInspectedProject(result,path,expected,generation))return changedProject;return `เปิดโปรเจกต์แล้ว ✅ ${path}`;}
     const projectId=useStudioStore.getState().recentProjectId;
     if(projectId&&typeof window!=="undefined"){
-      const candidates=await invoke<Array<{path:string}>>("recover_project",{projectId});
+      const listing=await invoke<RecoveryListing>("recover_project",{projectId});
       if(!unchanged())return changedProject;
-      if(candidates.length&&window.confirm("พบสำเนากู้คืนของโปรเจกต์ล่าสุด ต้องการเปิดเพื่อตรวจและบันทึกหรือไม่?")){
-        const result=await invoke<ProjectOpenResult>("open_project",{path:candidates[0].path});if(!unchanged())return changedProject;hydrateProject(result,"");return "เปิดสำเนากู้คืนแล้ว — บันทึก .ann เพื่อเก็บงาน";
+      if(listing.candidates.length){
+        const candidateId=await selectRecoveryCandidate(listing);if(!unchanged())return changedProject;if(!candidateId)return null;
+        const result=await invoke<ProjectOpenResult>("open_recovery_candidate",{projectId,candidateId});if(!unchanged())return changedProject;
+        if(!await activateInspectedProject(result,"",expected,generation))return changedProject;
+        return "เปิดสำเนากู้คืนแล้ว — บันทึก .ann เพื่อเก็บงาน";
       }
     }
     return null;
@@ -196,7 +249,17 @@ export async function initializeProject():Promise<string|null>{
 }
 
 export async function recoverProject():Promise<string>{
-  try{const expected=origin(),state=useStudioStore.getState(),generation=state.projectGeneration,unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation,projectId=state.projectDocument?.projectId||state.recentProjectId;if(!projectId)return "ไม่พบสำเนากู้คืน";const candidates=await invoke<Array<{path:string}>>("recover_project",{projectId});if(!unchanged())return changedProject;if(!candidates.length)return "ไม่พบสำเนากู้คืน";const result=await invoke<ProjectOpenResult>("open_project",{path:candidates[0].path});if(!unchanged())return changedProject;hydrateProject(result,"");return "เปิดสำเนากู้คืนแล้ว — บันทึกเป็น .ann เพื่อเก็บงาน";}catch(error){return `กู้คืนไม่สำเร็จ: ${error}`;}
+  try{
+    const expected=origin(),state=useStudioStore.getState(),generation=state.projectGeneration;
+    const unchanged=()=>sameOrigin(expected)&&useStudioStore.getState().projectGeneration===generation;
+    const projectId=state.projectDocument?.projectId||state.recentProjectId;if(!projectId)return "ไม่พบสำเนากู้คืน";
+    const listing=await invoke<RecoveryListing>("recover_project",{projectId});if(!unchanged())return changedProject;
+    const candidateId=await selectRecoveryCandidate(listing);if(!unchanged())return changedProject;
+    if(!candidateId)return listing.warnings.length?`ไม่พบสำเนากู้คืนที่ใช้ได้: ${listing.warnings[0].message}`:"ยกเลิกการกู้คืนแล้ว";
+    const result=await invoke<ProjectOpenResult>("open_recovery_candidate",{projectId,candidateId});if(!unchanged())return changedProject;
+    if(!await activateInspectedProject(result,"",expected,generation))return changedProject;
+    return "เปิดสำเนากู้คืนแล้ว — บันทึกเป็น .ann เพื่อเก็บงาน";
+  }catch(error){return `กู้คืนไม่สำเร็จ: ${error}`;}
 }
 
 export async function importLegacyProject():Promise<string>{
@@ -213,7 +276,8 @@ export async function importLegacyProject():Promise<string>{
     const extracted=await invoke<{path:string;duration:number}>("extract_audio",{inputPath:media});
     if(!unchanged())return changedProject;
     const state=useStudioStore.getState(),captured=captureProject(createPackProject(),{...state,sourcePath:media,wavPath:extracted.path,duration:extracted.duration,clips:legacy.clips,packBuilder:{},trackItems:[]},{});
-    const result=await invoke<ProjectOpenResult>("prepare_project",{snapshot:{project:captured.project,generation:0,fingerprint:""},assetPaths:captured.assetPaths});if(!unchanged())return changedProject;hydrateProject(result,"");
+    const result={snapshot:{project:captured.project,generation:0,fingerprint:""},assetPaths:captured.assetPaths};
+    if(!await activateInspectedProject(result,"",expected,generation))return changedProject;
     return "นำเข้าโปรเจกต์เก่าแล้ว — บันทึกเป็น .ann v2 ใหม่";
   }catch(error){return `นำเข้าไม่สำเร็จ: ${error}`;}
 }

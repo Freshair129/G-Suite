@@ -5,7 +5,7 @@ import { renderBannerProject } from "./renderBannerProject";
 import type { ProjectOpenResult, ProjectSnapshot } from "./packProject";
 
 export interface GannBuildReport { [key:string]:unknown; path:string; digest:string; pack_id:string; revision:number; events:number; clips:number; banners:number; artifactId:string; projectFingerprint:string; toolchainFingerprint:string; generation:number; reused:boolean; superseded:boolean }
-export interface GannBuildJob { snapshot:ProjectSnapshot; assetPaths:Record<string,string>; renders:Array<{variantId:string;frames:string[];fps:number}>;outputPath:string|null }
+export interface GannBuildJob { snapshot:ProjectSnapshot; assetPaths:Record<string,string>; sessionToken:string; renders:Array<{variantId:string;frames:string[];fps:number}>;outputPath:string|null }
 type Mode="session"|"library"|"event";
 type Progress={stage:string;completed:number;total:number};
 const listeners=new Set<(progress:Progress)=>void>();
@@ -18,6 +18,7 @@ export async function cancelCurrentGannBuild():Promise<void>{const active=active
 export async function prepareCurrentGannBuild(outputPath?:string,signal?:AbortSignal):Promise<GannBuildJob>{
  const captured=await snapshotProject();
  const prepared=await invoke<ProjectOpenResult>('prepare_project',captured);
+ if(!prepared.sessionToken)throw new Error('Project session is missing; reopen the project before building');
  const mapped=new Set(prepared.snapshot.project.eventMappings.flatMap(mapping=>mapping.variantIds));
  if(!mapped.size)throw new Error('ยังไม่มีเสียงที่ map event');
  const renders:GannBuildJob['renders']=[];let encodedBytes=0;
@@ -28,7 +29,7 @@ export async function prepareCurrentGannBuild(outputPath?:string,signal?:AbortSi
   encodedBytes+=render.frames.reduce((total,frame)=>total+frame.length,0);if(encodedBytes>256*1024*1024)throw new Error('Rendered pack exceeds 256 MiB; reduce artboard size');
   renders.push({variantId:variant.id,...render});
  }
- return {...prepared,renders,outputPath:outputPath??null};
+ return {...prepared,sessionToken:prepared.sessionToken,renders,outputPath:outputPath??null};
 }
 export async function buildCurrentGann(_mode:Mode='session',_event?:string,outputPath?:string,_name='ann-pack',_author='',_animate=true,_voiceCaption=true,_reactive=false):Promise<GannBuildReport>{
  if(activeBuild)throw new Error('กำลังสร้างแพ็กอยู่');

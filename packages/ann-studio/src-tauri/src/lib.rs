@@ -26,6 +26,7 @@ async fn prepare_project(
     app: tauri::AppHandle,
     snapshot: serde_json::Value,
     asset_paths: std::collections::BTreeMap<String, String>,
+    session_token: Option<String>,
 ) -> Result<project_io::ProjectOpenResult, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
@@ -35,7 +36,7 @@ async fn prepare_project(
         .map_err(|e| e.to_string())?
         .join("projects");
     tauri::async_runtime::spawn_blocking(move || {
-        project_io::prepare(snapshot, asset_paths, &workspace)
+        project_io::prepare_with_session(snapshot, asset_paths, session_token, &workspace)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -47,6 +48,7 @@ async fn save_project(
     path: String,
     snapshot: serde_json::Value,
     asset_paths: std::collections::BTreeMap<String, String>,
+    session_token: String,
 ) -> Result<project_io::ProjectSaveResult, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
@@ -56,7 +58,13 @@ async fn save_project(
         .map_err(|e| e.to_string())?
         .join("projects");
     tauri::async_runtime::spawn_blocking(move || {
-        project_io::save(Path::new(&path), snapshot, asset_paths, &workspace)
+        project_io::save_with_session(
+            Path::new(&path),
+            snapshot,
+            asset_paths,
+            &session_token,
+            &workspace,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -83,7 +91,7 @@ async fn recover_project(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     project_id: String,
-) -> Result<Vec<project_io::RecoveryCandidate>, String> {
+) -> Result<project_io::RecoveryListing, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
     let workspace = app
@@ -94,6 +102,54 @@ async fn recover_project(
     tauri::async_runtime::spawn_blocking(move || project_io::recover(&project_id, &workspace))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn open_recovery_candidate(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    project_id: String,
+    candidate_id: String,
+) -> Result<project_io::ProjectOpenResult, String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || {
+        project_io::open_recovery_candidate(&project_id, &candidate_id, &workspace)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn activate_project_session(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    snapshot: serde_json::Value,
+    asset_paths: std::collections::BTreeMap<String, String>,
+    expected_session_token: Option<String>,
+) -> Result<project_io::ProjectOpenResult, String> {
+    use tauri::Manager;
+    gann::trusted(&window)?;
+    let workspace = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("projects");
+    tauri::async_runtime::spawn_blocking(move || {
+        project_io::activate_project_session(
+            snapshot,
+            asset_paths,
+            expected_session_token,
+            &workspace,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -115,6 +171,7 @@ async fn import_banner_asset_archive(
     manifest_sha256: String,
     variant_id: String,
     expected_generation: u64,
+    session_token: String,
     snapshot: serde_json::Value,
     asset_paths: std::collections::BTreeMap<String, String>,
 ) -> Result<project_io::ProjectOpenResult, String> {
@@ -126,11 +183,12 @@ async fn import_banner_asset_archive(
         .map_err(|e| e.to_string())?
         .join("projects");
     tauri::async_runtime::spawn_blocking(move || {
-        project_io::import_banner_asset_archive(
+        project_io::import_banner_asset_archive_with_session(
             Path::new(&path),
             &manifest_sha256,
             &variant_id,
             expected_generation,
+            &session_token,
             snapshot,
             asset_paths,
             &workspace,
@@ -1883,6 +1941,8 @@ pub fn run() {
             save_project,
             open_project,
             recover_project,
+            open_recovery_candidate,
+            activate_project_session,
             inspect_banner_asset_archive,
             import_banner_asset_archive,
             project_startup_path,

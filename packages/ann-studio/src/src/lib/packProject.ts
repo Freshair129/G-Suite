@@ -16,8 +16,8 @@ export interface ProjectEditor {
 }
 export interface PackProject { schemaVersion:2; projectId:string; announcerId:string; name:string; author:string; locale:string; installBindings:Record<string,string>; currentRevision:number; assets:Asset[]; variants:Variant[]; eventMappings:EventMapping[]; inactiveStock:string[]; templates:ProjectTemplate[]; buildHistory:ProjectBuild[]; editor:ProjectEditor }
 export interface ProjectSnapshot { project:PackProject; generation:number; fingerprint:string }
-export interface ProjectOpenResult { snapshot:ProjectSnapshot; assetPaths:Record<string,string> }
-export interface ProjectSaveResult extends ProjectOpenResult { path:string }
+export interface ProjectOpenResult { snapshot:ProjectSnapshot; assetPaths:Record<string,string>; sessionToken?:string|null }
+export interface ProjectSaveResult extends ProjectOpenResult { path:string; sessionToken:string }
 export interface EditorState { sourcePath:string|null; wavPath:string|null; duration:number; clips:Clip[]; bannerProject:BannerProject; bannerVariantId:string|null; bannerOverrides:Record<string,BannerOverride>; packBuilder:Record<string,LibSound[]>; trackItems:TrackItem[]; trackCount:number; masterVolume:number; overlayLayout:OverlayLayout; selectedClipId:string|null; libraryRoot:string }
 
 const id=(prefix="")=>`${prefix}${crypto.randomUUID()}`;

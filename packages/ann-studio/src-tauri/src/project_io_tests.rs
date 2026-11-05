@@ -20,6 +20,13 @@ fn snapshot() -> Value {
     "eventMappings":[{"eventKey":"kill","variantIds":["second"]}],"inactiveStock":[],"templates":[{"id":"thai-font","version":"1","assetIds":["asset-one"]}],"buildHistory":[{"revision":2,"digest":"abc"}],"editor":{"sourceAssetId":"asset-one","wavAssetId":"asset-one","duration":1,"clips":[],"bannerProject":{"layers":[]},"bannerOverrides":{},"packBuilder":{},"trackItems":[],"trackCount":3,"masterVolume":1,"overlayLayout":{}}},"generation":4,"fingerprint":""})
 }
 
+fn current_session_token(workspace: &Path) -> String {
+    latest_snapshot("00000000-0000-4000-8000-000000000001", workspace)
+        .unwrap()
+        .and_then(|snapshot| active_session_token(&snapshot).map(str::to_owned))
+        .expect("active project session")
+}
+
 fn editable_banner_archive(root: &Path) -> (PathBuf, String, Vec<u8>) {
     let bytes = include_bytes!("../icons/32x32.png").to_vec();
     let manifest = json!({
@@ -142,7 +149,7 @@ fn portable_archive_survives_deleted_source_and_preserves_second_variant() {
         &root.join("machine-a"),
     )
     .unwrap();
-    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates.candidates.len(), 1);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -397,30 +404,48 @@ fn reopening_an_older_archive_can_save_a_copy_without_erasing_newer_recovery() {
     let mut newer = snapshot();
     newer["generation"] = json!(5);
     newer["project"]["name"] = json!("Newer recovery");
-    let recovery = prepare(newer, paths, &workspace).unwrap();
+    newer["generation"] = json!(6);
+    let token = current_session_token(&workspace);
+    let recovery = prepare_with_session(newer, paths, Some(token.clone()), &workspace).unwrap();
 
     let opened = open(&destination, &workspace).unwrap();
+    let activated =
+        activate_project_session(opened.snapshot, opened.asset_paths, Some(token), &workspace)
+            .unwrap();
+    let active_token = activated.session_token.clone().unwrap();
     let copy = root.join("copy.ann");
-    save(
+    save_with_session(
         &copy,
-        opened.snapshot.clone(),
-        opened.asset_paths.clone(),
+        activated.snapshot.clone(),
+        activated.asset_paths.clone(),
+        &active_token,
         &workspace,
     )
     .unwrap();
     assert!(copy.is_file());
-    save(
+    save_with_session(
         &destination,
-        opened.snapshot,
-        opened.asset_paths,
+        activated.snapshot,
+        activated.asset_paths,
+        &active_token,
         &workspace,
     )
     .unwrap();
+    let listing = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    let retained = listing
+        .candidates
+        .iter()
+        .find(|candidate| candidate.kind == "history")
+        .expect("newer recovery remains in history");
     assert_eq!(
-        latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
-            .unwrap()
-            .unwrap(),
-        recovery.snapshot
+        open_recovery_candidate(
+            "00000000-0000-4000-8000-000000000001",
+            &retained.id,
+            &workspace,
+        )
+        .unwrap()
+        .snapshot["project"]["name"],
+        recovery.snapshot["project"]["name"]
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -434,26 +459,46 @@ fn edits_after_opening_older_archive_do_not_replace_newer_recovery() {
     let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
     let destination = root.join("original.ann");
     save(&destination, snapshot(), paths.clone(), &workspace).unwrap();
+    let token = current_session_token(&workspace);
     let mut newer = snapshot();
-    newer["generation"] = json!(5);
+    newer["generation"] = json!(6);
     newer["project"]["name"] = json!("Newer recovery");
-    let recovery = prepare(newer, paths, &workspace).unwrap();
+    let recovery = prepare_with_session(newer, paths, Some(token.clone()), &workspace).unwrap();
 
-    let mut opened = open(&destination, &workspace).unwrap();
-    opened.snapshot["generation"] = json!(6);
-    opened.snapshot["project"]["name"] = json!("Edits from older archive");
-    prepare(opened.snapshot, opened.asset_paths, &workspace).unwrap();
-    let candidates = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
-    let mut found = false;
-    for candidate in candidates {
-        let reopened = open(Path::new(&candidate.path), &workspace).unwrap();
-        if reopened.snapshot["project"]["name"] == recovery.snapshot["project"]["name"] {
-            found = true;
-        }
-    }
-    assert!(
-        found,
-        "newer recovery must remain accessible after editing the older archive"
+    let opened = open(&destination, &workspace).unwrap();
+    let activated =
+        activate_project_session(opened.snapshot, opened.asset_paths, Some(token), &workspace)
+            .unwrap();
+    let active_token = activated.session_token.unwrap();
+    let mut edited = activated.snapshot;
+    let next_generation = edited["generation"].as_u64().unwrap() + 1;
+    edited["generation"] = json!(next_generation);
+    edited["project"]["name"] = json!("Edits from older archive");
+    prepare_with_session(
+        edited,
+        activated.asset_paths,
+        Some(active_token),
+        &workspace,
+    )
+    .unwrap();
+    let listing = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    let retained = listing
+        .candidates
+        .iter()
+        .find(|candidate| {
+            candidate.kind == "history"
+                && candidate.fingerprint == project_fingerprint(&recovery.snapshot).unwrap()
+        })
+        .expect("newer recovery remains accessible after editing the older archive");
+    assert_eq!(
+        open_recovery_candidate(
+            "00000000-0000-4000-8000-000000000001",
+            &retained.id,
+            &workspace,
+        )
+        .unwrap()
+        .snapshot["project"]["name"],
+        "Newer recovery"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -478,8 +523,12 @@ fn recovery_history_is_listed_without_materializing_archives_when_active_is_miss
     fs::remove_file(project_root.join("recovery.json")).unwrap();
 
     let candidates = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(Path::new(&candidates[0].path).extension().unwrap(), "json");
+    assert_eq!(candidates.candidates.len(), 1);
+    assert_eq!(candidates.candidates[0].kind, "history");
+    assert_eq!(
+        candidates.candidates[0].id,
+        g_ann_package::sha256(&serde_json::to_vec(&prepared.snapshot).unwrap())
+    );
     assert!(fs::read_dir(&history).unwrap().all(|entry| entry
         .unwrap()
         .path()
@@ -518,6 +567,14 @@ fn retained_recovery_document_opens_with_managed_assets() {
         open_retained_candidate("00000000-0000-4000-8000-000000000001", &digest, &workspace,)
             .is_err()
     );
+    fs::write(&opened.asset_paths["asset-one"], b"preserved voice").unwrap();
+    fs::remove_file(&opened.asset_paths["asset-one"]).unwrap();
+    assert!(
+        open_retained_candidate("00000000-0000-4000-8000-000000000001", &digest, &workspace,)
+            .is_err()
+    );
+    let project_root = workspace.join("00000000-0000-4000-8000-000000000001");
+    drop(lock(&project_root).unwrap());
     fs::write(&opened.asset_paths["asset-one"], b"preserved voice").unwrap();
     assert!(open_retained_candidate(
         "00000000-0000-4000-8000-000000000001",
@@ -563,6 +620,23 @@ fn retained_recovery_document_opens_with_managed_assets() {
         &workspace,
     )
     .is_err());
+    aliased["project"]["assets"][1] = aliased["project"]["assets"][0].clone();
+    aliased["project"]["assets"][1]["id"] = json!("asset-two");
+    let original = aliased["project"]["assets"][0]["relativePath"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    aliased["project"]["assets"][1]["relativePath"] = json!(original.replace(".wav", ".WAV"));
+    aliased["fingerprint"] = json!(project_fingerprint(&aliased).unwrap());
+    let bytes = serde_json::to_vec(&aliased).unwrap();
+    let case_digest = g_ann_package::sha256(&bytes);
+    fs::write(history.join(format!("{case_digest}.json")), bytes).unwrap();
+    assert!(open_retained_candidate(
+        "00000000-0000-4000-8000-000000000001",
+        &case_digest,
+        &workspace,
+    )
+    .is_err());
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -578,22 +652,312 @@ fn previous_session_cannot_save_after_same_archive_is_reopened_and_saved() {
 
     let previous = open(&destination, &workspace).unwrap();
     let current = open(&destination, &workspace).unwrap();
-    save(
-        &destination,
+    let previous_token = current_session_token(&workspace);
+    let activated = activate_project_session(
         current.snapshot,
         current.asset_paths,
+        Some(previous_token.clone()),
+        &workspace,
+    )
+    .unwrap();
+    let current_token = activated.session_token.unwrap();
+    save_with_session(
+        &destination,
+        activated.snapshot,
+        activated.asset_paths,
+        &current_token,
         &workspace,
     )
     .unwrap();
     let before = fs::read(&destination).unwrap();
-    assert!(save(
+    assert!(save_with_session(
         &destination,
         previous.snapshot,
         previous.asset_paths,
+        &previous_token,
         &workspace
     )
     .is_err());
     assert_eq!(fs::read(&destination).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn superseded_session_cannot_prepare_or_replace_the_active_recovery() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("project.ann");
+    save(&destination, snapshot(), paths, &workspace).unwrap();
+    let previous_token = current_session_token(&workspace);
+    let previous = open(&destination, &workspace).unwrap();
+    let current = activate_project_session(
+        previous.snapshot.clone(),
+        previous.asset_paths.clone(),
+        Some(previous_token.clone()),
+        &workspace,
+    )
+    .unwrap();
+    let before =
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap();
+    let mut stale = previous.snapshot;
+    stale["generation"] = json!(stale["generation"].as_u64().unwrap() + 1);
+    stale["project"]["name"] = json!("stale session edit");
+    assert!(prepare_with_session(
+        stale,
+        previous.asset_paths,
+        Some(previous_token),
+        &workspace,
+    )
+    .is_err());
+    assert_eq!(
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap(),
+        before
+    );
+    assert_ne!(current.session_token, None);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn stale_session_cannot_recreate_missing_active_recovery() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let prepared = prepare(snapshot(), paths.clone(), &workspace).unwrap();
+    let stale_token = current_session_token(&workspace);
+    let recovery = workspace.join("00000000-0000-4000-8000-000000000001/recovery.json");
+    fs::remove_file(&recovery).unwrap();
+    assert!(
+        prepare_with_session(prepared.snapshot, paths, Some(stale_token), &workspace,).is_err()
+    );
+    assert!(
+        !recovery.exists(),
+        "stale writer must not bootstrap a deleted session"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn superseded_session_cannot_import_banner_assets_or_replace_recovery() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("project.ann");
+    save(&destination, snapshot(), paths, &workspace).unwrap();
+    let stale_token = current_session_token(&workspace);
+    let opened = open(&destination, &workspace).unwrap();
+    let activated = activate_project_session(
+        opened.snapshot,
+        opened.asset_paths,
+        Some(stale_token.clone()),
+        &workspace,
+    )
+    .unwrap();
+    let before =
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap();
+    let (archive, manifest_digest, _) = editable_banner_archive(&root);
+    assert!(import_banner_asset_archive_with_session(
+        &archive,
+        &manifest_digest,
+        "second",
+        activated.snapshot["generation"].as_u64().unwrap(),
+        &stale_token,
+        activated.snapshot,
+        activated.asset_paths,
+        &workspace,
+    )
+    .is_err());
+    assert_eq!(
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap(),
+        before
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn superseded_build_completion_cannot_replace_active_recovery() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let first = prepare(snapshot(), paths, &workspace).unwrap();
+    let stale_token = current_session_token(&workspace);
+    let activated = activate_project_session(
+        first.snapshot.clone(),
+        first.asset_paths.clone(),
+        Some(stale_token.clone()),
+        &workspace,
+    )
+    .unwrap();
+    let before =
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap();
+    let result = commit_build_snapshot_with_session(
+        &first.snapshot,
+        &stale_token,
+        json!({"revision":3,"digest":"stale-build"}),
+        &workspace,
+    )
+    .unwrap();
+    assert!(!result, "stale build completion is reported as superseded");
+    assert_eq!(
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap(),
+        before
+    );
+    assert_ne!(
+        activated.session_token.as_deref(),
+        Some(stale_token.as_str())
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn failed_activation_keeps_the_previous_recovery_unchanged() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("project.ann");
+    save(&destination, snapshot(), paths, &workspace).unwrap();
+    let before =
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap();
+    let opened = open(&destination, &workspace).unwrap();
+    assert!(activate_project_session(
+        opened.snapshot,
+        opened.asset_paths,
+        Some("f".repeat(64)),
+        &workspace,
+    )
+    .is_err());
+    assert_eq!(
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap(),
+        before
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn activation_rejects_announcer_identity_changes_within_a_project_lineage() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let prepared = prepare(snapshot(), paths, &workspace).unwrap();
+    let token = current_session_token(&workspace);
+    let before =
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap();
+    let mut changed = prepared.snapshot;
+    changed["project"]["announcerId"] = json!("ann_00000000-0000-4000-8000-000000000010");
+    assert!(
+        activate_project_session(changed, prepared.asset_paths, Some(token), &workspace,).is_err()
+    );
+    assert_eq!(
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap(),
+        before
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn activation_rejects_generation_overflow_without_changing_recovery() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("project.ann");
+    save(&destination, snapshot(), paths, &workspace).unwrap();
+    let token = current_session_token(&workspace);
+    let mut highest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
+        .unwrap()
+        .unwrap();
+    highest["generation"] = json!(MAX_SAFE_GENERATION);
+    persist_session_locked(
+        &highest,
+        &token,
+        &workspace.join("00000000-0000-4000-8000-000000000001"),
+    )
+    .unwrap();
+    let before =
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap();
+    let opened = open(&destination, &workspace).unwrap();
+    assert!(
+        activate_project_session(opened.snapshot, opened.asset_paths, Some(token), &workspace,)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(workspace.join("00000000-0000-4000-8000-000000000001/recovery.json")).unwrap(),
+        before
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn snapshots_above_the_javascript_safe_generation_limit_are_rejected() {
+    let mut invalid = snapshot();
+    invalid["generation"] = json!(MAX_SAFE_GENERATION + 1);
+    assert!(validate(&invalid)
+        .unwrap_err()
+        .contains("safe-integer limit"));
+}
+
+#[test]
+fn same_generation_divergence_is_retained_and_corrupt_entries_do_not_hide_it() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let first = prepare(snapshot(), paths.clone(), &workspace).unwrap();
+    let mut divergent = first.snapshot.clone();
+    divergent["project"]["name"] = json!("same generation, different content");
+    persist_snapshot(&divergent, &workspace).unwrap();
+    let history = workspace
+        .join("00000000-0000-4000-8000-000000000001")
+        .join("recovery-history");
+    fs::write(
+        history.join(format!("{}.json", "a".repeat(64))),
+        b"corrupt recovery",
+    )
+    .unwrap();
+    let listing = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    assert!(listing.candidates.len() >= 2);
+    let corrupt_id = "a".repeat(64);
+    assert!(listing
+        .warnings
+        .iter()
+        .any(|warning| warning.id.as_deref() == Some(corrupt_id.as_str())));
+    let names = listing
+        .candidates
+        .iter()
+        .map(|candidate| {
+            open_recovery_candidate(
+                "00000000-0000-4000-8000-000000000001",
+                &candidate.id,
+                &workspace,
+            )
+            .unwrap()
+            .snapshot["project"]["name"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert!(names.contains(
+        &first.snapshot["project"]["name"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    ));
+    assert!(names.contains(&"same generation, different content".to_owned()));
     fs::remove_dir_all(root).unwrap();
 }
 

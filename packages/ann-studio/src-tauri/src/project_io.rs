@@ -19,6 +19,7 @@ const MAX_ASSETS: usize = 4096;
 pub struct ProjectOpenResult {
     pub snapshot: Value,
     pub asset_paths: BTreeMap<String, String>,
+    pub session_token: Option<String>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,17 +27,64 @@ pub struct ProjectSaveResult {
     pub snapshot: Value,
     pub asset_paths: BTreeMap<String, String>,
     pub path: String,
+    pub session_token: String,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryCandidate {
+    pub id: String,
     pub project_id: String,
-    pub path: String,
+    pub kind: String,
+    pub name: String,
     pub generation: u64,
+    pub fingerprint: String,
 }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryWarning {
+    pub id: Option<String>,
+    pub message: String,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryListing {
+    pub candidates: Vec<RecoveryCandidate>,
+    pub warnings: Vec<RecoveryWarning>,
+    pub truncated: bool,
+}
+
+const MAX_RECOVERY_CANDIDATES: usize = 128;
+const MAX_RECOVERY_LIST_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_SAFE_GENERATION: u64 = 9_007_199_254_740_991;
 
 fn err(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+fn new_session_token() -> String {
+    static N: AtomicU64 = AtomicU64::new(0);
+    let ticks = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    g_ann_package::sha256(
+        format!(
+            "{}:{ticks}:{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        )
+        .as_bytes(),
+    )
+}
+fn valid_session_token(token: &str) -> bool {
+    token.len() == 64
+        && token
+            .bytes()
+            .all(|value| value.is_ascii_digit() || (b'a'..=b'f').contains(&value))
+}
+fn active_session_token(snapshot: &Value) -> Option<&str> {
+    snapshot["sessionToken"]
+        .as_str()
+        .filter(|token| valid_session_token(token))
 }
 fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
     value[key]
@@ -62,10 +110,15 @@ fn asset_name(name: &str) -> bool {
 fn validate(snapshot: &Value) -> Result<(), String> {
     let project = &snapshot["project"];
     project_id(snapshot)?;
+    let generation = snapshot["generation"]
+        .as_u64()
+        .ok_or("Invalid project generation")?;
+    if generation > MAX_SAFE_GENERATION {
+        return Err("Project generation exceeds the JavaScript safe-integer limit".into());
+    }
     if project["schemaVersion"] != 2
         || !g_ann_package::valid_id(text(project, "announcerId")?, "ann_")
         || project["currentRevision"].as_u64().is_none()
-        || snapshot["generation"].as_u64().is_none()
     {
         return Err("Invalid project schema/revision".into());
     }
@@ -211,6 +264,7 @@ fn prepare_locked(
     mut snapshot: Value,
     asset_paths: BTreeMap<String, String>,
     root: &Path,
+    merge_latest: bool,
 ) -> Result<ProjectOpenResult, String> {
     let assets_root = root.join("assets");
     fs::create_dir_all(&assets_root).map_err(err)?;
@@ -292,30 +346,80 @@ fn prepare_locked(
         result?;
     }
     snapshot["fingerprint"] = Value::from(project_fingerprint(&snapshot)?);
-    if let Some(latest) = latest_snapshot(
-        project_id(&snapshot)?,
-        root.parent().ok_or("Project workspace root")?,
-    )? {
-        merge_build_metadata(&mut snapshot, &latest)?;
+    if merge_latest {
+        if let Some(latest) = latest_snapshot(
+            project_id(&snapshot)?,
+            root.parent().ok_or("Project workspace root")?,
+        )? {
+            merge_build_metadata(&mut snapshot, &latest)?;
+        }
     }
     validate(&snapshot)?;
     Ok(ProjectOpenResult {
         snapshot,
         asset_paths: paths,
+        session_token: None,
     })
 }
 
+pub fn prepare_with_session(
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    session_token: Option<String>,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    validate(&snapshot)?;
+    let id = project_id(&snapshot)?;
+    let root = workspace.join(id);
+    let _guard = lock(&root)?;
+    let latest = latest_snapshot(id, workspace)?.ok_or("Project session is no longer active")?;
+    let current = active_session_token(&latest).ok_or("Project session is not active")?;
+    if session_token.as_deref() != Some(current) {
+        return Err("Project session was replaced; reopen the current project".into());
+    }
+    let current_generation = latest["generation"]
+        .as_u64()
+        .ok_or("Invalid recovery generation")?;
+    let incoming_generation = snapshot["generation"]
+        .as_u64()
+        .ok_or("Invalid project generation")?;
+    if incoming_generation < current_generation {
+        return Err(
+            "Project changed while the save was pending; save the current project again".into(),
+        );
+    }
+    let session_token = current.to_owned();
+    let prepared = prepare_locked(snapshot, asset_paths, &root, true)?;
+    persist_session_locked(&prepared.snapshot, &session_token, &root)?;
+    Ok(ProjectOpenResult {
+        snapshot: prepared.snapshot,
+        asset_paths: prepared.asset_paths,
+        session_token: Some(session_token),
+    })
+}
+
+#[cfg(test)]
 pub fn prepare(
     snapshot: Value,
     asset_paths: BTreeMap<String, String>,
     workspace: &Path,
 ) -> Result<ProjectOpenResult, String> {
-    validate(&snapshot)?;
-    let root = workspace.join(project_id(&snapshot)?);
-    let _guard = lock(&root)?;
-    let prepared = prepare_locked(snapshot, asset_paths, &root)?;
-    persist_if_current(&prepared.snapshot, workspace, &root)?;
-    Ok(prepared)
+    let id = project_id(&snapshot)?;
+    let token = latest_snapshot(id, workspace)?
+        .and_then(|latest| active_session_token(&latest).map(str::to_owned));
+    if token.is_none() {
+        let root = workspace.join(id);
+        let _guard = lock(&root)?;
+        let session_token = new_session_token();
+        let prepared = prepare_locked(snapshot, asset_paths, &root, true)?;
+        persist_session_locked(&prepared.snapshot, &session_token, &root)?;
+        return Ok(ProjectOpenResult {
+            snapshot: prepared.snapshot,
+            asset_paths: prepared.asset_paths,
+            session_token: Some(session_token),
+        });
+    }
+    prepare_with_session(snapshot, asset_paths, token, workspace)
 }
 
 fn prepare_if_current(
@@ -323,6 +427,7 @@ fn prepare_if_current(
     asset_paths: BTreeMap<String, String>,
     expected_generation: u64,
     expected_baseline_fingerprint: &str,
+    session_token: &str,
     workspace: &Path,
 ) -> Result<ProjectOpenResult, String> {
     validate(&snapshot)?;
@@ -333,6 +438,9 @@ fn prepare_if_current(
     let root = workspace.join(id);
     let _guard = lock(&root)?;
     if let Some(latest) = latest_snapshot(id, workspace)? {
+        if active_session_token(&latest) != Some(session_token) {
+            return Err("Project session was replaced; reopen the current project".into());
+        }
         let latest_generation = latest["generation"]
             .as_u64()
             .ok_or("Invalid recovery generation")?;
@@ -342,18 +450,24 @@ fn prepare_if_current(
         {
             return Err("Project changed while the banner import was pending".into());
         }
+    } else {
+        return Err("Project session is no longer active".into());
     }
     // Import changes the document. Advance its generation under the same lock as
     // the recovery comparison and commit, so earlier pending snapshots cannot
     // overwrite this import or be accepted as the current build.
     let generation = expected_generation
         .checked_add(1)
-        .filter(|value| *value <= 9_007_199_254_740_991)
+        .filter(|value| *value <= MAX_SAFE_GENERATION)
         .ok_or("Project generation limit reached")?;
     snapshot["generation"] = Value::from(generation);
-    let prepared = prepare_locked(snapshot, asset_paths, &root)?;
-    persist_if_current(&prepared.snapshot, workspace, &root)?;
-    Ok(prepared)
+    let prepared = prepare_locked(snapshot, asset_paths, &root, true)?;
+    persist_session_locked(&prepared.snapshot, session_token, &root)?;
+    Ok(ProjectOpenResult {
+        snapshot: prepared.snapshot,
+        asset_paths: prepared.asset_paths,
+        session_token: Some(session_token.to_owned()),
+    })
 }
 
 fn asset_extension(media_type: &str) -> Result<&'static str, String> {
@@ -364,6 +478,37 @@ fn asset_extension(media_type: &str) -> Result<&'static str, String> {
         "video/webm" => Ok("webm"),
         _ => Err(format!("Unsupported banner media type {media_type}")),
     }
+}
+
+fn open_regular_file(path: &Path, limit: u64) -> Result<File, String> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    #[cfg(not(windows))]
+    if fs::symlink_metadata(path)
+        .map_err(err)?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("File cannot be a symbolic link".into());
+    }
+    let file = options.open(path).map_err(err)?;
+    let metadata = file.metadata().map_err(err)?;
+    if !metadata.is_file() || metadata.len() > limit {
+        return Err("Invalid file or size".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("File cannot be a reparse point".into());
+        }
+    }
+    Ok(file)
 }
 
 fn import_banner_project(
@@ -440,11 +585,12 @@ fn import_banner_project(
     }))
 }
 
-pub fn import_banner_asset_archive(
+pub fn import_banner_asset_archive_with_session(
     path: &Path,
     manifest_sha256: &str,
     variant_id: &str,
     expected_generation: u64,
+    session_token: &str,
     mut snapshot: Value,
     mut asset_paths: BTreeMap<String, String>,
     workspace: &Path,
@@ -551,6 +697,32 @@ pub fn import_banner_asset_archive(
         asset_paths,
         expected_generation,
         &baseline_fingerprint,
+        session_token,
+        workspace,
+    )
+}
+
+#[cfg(test)]
+pub fn import_banner_asset_archive(
+    path: &Path,
+    manifest_sha256: &str,
+    variant_id: &str,
+    expected_generation: u64,
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    let token = latest_snapshot(project_id(&snapshot)?, workspace)?
+        .and_then(|latest| active_session_token(&latest).map(str::to_owned))
+        .ok_or("Project session is not active")?;
+    import_banner_asset_archive_with_session(
+        path,
+        manifest_sha256,
+        variant_id,
+        expected_generation,
+        &token,
+        snapshot,
+        asset_paths,
         workspace,
     )
 }
@@ -567,7 +739,11 @@ fn archive_bytes(
     fs::create_dir_all(parent).map_err(err)?;
     let temp = unique(parent, "ann-save");
     let result = (|| {
-        let document = serde_json::to_vec(snapshot).map_err(err)?;
+        let mut portable = snapshot.clone();
+        if let Some(object) = portable.as_object_mut() {
+            object.remove("sessionToken");
+        }
+        let document = serde_json::to_vec(&portable).map_err(err)?;
         if document.len() as u64 > MAX_DOCUMENT {
             return Err("Project document exceeds 16 MiB".into());
         }
@@ -631,9 +807,13 @@ fn archive_bytes(
 #[cfg(test)]
 pub fn persist_snapshot(snapshot: &Value, workspace: &Path) -> Result<(), String> {
     validate(snapshot)?;
-    let root = workspace.join(project_id(snapshot)?);
+    let id = project_id(snapshot)?;
+    let root = workspace.join(id);
     let _guard = lock(&root)?;
-    persist_if_current(snapshot, workspace, &root)
+    let token = latest_snapshot(id, workspace)?
+        .and_then(|latest| active_session_token(&latest).map(str::to_owned))
+        .ok_or("Project session is not active")?;
+    persist_session_locked(snapshot, &token, &root)
 }
 
 fn merge_build_metadata(snapshot: &mut Value, latest: &Value) -> Result<(), String> {
@@ -668,19 +848,101 @@ fn merge_build_metadata(snapshot: &mut Value, latest: &Value) -> Result<(), Stri
     Ok(())
 }
 
-fn persist_if_current(snapshot: &Value, workspace: &Path, root: &Path) -> Result<(), String> {
+fn persist_session_locked(
+    snapshot: &Value,
+    session_token: &str,
+    root: &Path,
+) -> Result<(), String> {
+    if !valid_session_token(session_token) {
+        return Err("Invalid project session token".into());
+    }
     let mut document = snapshot.clone();
-    if let Some(latest) = latest_snapshot(project_id(snapshot)?, workspace)? {
-        if latest["generation"].as_u64() > snapshot["generation"].as_u64() {
+    document["sessionToken"] = Value::from(session_token);
+    persist_locked(&document, root)
+}
+
+fn retain_active_recovery(root: &Path, next: &[u8]) -> Result<(), String> {
+    let active = root.join("recovery.json");
+    match fs::symlink_metadata(&active) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err("Active recovery cannot be a symbolic link".into());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(err(error)),
+    }
+    let mut prior = Vec::new();
+    copy_bounded(
+        open_regular_file(&active, MAX_DOCUMENT)?,
+        &mut prior,
+        MAX_DOCUMENT,
+    )?;
+    if prior == next {
+        return Ok(());
+    }
+    if let (Ok(previous), Ok(next_snapshot)) = (
+        serde_json::from_slice::<Value>(&prior),
+        serde_json::from_slice::<Value>(next),
+    ) {
+        if previous["generation"] == next_snapshot["generation"]
+            && previous.get("fingerprint") == next_snapshot.get("fingerprint")
+        {
             return Ok(());
         }
-        merge_build_metadata(&mut document, &latest)?;
     }
-    persist_locked(&document, root)
+    let history = root.join("recovery-history");
+    if !history.exists() {
+        fs::create_dir(&history).map_err(err)?;
+    }
+    let metadata = fs::symlink_metadata(&history).map_err(err)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("Invalid recovery history directory".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Recovery history cannot be a reparse point".into());
+        }
+    }
+    let digest = g_ann_package::sha256(&prior);
+    let destination = history.join(format!("{digest}.json"));
+    if destination.exists() {
+        let mut existing = Vec::new();
+        copy_bounded(
+            open_regular_file(&destination, MAX_DOCUMENT)?,
+            &mut existing,
+            MAX_DOCUMENT,
+        )?;
+        if existing != prior {
+            return Err("Recovery history digest collision".into());
+        }
+        return Ok(());
+    }
+    let temp = unique(&history, "history");
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)
+            .map_err(err)?;
+        file.write_all(&prior).map_err(err)?;
+        file.sync_all().map_err(err)?;
+        drop(file);
+        fs::rename(&temp, &destination).map_err(err)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
+    result
 }
 
 fn persist_locked(snapshot: &Value, root: &Path) -> Result<(), String> {
     let bytes = serde_json::to_vec(snapshot).map_err(err)?;
+    if bytes.len() as u64 > MAX_DOCUMENT {
+        return Err("Project document exceeds 16 MiB".into());
+    }
+    retain_active_recovery(root, &bytes)?;
     let temp = unique(root, "recovery");
     let result = (|| {
         let mut file = OpenOptions::new()
@@ -699,16 +961,23 @@ fn persist_locked(snapshot: &Value, root: &Path) -> Result<(), String> {
     result
 }
 
-pub fn commit_build_snapshot(
+pub fn commit_build_snapshot_with_session(
     snapshot: &Value,
+    session_token: &str,
     history_entry: Value,
     workspace: &Path,
 ) -> Result<bool, String> {
     validate(snapshot)?;
+    if !valid_session_token(session_token) {
+        return Err("Invalid project session token".into());
+    }
     let id = project_id(snapshot)?;
     let root = workspace.join(id);
     let _guard = lock(&root)?;
     let latest = latest_snapshot(id, workspace)?;
+    if latest.as_ref().and_then(active_session_token) != Some(session_token) {
+        return Ok(false);
+    }
     let applies = latest.as_ref().is_none_or(|current| {
         current["generation"] == snapshot["generation"]
             && current["fingerprint"] == snapshot["fingerprint"]
@@ -742,8 +1011,20 @@ pub fn commit_build_snapshot(
     if applies {
         committed["project"]["currentRevision"] = Value::from(revision);
     }
-    persist_locked(&committed, &root)?;
+    persist_session_locked(&committed, session_token, &root)?;
     Ok(applies)
+}
+
+#[cfg(test)]
+pub fn commit_build_snapshot(
+    snapshot: &Value,
+    history_entry: Value,
+    workspace: &Path,
+) -> Result<bool, String> {
+    let token = latest_snapshot(project_id(snapshot)?, workspace)?
+        .and_then(|latest| active_session_token(&latest).map(str::to_owned))
+        .ok_or("Project session is not active")?;
+    commit_build_snapshot_with_session(snapshot, &token, history_entry, workspace)
 }
 
 pub fn latest_snapshot(project_id: &str, workspace: &Path) -> Result<Option<Value>, String> {
@@ -751,45 +1032,52 @@ pub fn latest_snapshot(project_id: &str, workspace: &Path) -> Result<Option<Valu
         return Err("Invalid project identity".into());
     }
     let path = workspace.join(project_id).join("recovery.json");
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let file = File::open(path).map_err(err)?;
-    if file.metadata().map_err(err)?.len() > MAX_DOCUMENT {
-        return Err("Recovery document exceeds 16 MiB".into());
-    }
+    let file = match open_regular_file(&path, MAX_DOCUMENT) {
+        Ok(file) => file,
+        Err(error) => match fs::symlink_metadata(&path) {
+            Err(metadata_error) if metadata_error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(None)
+            }
+            _ => return Err(error),
+        },
+    };
     let mut bytes = Vec::new();
     copy_bounded(file, &mut bytes, MAX_DOCUMENT)?;
     let snapshot: Value = serde_json::from_slice(&bytes).map_err(err)?;
     validate(&snapshot)?;
+    if snapshot.get("sessionToken").is_some() && active_session_token(&snapshot).is_none() {
+        return Err("Recovery session token is invalid".into());
+    }
     if self::project_id(&snapshot)? != project_id {
         return Err("Recovery project identity mismatch".into());
     }
     Ok(Some(snapshot))
 }
 
-// This function is an internal building block; candidate listing and session
-// activation must be wired separately before retained history is exposed.
-// Intermediate project directories are assumed to be owned by this app and not
-// concurrently replaced by an adversarial same-user process.
-pub fn open_retained_candidate(
-    project_id: &str,
-    digest: &str,
+pub fn session_is_active(
+    snapshot: &Value,
+    session_token: &str,
     workspace: &Path,
-) -> Result<ProjectOpenResult, String> {
-    use sha2::{Digest, Sha256};
-    if !g_ann_package::valid_id(project_id, "")
-        || digest.len() != 64
-        || !digest
-            .bytes()
-            .all(|value| value.is_ascii_digit() || (b'a'..=b'f').contains(&value))
-    {
-        return Err("Invalid recovery candidate identity".into());
+) -> Result<bool, String> {
+    if !valid_session_token(session_token) {
+        return Ok(false);
     }
-    let root = workspace.join(project_id);
+    let id = project_id(snapshot)?;
+    let root = workspace.join(id);
     let _guard = lock(&root)?;
+    Ok(latest_snapshot(id, workspace)?
+        .as_ref()
+        .and_then(active_session_token)
+        == Some(session_token))
+}
+
+fn history_directory(root: &Path) -> Result<Option<PathBuf>, String> {
     let history = root.join("recovery-history");
-    let metadata = fs::symlink_metadata(&history).map_err(err)?;
+    let metadata = match fs::symlink_metadata(&history) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(err(error)),
+    };
     if !metadata.is_dir() || metadata.file_type().is_symlink() {
         return Err("Invalid recovery history directory".into());
     }
@@ -800,51 +1088,201 @@ pub fn open_retained_candidate(
             return Err("Recovery history cannot be a reparse point".into());
         }
     }
-    fn verified_file(path: &Path, limit: u64) -> Result<File, String> {
-        let mut options = OpenOptions::new();
-        options.read(true);
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
-        }
-        #[cfg(not(windows))]
-        if fs::symlink_metadata(path)
-            .map_err(err)?
-            .file_type()
-            .is_symlink()
-        {
-            return Err("Recovery file cannot be a symbolic link".into());
-        }
-        let file = options.open(path).map_err(err)?;
-        let metadata = file.metadata().map_err(err)?;
-        if !metadata.is_file() || metadata.len() > limit {
-            return Err("Invalid recovery file or size".into());
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::MetadataExt;
-            if metadata.file_attributes() & 0x400 != 0 {
-                return Err("Recovery file cannot be a reparse point".into());
-            }
-        }
-        Ok(file)
+    Ok(Some(history))
+}
+
+fn recovery_candidate_from_bytes(
+    project_id: &str,
+    kind: &str,
+    bytes: &[u8],
+    expected_digest: Option<&str>,
+) -> Result<RecoveryCandidate, String> {
+    let digest = g_ann_package::sha256(bytes);
+    if expected_digest.is_some_and(|expected| expected != digest) {
+        return Err("Recovery candidate digest mismatch".into());
     }
-    let mut document = Vec::new();
-    copy_bounded(
-        verified_file(&history.join(format!("{digest}.json")), MAX_DOCUMENT)?,
-        &mut document,
-        MAX_DOCUMENT,
-    )?;
-    if g_ann_package::sha256(&document) != digest {
-        return Err("Recovery candidate changed after listing".into());
-    }
-    let snapshot: Value = serde_json::from_slice(&document).map_err(err)?;
+    let snapshot: Value = serde_json::from_slice(bytes).map_err(err)?;
     validate(&snapshot)?;
+    let fingerprint = project_fingerprint(&snapshot)?;
     if self::project_id(&snapshot)? != project_id
-        || snapshot["fingerprint"].as_str() != Some(project_fingerprint(&snapshot)?.as_str())
+        || snapshot["fingerprint"].as_str() != Some(fingerprint.as_str())
     {
         return Err("Recovery identity or fingerprint mismatch".into());
+    }
+    Ok(RecoveryCandidate {
+        id: digest,
+        project_id: project_id.to_owned(),
+        kind: kind.to_owned(),
+        name: text(&snapshot["project"], "name")?.to_owned(),
+        generation: snapshot["generation"]
+            .as_u64()
+            .ok_or("Missing generation")?,
+        fingerprint,
+    })
+}
+
+fn recovery_listing_locked(project_id: &str, workspace: &Path) -> Result<RecoveryListing, String> {
+    let root = workspace.join(project_id);
+    let mut listing = RecoveryListing {
+        candidates: Vec::new(),
+        warnings: Vec::new(),
+        truncated: false,
+    };
+    let mut scanned = 0usize;
+    let mut bytes_read = 0u64;
+    let mut add_file = |path: &Path, kind: &str, expected: Option<&str>| {
+        if scanned >= MAX_RECOVERY_CANDIDATES || bytes_read >= MAX_RECOVERY_LIST_BYTES {
+            listing.truncated = true;
+            return;
+        }
+        scanned += 1;
+        let mut document = Vec::new();
+        let read_result = open_regular_file(path, MAX_DOCUMENT).and_then(|file| {
+            let size = file.metadata().map_err(err)?.len();
+            let remaining = MAX_RECOVERY_LIST_BYTES.saturating_sub(bytes_read);
+            if size > remaining {
+                return Err("Recovery listing reached its metadata byte limit".into());
+            }
+            copy_bounded(file.take(size), &mut document, size).and_then(|count| {
+                (count == size)
+                    .then_some(count)
+                    .ok_or_else(|| "Recovery candidate changed while listing".to_owned())
+            })
+        });
+        match read_result {
+            Ok(count) => {
+                bytes_read += count;
+                match recovery_candidate_from_bytes(project_id, kind, &document, expected) {
+                    Ok(candidate) => listing.candidates.push(candidate),
+                    Err(error) => listing.warnings.push(RecoveryWarning {
+                        id: expected
+                            .map(str::to_owned)
+                            .or_else(|| Some(g_ann_package::sha256(&document))),
+                        message: error,
+                    }),
+                }
+            }
+            Err(error) => {
+                if error == "Recovery listing reached its metadata byte limit" {
+                    listing.truncated = true;
+                }
+                listing.warnings.push(RecoveryWarning {
+                    id: expected.map(str::to_owned),
+                    message: error,
+                });
+            }
+        }
+    };
+
+    let active = root.join("recovery.json");
+    match fs::symlink_metadata(&active) {
+        Ok(_) => add_file(&active, "active", None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => listing.warnings.push(RecoveryWarning {
+            id: None,
+            message: err(error),
+        }),
+    }
+    match history_directory(&root) {
+        Ok(Some(history)) => {
+            let remaining = MAX_RECOVERY_CANDIDATES.saturating_sub(scanned);
+            let mut entries = Vec::new();
+            match fs::read_dir(&history) {
+                Ok(read_dir) => {
+                    for entry in read_dir {
+                        if entries.len() >= remaining {
+                            listing.truncated = true;
+                            break;
+                        }
+                        match entry {
+                            Ok(entry) => entries.push(entry.path()),
+                            Err(error) => listing.warnings.push(RecoveryWarning {
+                                id: None,
+                                message: err(error),
+                            }),
+                        }
+                    }
+                }
+                Err(error) => listing.warnings.push(RecoveryWarning {
+                    id: None,
+                    message: err(error),
+                }),
+            }
+            entries.sort_by(|left: &PathBuf, right: &PathBuf| {
+                left.file_name().cmp(&right.file_name())
+            });
+            for path in entries {
+                if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                    continue;
+                }
+                let digest = path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("");
+                if !valid_session_token(digest) {
+                    listing.warnings.push(RecoveryWarning {
+                        id: None,
+                        message: "Ignoring recovery history entry with an invalid identity".into(),
+                    });
+                    continue;
+                }
+                add_file(&path, "history", Some(digest));
+                if listing.truncated && bytes_read >= MAX_RECOVERY_LIST_BYTES {
+                    break;
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(error) => listing.warnings.push(RecoveryWarning {
+            id: None,
+            message: error,
+        }),
+    }
+    listing.candidates.sort_by(|left, right| {
+        right
+            .generation
+            .cmp(&left.generation)
+            .then_with(|| left.id.cmp(&right.id))
+            .then_with(|| left.kind.cmp(&right.kind))
+    });
+    if listing.truncated {
+        listing.warnings.push(RecoveryWarning {
+            id: None,
+            message: "Recovery listing is partial; some retained candidates were not scanned"
+                .into(),
+        });
+    }
+    Ok(listing)
+}
+
+pub fn list_recovery_candidates(
+    project_id: &str,
+    workspace: &Path,
+) -> Result<RecoveryListing, String> {
+    if !g_ann_package::valid_id(project_id, "") {
+        return Err("Invalid project identity".into());
+    }
+    let root = workspace.join(project_id);
+    let _guard = lock(&root)?;
+    recovery_listing_locked(project_id, workspace)
+}
+
+fn open_recovery_document(
+    project_id: &str,
+    document: &[u8],
+    root: &Path,
+) -> Result<ProjectOpenResult, String> {
+    use sha2::{Digest, Sha256};
+    let mut snapshot: Value = serde_json::from_slice(document).map_err(err)?;
+    validate(&snapshot)?;
+    let fingerprint = project_fingerprint(&snapshot)?;
+    if self::project_id(&snapshot)? != project_id
+        || snapshot["fingerprint"].as_str() != Some(fingerprint.as_str())
+    {
+        return Err("Recovery identity or fingerprint mismatch".into());
+    }
+    if let Some(object) = snapshot.as_object_mut() {
+        object.remove("sessionToken");
     }
     let mut paths = BTreeMap::new();
     let mut seen = BTreeMap::<String, (String, String)>::new();
@@ -867,7 +1305,7 @@ pub fn open_retained_candidate(
             );
             continue;
         }
-        let mut file = verified_file(&path, MAX_ASSET)?;
+        let mut file = open_regular_file(&path, MAX_ASSET)?;
         let mut hasher = Sha256::new();
         let mut total = 0u64;
         let mut buffer = [0u8; 65536];
@@ -902,13 +1340,161 @@ pub fn open_retained_candidate(
     Ok(ProjectOpenResult {
         snapshot,
         asset_paths: paths,
+        session_token: None,
     })
 }
 
-pub fn save(
+// Listing reads bounded metadata only. Materialize managed assets only after a
+// user selects one stable digest ID. Intermediate paths remain app-owned data.
+pub fn open_recovery_candidate(
+    project_id: &str,
+    digest: &str,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    if !g_ann_package::valid_id(project_id, "") || !valid_session_token(digest) {
+        return Err("Invalid recovery candidate identity".into());
+    }
+    let root = workspace.join(project_id);
+    let _guard = lock(&root)?;
+    let candidates = recovery_listing_locked(project_id, workspace)?;
+    if candidates.truncated
+        && !candidates
+            .candidates
+            .iter()
+            .any(|candidate| candidate.id == digest)
+    {
+        return Err("Recovery listing is partial; refresh and select a listed candidate".into());
+    }
+    if !candidates
+        .candidates
+        .iter()
+        .any(|candidate| candidate.id == digest)
+    {
+        return Err("Recovery candidate is no longer available".into());
+    }
+    let active = root.join("recovery.json");
+    let history = history_directory(&root).ok().flatten();
+    let mut document = Vec::new();
+    let active_bytes = if active.exists() {
+        let mut bytes = Vec::new();
+        if copy_bounded(
+            open_regular_file(&active, MAX_DOCUMENT)?,
+            &mut bytes,
+            MAX_DOCUMENT,
+        )
+        .is_ok()
+            && g_ann_package::sha256(&bytes) == digest
+        {
+            Some(bytes)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(bytes) = active_bytes {
+        document = bytes;
+    } else {
+        let path = history
+            .ok_or("Recovery candidate is no longer available")?
+            .join(format!("{digest}.json"));
+        copy_bounded(
+            open_regular_file(&path, MAX_DOCUMENT)?,
+            &mut document,
+            MAX_DOCUMENT,
+        )?;
+        if g_ann_package::sha256(&document) != digest {
+            return Err("Recovery candidate changed after listing".into());
+        }
+    }
+    open_recovery_document(project_id, &document, &root)
+}
+
+pub fn activate_project_session(
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    expected_session_token: Option<String>,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    validate(&snapshot)?;
+    let id = project_id(&snapshot)?;
+    let root = workspace.join(id);
+    let _guard = lock(&root)?;
+    let listing = recovery_listing_locked(id, workspace)?;
+    if listing.truncated {
+        return Err("Recovery history is too large to safely allocate a session generation".into());
+    }
+    let latest = match latest_snapshot(id, workspace) {
+        Ok(latest) => latest,
+        Err(_) => None,
+    };
+    if let Some(expected) = expected_session_token.as_deref() {
+        if latest.as_ref().and_then(active_session_token) != Some(expected) {
+            return Err("Project session changed while the archive was opening".into());
+        }
+    }
+    if latest.as_ref().is_some_and(|current| {
+        current["project"]["announcerId"] != snapshot["project"]["announcerId"]
+    }) {
+        return Err("Project announcer identity changed within the same project lineage".into());
+    }
+    let highest = listing
+        .candidates
+        .iter()
+        .map(|candidate| candidate.generation)
+        .chain(std::iter::once(
+            snapshot["generation"]
+                .as_u64()
+                .ok_or("Invalid project generation")?,
+        ))
+        .max()
+        .ok_or("Missing project generation")?;
+    let generation = highest
+        .checked_add(1)
+        .filter(|value| *value <= MAX_SAFE_GENERATION)
+        .ok_or("Project generation limit reached")?;
+    let mut accepted = snapshot;
+    accepted["generation"] = Value::from(generation);
+    if let Some(latest) = latest.as_ref() {
+        merge_build_metadata(&mut accepted, latest)?;
+    }
+    let session_token = new_session_token();
+    let prepared = prepare_locked(accepted, asset_paths, &root, false)?;
+    persist_session_locked(&prepared.snapshot, &session_token, &root)?;
+    Ok(ProjectOpenResult {
+        snapshot: prepared.snapshot,
+        asset_paths: prepared.asset_paths,
+        session_token: Some(session_token),
+    })
+}
+
+#[cfg(test)]
+pub fn open_retained_candidate(
+    project_id: &str,
+    digest: &str,
+    workspace: &Path,
+) -> Result<ProjectOpenResult, String> {
+    let root = workspace.join(project_id);
+    let _guard = lock(&root)?;
+    let history = history_directory(&root)?.ok_or("Recovery history is missing")?;
+    let path = history.join(format!("{digest}.json"));
+    let mut document = Vec::new();
+    copy_bounded(
+        open_regular_file(&path, MAX_DOCUMENT)?,
+        &mut document,
+        MAX_DOCUMENT,
+    )?;
+    if g_ann_package::sha256(&document) != digest {
+        return Err("Recovery candidate changed after listing".into());
+    }
+    open_recovery_document(project_id, &document, &root)
+}
+
+pub fn save_with_session(
     path: &Path,
     snapshot: Value,
     asset_paths: BTreeMap<String, String>,
+    session_token: &str,
     workspace: &Path,
 ) -> Result<ProjectSaveResult, String> {
     if path
@@ -919,24 +1505,63 @@ pub fn save(
         return Err("Choose an .ann project destination".into());
     }
     validate(&snapshot)?;
-    let root = workspace.join(project_id(&snapshot)?);
+    if !valid_session_token(session_token) {
+        return Err("Invalid project session token".into());
+    }
+    let id = project_id(&snapshot)?;
+    let root = workspace.join(id);
     let _guard = lock(&root)?;
     if let Some(latest) = latest_snapshot(project_id(&snapshot)?, workspace)? {
+        if active_session_token(&latest) != Some(session_token) {
+            return Err("Project session was replaced; reopen the current project".into());
+        }
         if latest["generation"].as_u64() > snapshot["generation"].as_u64() {
             return Err(
                 "Project changed while the save was pending; save the current project again".into(),
             );
         }
+    } else {
+        return Err("Project session is no longer active".into());
     }
-    let prepared = prepare_locked(snapshot, asset_paths, &root)?;
+    let prepared = prepare_locked(snapshot, asset_paths, &root, true)?;
     // Recovery is committed first, so a failed destination write still retains this snapshot.
-    persist_if_current(&prepared.snapshot, workspace, &root)?;
+    persist_session_locked(&prepared.snapshot, session_token, &root)?;
     archive_bytes(path, &prepared.snapshot, &prepared.asset_paths)?;
     Ok(ProjectSaveResult {
         snapshot: prepared.snapshot,
         asset_paths: prepared.asset_paths,
         path: path.to_string_lossy().into_owned(),
+        session_token: session_token.to_owned(),
     })
+}
+
+#[cfg(test)]
+pub fn save(
+    path: &Path,
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    workspace: &Path,
+) -> Result<ProjectSaveResult, String> {
+    let id = project_id(&snapshot)?;
+    let (snapshot, asset_paths, token) = match latest_snapshot(id, workspace)? {
+        Some(latest) => {
+            let token = active_session_token(&latest)
+                .ok_or("Project session is not active")?
+                .to_owned();
+            (snapshot, asset_paths, token)
+        }
+        None => {
+            let activated = activate_project_session(snapshot, asset_paths, None, workspace)?;
+            (
+                activated.snapshot,
+                activated.asset_paths,
+                activated
+                    .session_token
+                    .ok_or("Project activation returned no session")?,
+            )
+        }
+    };
+    save_with_session(path, snapshot, asset_paths, &token, workspace)
 }
 
 pub fn open(path: &Path, workspace: &Path) -> Result<ProjectOpenResult, String> {
@@ -982,10 +1607,13 @@ pub fn open(path: &Path, workspace: &Path) -> Result<ProjectOpenResult, String> 
             document = Some(serde_json::from_slice::<Value>(&bytes).map_err(err)?);
         }
     }
-    let snapshot = document.ok_or("Missing project.json")?;
+    let mut snapshot = document.ok_or("Missing project.json")?;
     validate(&snapshot)?;
     if snapshot["fingerprint"].as_str() != Some(project_fingerprint(&snapshot)?.as_str()) {
         return Err("Project fingerprint mismatch".into());
+    }
+    if let Some(object) = snapshot.as_object_mut() {
+        object.remove("sessionToken");
     }
     let root = workspace.join(project_id(&snapshot)?);
     let _guard = lock(&root)?;
@@ -1045,40 +1673,12 @@ pub fn open(path: &Path, workspace: &Path) -> Result<ProjectOpenResult, String> 
     Ok(ProjectOpenResult {
         snapshot,
         asset_paths: paths,
+        session_token: None,
     })
 }
 
-pub fn recover(project_id: &str, workspace: &Path) -> Result<Vec<RecoveryCandidate>, String> {
-    if !g_ann_package::valid_id(project_id, "") {
-        return Err("Invalid project identity".into());
-    }
-    let Some(snapshot) = latest_snapshot(project_id, workspace)? else {
-        return Ok(vec![]);
-    };
-    let root = workspace.join(project_id);
-    let paths = snapshot["project"]["assets"]
-        .as_array()
-        .ok_or("Missing assets")?
-        .iter()
-        .map(|asset| {
-            Ok((
-                text(asset, "id")?.to_owned(),
-                root.join(text(asset, "relativePath")?)
-                    .to_string_lossy()
-                    .into_owned(),
-            ))
-        })
-        .collect::<Result<BTreeMap<_, _>, String>>()?;
-    let path = root.join("recovery.ann");
-    archive_bytes(&path, &snapshot, &paths)?;
-    let recovered = open(&path, workspace)?;
-    Ok(vec![RecoveryCandidate {
-        project_id: project_id.into(),
-        path: path.to_string_lossy().into_owned(),
-        generation: recovered.snapshot["generation"]
-            .as_u64()
-            .ok_or("Missing generation")?,
-    }])
+pub fn recover(project_id: &str, workspace: &Path) -> Result<RecoveryListing, String> {
+    list_recovery_candidates(project_id, workspace)
 }
 
 #[cfg(test)]

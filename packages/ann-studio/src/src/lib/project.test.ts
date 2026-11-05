@@ -1,12 +1,15 @@
-import { beforeEach,describe,expect,it,vi } from "vitest";
+import { afterEach,beforeEach,describe,expect,it,vi } from "vitest";
 vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn(),convertFileSrc:(path:string)=>`http://asset.localhost/${encodeURIComponent(path)}`}));
 vi.mock("@tauri-apps/plugin-dialog",()=>({open:vi.fn(),save:vi.fn()}));
 import { invoke } from "@tauri-apps/api/core";
 import { open,save } from "@tauri-apps/plugin-dialog";
 import { useStudioStore } from "../store/useStudioStore";
-import { newProject,snapshotProject,selectProjectVariant,saveProject,openProject,recoverProject,initializeProject,importLegacyProject,updateProjectBinding,acceptProjectBuild,inspectBannerAssetArchive,captureBannerAssetImportContext,applyBannerAssetArchive } from "./project";
+import { newProject,snapshotProject,selectProjectVariant,saveProject,openProject,recoverProject,initializeProject,importLegacyProject,updateProjectBinding,acceptProjectBuild,inspectBannerAssetArchive,captureBannerAssetImportContext,applyBannerAssetArchive,registerRecoveryPicker } from "./project";
 
-beforeEach(()=>{vi.mocked(invoke).mockReset();vi.mocked(open).mockReset();vi.mocked(save).mockReset();newProject();useStudioStore.setState({sourcePath:"C:/เสียง.wav",wavPath:"C:/เสียง.wav",clips:[{id:"one",name:"หนึ่ง",start:0,end:1,event:"kill",color:"red"},{id:"two",name:"สอง",start:1,end:2,event:"kill",color:"blue"}]});});
+let unregisterRecoveryPicker:(()=>void)|undefined;
+function setRecoveryPicker(picker:Parameters<typeof registerRecoveryPicker>[0]){unregisterRecoveryPicker?.();unregisterRecoveryPicker=registerRecoveryPicker(picker);}
+beforeEach(()=>{unregisterRecoveryPicker?.();unregisterRecoveryPicker=undefined;vi.mocked(invoke).mockReset();vi.mocked(open).mockReset();vi.mocked(save).mockReset();newProject();useStudioStore.setState({sourcePath:"C:/เสียง.wav",wavPath:"C:/เสียง.wav",clips:[{id:"one",name:"หนึ่ง",start:0,end:1,event:"kill",color:"red"},{id:"two",name:"สอง",start:1,end:2,event:"kill",color:"blue"}]});});
+afterEach(()=>{unregisterRecoveryPicker?.();unregisterRecoveryPicker=undefined;vi.unstubAllGlobals();});
 describe("portable project UI integration",()=>{
   it("keeps IDs stable and preserves second variant canvas edits across selection",async()=>{
     const first=await snapshotProject();const second=await snapshotProject();
@@ -31,9 +34,10 @@ describe("portable project UI integration",()=>{
   });
   it.each(["startup","recover"] as const)("does not discard edits while %s opens a project",async operation=>{
     const archive=await snapshotProject();let finish!:(value:unknown)=>void;
+    setRecoveryPicker(async()=>"recovery-A");
     vi.mocked(invoke).mockImplementation(async command=>{
       if(command==="project_startup_path")return "D:/older.ann";
-      if(command==="recover_project")return [{path:"D:/recovery.ann"}];
+      if(command==="recover_project")return {candidates:[{id:"recovery-A",projectId:archive.snapshot.project.projectId,kind:"history",name:"Earlier",generation:4,fingerprint:"a".repeat(64)}],warnings:[],truncated:false};
       return new Promise(resolve=>{finish=resolve;});
     });
     const pending=operation==="startup"?initializeProject():recoverProject();
@@ -67,14 +71,33 @@ describe("portable project UI integration",()=>{
     expect(vi.mocked(invoke).mock.calls.some(([command])=>command==="prepare_project")).toBe(false);
   });
   it("saves the full snapshot through native archive IO and retains concurrent edits",async()=>{
+    useStudioStore.setState({projectSessionToken:"b".repeat(64)});
     vi.mocked(save).mockResolvedValue("D:/saved.ann");
     vi.mocked(invoke).mockImplementation(async(command,args)=>{
       expect(command).toBe("save_project");const captured=args as Awaited<ReturnType<typeof snapshotProject>>&{path:string};
+      expect(captured.sessionToken).toBe("b".repeat(64));
       expect(JSON.stringify(captured.snapshot.project)).not.toContain("C:/");
       useStudioStore.getState().updateClip("two",{name:"edited while saving"});
       return {...captured,path:"D:/saved.ann"};
     });
     expect(await saveProject()).toContain("บันทึกแล้ว");expect(useStudioStore.getState().clips[1].name).toBe("edited while saving");
+  });
+  it("activates a new native project without invalidating its first save",async()=>{
+    const sessionToken="c".repeat(64);
+    vi.stubGlobal("window",{__TAURI_INTERNALS__:{}});
+    vi.mocked(save).mockResolvedValue("D:/first-save.ann");
+    vi.mocked(invoke).mockImplementation(async(command,args)=>{
+      if(command==="activate_project_session"){
+        const captured=args as Awaited<ReturnType<typeof snapshotProject>>;
+        return {...captured,snapshot:{...captured.snapshot,generation:captured.snapshot.generation+1},sessionToken};
+      }
+      expect(command).toBe("save_project");
+      const captured=args as Awaited<ReturnType<typeof snapshotProject>>&{path:string};
+      expect(captured.sessionToken).toBe(sessionToken);
+      return {...captured,path:captured.path,sessionToken};
+    });
+    expect(await saveProject()).toContain("บันทึกแล้ว");
+    expect(vi.mocked(invoke).mock.calls.map(([command])=>command)).toEqual(["activate_project_session","save_project"]);
   });
   it("persists view preferences without media or project contents",()=>{
     useStudioStore.getState().setTimelineZoom(90);
@@ -159,11 +182,26 @@ describe("portable project UI integration",()=>{
   it.each(["save","open","recover"] as const)("ignores %s completion after another project replaces its origin",async operation=>{
     const origin=await snapshotProject();let complete!:(value:unknown)=>void;
     vi.mocked(save).mockResolvedValue("D:/project-A.ann");vi.mocked(open).mockResolvedValue("D:/project-A.ann");
-    vi.mocked(invoke).mockImplementation(async(command)=>command==="recover_project"?[{path:"D:/recovery-A.ann"}]:new Promise(resolve=>{complete=resolve;}));
+    vi.mocked(invoke).mockImplementation(async(command)=>command==="recover_project"?{candidates:[{id:"recovery-A",projectId:origin.snapshot.project.projectId,kind:"history",name:"Earlier",generation:4,fingerprint:"a".repeat(64)}],warnings:[],truncated:false}:new Promise(resolve=>{complete=resolve;}));
     const pending=operation==="save"?saveProject():operation==="open"?openProject():recoverProject();
     while(!complete)await new Promise(resolve=>setTimeout(resolve,0));
     newProject();const replacement=useStudioStore.getState().projectDocument;
     complete({...origin,path:"D:/project-A.ann"});await pending;
     expect(useStudioStore.getState().projectDocument).toBe(replacement);expect(useStudioStore.getState().projectPath).toBe("");
+  });
+  it("opens the recovery candidate explicitly selected by the user",async()=>{
+    const first=await snapshotProject();
+    const listing={candidates:[
+      {id:"candidate-active",projectId:first.snapshot.project.projectId,kind:"active" as const,name:"Current recovery",generation:7,fingerprint:"a".repeat(64)},
+      {id:"candidate-history",projectId:first.snapshot.project.projectId,kind:"history" as const,name:"Older recovery",generation:5,fingerprint:"b".repeat(64)},
+    ],warnings:[{id:"bad-file",message:"One damaged entry"}],truncated:false};
+    setRecoveryPicker(async value=>{expect(value.candidates).toHaveLength(2);return "candidate-history";});
+    vi.mocked(invoke).mockImplementation(async(command,args)=>{
+      if(command==="recover_project")return listing;
+      expect(command).toBe("open_recovery_candidate");
+      expect(args).toEqual({projectId:first.snapshot.project.projectId,candidateId:"candidate-history"});
+      return first;
+    });
+    expect(await recoverProject()).toContain("เปิดสำเนากู้คืนแล้ว");
   });
 });
