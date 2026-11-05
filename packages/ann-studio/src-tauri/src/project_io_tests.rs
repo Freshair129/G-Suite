@@ -27,6 +27,13 @@ fn current_session_token(workspace: &Path) -> String {
         .expect("active project session")
 }
 
+fn without_session_token(mut snapshot: Value) -> Value {
+    if let Some(object) = snapshot.as_object_mut() {
+        object.remove("sessionToken");
+    }
+    snapshot
+}
+
 fn editable_banner_archive(root: &Path) -> (PathBuf, String, Vec<u8>) {
     let bytes = include_bytes!("../icons/32x32.png").to_vec();
     let manifest = json!({
@@ -240,14 +247,15 @@ fn applies_verified_banner_to_one_variant_without_changing_voice_or_event_mappin
     let before_variant = document["project"]["variants"][0].clone();
     let before_mappings = document["project"]["eventMappings"].clone();
     let (archive, manifest_digest, banner_bytes) = editable_banner_archive(&root);
+    let baseline = prepare(document.clone(), source_paths, &workspace).unwrap();
 
     let result = import_banner_asset_archive(
         &archive,
         &manifest_digest,
         "second",
         4,
-        document.clone(),
-        source_paths,
+        baseline.snapshot,
+        baseline.asset_paths,
         &workspace,
     )
     .unwrap();
@@ -312,12 +320,14 @@ fn imports_banner_when_recovery_has_same_generation_baseline() {
         "same-generation recovery baseline should permit banner apply: {imported:?}"
     );
     let imported = imported.unwrap();
+    let latest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
+        .unwrap()
+        .unwrap();
     assert_eq!(
-        latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
-            .unwrap()
-            .unwrap(),
-        imported.snapshot
+        latest["sessionToken"].as_str(),
+        imported.session_token.as_deref()
     );
+    assert_eq!(without_session_token(latest), imported.snapshot);
     assert_eq!(
         imported.snapshot["project"]["variants"][0]["bannerProject"]["eventId"],
         "kill"
@@ -347,7 +357,8 @@ fn delayed_pre_import_recovery_cannot_replace_imported_banner() {
 
     assert_eq!(imported.snapshot["generation"], 5);
     // Simulate an earlier prepare request that reaches the lock after the import.
-    prepare(baseline.snapshot, paths, &workspace).unwrap();
+    let stale_prepare = prepare(baseline.snapshot, paths, &workspace).unwrap_err();
+    assert!(stale_prepare.contains("changed while the save was pending"));
     let latest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
         .unwrap()
         .unwrap();
@@ -1150,6 +1161,7 @@ fn same_generation_divergence_is_retained_and_corrupt_entries_do_not_hide_it() {
     let first = prepare(snapshot(), paths.clone(), &workspace).unwrap();
     let mut divergent = first.snapshot.clone();
     divergent["project"]["name"] = json!("same generation, different content");
+    divergent["fingerprint"] = json!(project_fingerprint(&divergent).unwrap());
     persist_snapshot(&divergent, &workspace).unwrap();
     let history = workspace
         .join("00000000-0000-4000-8000-000000000001")
@@ -1219,7 +1231,11 @@ fn rejects_stale_banner_apply_without_replacing_recovery_snapshot() {
     let latest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
         .unwrap()
         .unwrap();
-    assert_eq!(latest, prior.snapshot);
+    assert_eq!(
+        latest["sessionToken"].as_str(),
+        prior.session_token.as_deref()
+    );
+    assert_eq!(without_session_token(latest), prior.snapshot);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1235,13 +1251,14 @@ fn imports_still_images_and_silent_video_as_their_real_media_layer_kinds() {
         let workspace = root.join(format!("cache-{kind}"));
         let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
         let (archive, digest, source_id) = runtime_banner_archive(&root, kind);
+        let baseline = prepare(snapshot(), paths, &workspace).unwrap();
         let imported = import_banner_asset_archive(
             &archive,
             &digest,
             "second",
             4,
-            snapshot(),
-            paths,
+            baseline.snapshot,
+            baseline.asset_paths,
             &workspace,
         )
         .unwrap();
@@ -1276,6 +1293,7 @@ fn imports_studio_producer_archive_and_reopens_the_saved_project() {
     let original = snapshot();
     let original_variant = original["project"]["variants"][0].clone();
     let original_mappings = original["project"]["eventMappings"].clone();
+    let baseline = prepare(original.clone(), source_paths, &workspace).unwrap();
     let preview = banner_asset_archive::inspect(&archive).unwrap();
     assert_eq!(preview.manifest["mediaKind"], "still-image");
 
@@ -1284,8 +1302,8 @@ fn imports_studio_producer_archive_and_reopens_the_saved_project() {
         &preview.manifest_sha256,
         "second",
         4,
-        original,
-        source_paths,
+        baseline.snapshot,
+        baseline.asset_paths,
         &workspace,
     )
     .unwrap();
@@ -1400,7 +1418,11 @@ fn banner_import_lock_and_managed_asset_copy_failures_retain_the_previous_recove
     let latest = latest_snapshot("00000000-0000-4000-8000-000000000001", &workspace)
         .unwrap()
         .unwrap();
-    assert_eq!(latest, prior.snapshot);
+    assert_eq!(
+        latest["sessionToken"].as_str(),
+        prior.session_token.as_deref()
+    );
+    assert_eq!(without_session_token(latest), prior.snapshot);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1419,7 +1441,12 @@ fn preparation_keeps_a_recoverable_snapshot_without_touching_the_source() {
     .unwrap();
     let latest =
         latest_snapshot("00000000-0000-4000-8000-000000000001", &root.join("cache")).unwrap();
-    assert_eq!(latest.unwrap(), prepared.snapshot);
+    let latest = latest.unwrap();
+    assert_eq!(
+        latest["sessionToken"].as_str(),
+        prepared.session_token.as_deref()
+    );
+    assert_eq!(without_session_token(latest), prepared.snapshot);
     assert_eq!(fs::read(source).unwrap(), b"original bytes");
     fs::remove_dir_all(root).unwrap();
 }
