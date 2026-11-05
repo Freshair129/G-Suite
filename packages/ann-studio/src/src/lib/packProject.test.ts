@@ -80,4 +80,19 @@ describe("PackProject v2",()=>{
     const clip=structuredClone(captured.project);clip.editor.clips[0].end=Number.NaN;
     expect(()=>validateProjectSnapshot({project:clip,generation:0,fingerprint:""})).toThrow(/clip/i);
   });
+
+  it("validates imported banner source provenance before hydration",()=>{
+    const captured=captureProject(createPackProject(),editor(),{});
+    Object.assign(captured.project.variants[0],{bannerSource:{assetId:"source-banner",revision:2,manifestSha256:"a".repeat(64)}});
+    expect(()=>validateProjectSnapshot({project:captured.project,generation:0,fingerprint:""})).not.toThrow();
+    for(const bannerSource of [
+      {assetId:"../outside",revision:2,manifestSha256:"a".repeat(64)},
+      {assetId:"source-banner",revision:0,manifestSha256:"a".repeat(64)},
+      {assetId:"source-banner",revision:2,manifestSha256:"not-a-digest"},
+    ]){
+      const invalid=structuredClone(captured.project);
+      Object.assign(invalid.variants[0],{bannerSource});
+      expect(()=>validateProjectSnapshot({project:invalid,generation:0,fingerprint:""})).toThrow(/banner source/i);
+    }
+  });
 });

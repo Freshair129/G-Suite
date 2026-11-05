@@ -125,7 +125,10 @@ export function validateBannerAssetManifest(input) {
       if (project.schemaVersion !== 1 || typeof project.id !== "string" || !SAFE_ID.test(project.id) || typeof project.title !== "string" || !project.title.trim() || stringLength(project.title) > 160 || typeof project.eventId !== "string" || !SAFE_ID.test(project.eventId) || !isRecord(project.artboard) || !Number.isSafeInteger(project.artboard.width) || project.artboard.width < 1 || !Number.isSafeInteger(project.artboard.height) || project.artboard.height < 1 || !["dota-hud", "none"].includes(project.artboard.safeZonePreset) || !Array.isArray(project.layers) || !Array.isArray(project.assets) || !Number.isSafeInteger(project.revision) || project.revision < 1) issue("template.bannerProject", "invalid BannerProject v1 structure");
       else {
         rejectUnknown(project.artboard, new Set(["width", "height", "safeZonePreset"]), "template.bannerProject.artboard", issue);
+        const indexedFiles = input.files.filter((file) => isRecord(file) && typeof file.id === "string" && SAFE_ID.test(file.id));
+        const fileById = new Map(indexedFiles.map((file) => [file.id, file]));
         const assetIds = new Set();
+        const sourceFileIds = new Set();
         for (const [index, asset] of project.assets.entries()) {
           const at = `template.bannerProject.assets[${index}]`;
           if (!isRecord(asset)) { issue(at, "expected a BannerAsset object"); continue; }
@@ -134,16 +137,23 @@ export function validateBannerAssetManifest(input) {
           else assetIds.add(asset.id);
           if (typeof asset.name !== "string" || !asset.name.trim() || stringLength(asset.name) > 160) issue(`${at}.name`, "expected 1-160 characters");
           if (asset.kind !== "image" || !["image/png", "image/webp", "image/jpeg"].includes(asset.mime)) issue(at, "v1 templates support only raster image assets");
-          if (typeof asset.source !== "string" || !asset.source.startsWith("asset:") || asset.source.slice(6) !== asset.id) issue(`${at}.source`, "expected a managed asset:<id> reference; local and remote paths are not portable");
+          if (typeof asset.source !== "string" || !asset.source.startsWith("asset:") || !SAFE_ID.test(asset.source.slice(6))) issue(`${at}.source`, "expected a managed asset:<id> reference; local and remote paths are not portable");
+          else {
+            const sourceFileId = asset.source.slice(6);
+            if (sourceFileIds.has(sourceFileId)) issue(`${at}.source`, "multiple BannerAssets cannot claim one package file ID");
+            else sourceFileIds.add(sourceFileId);
+            const sourceFile = fileById.get(sourceFileId);
+            if (sourceFile && sourceFile.mediaType !== asset.mime) issue(`${at}.mime`, "must match its indexed file media type");
+          }
         }
         const foldedFileIds = new Set();
-        const fileIdSet = new Set(input.files.filter((file) => isRecord(file) && typeof file.id === "string" && SAFE_ID.test(file.id)).map((file) => file.id));
+        const fileIdSet = new Set(fileById.keys());
         for (const id of fileIdSet) {
           const folded = id.toUpperCase();
           if (foldedFileIds.has(folded)) issue("files", "file IDs must be unique without case sensitivity");
           foldedFileIds.add(folded);
         }
-        if (assetIds.size !== fileIdSet.size || [...assetIds].some((id) => !fileIdSet.has(id))) issue("template.bannerProject.assets", "every project asset must match one indexed supporting file ID");
+        if (sourceFileIds.size !== fileIdSet.size || [...sourceFileIds].some((id) => !fileIdSet.has(id))) issue("template.bannerProject.assets", "every project asset must match one indexed supporting file ID");
         for (const file of input.files) if (file?.role !== "supportingAsset") issue("files", "editable-template files must be supporting assets");
         const layerIds = new Set();
         const layers = project.layers;

@@ -12,7 +12,7 @@ it('builds every variant through the shared immutable project job',async()=>{
  const project=createPackProject();
  project.variants=['one','two'].map(id=>({id,originalSoundId:`snd_${id}`,mixedSoundId:`snd_mix_${id}`,bannerId:`bnr_${id}`,voiceAssetId:'voice',voiceClip:{id,name:`line ${id}`,start:0,end:1,event:'kill',color:''},bannerProject:{...project.editor.bannerProject,id},sfxCues:[],audioEndMs:1000,videoEndMs:1000}));
  project.eventMappings=[{eventKey:'kill',variantIds:['one','two']}];
- const captured={snapshot:{project,generation:1,fingerprint:'source'},assetPaths:{voice:'D:/voice.wav'}};snapshot.mockResolvedValue(captured);render.mockImplementation(async p=>({frames:[p.id],fps:1}));
+ const captured={snapshot:{project,generation:1,fingerprint:'source'},assetPaths:{voice:'D:/voice.wav'},sessionToken:'a'.repeat(64)};snapshot.mockResolvedValue(captured);render.mockImplementation(async p=>({frames:[p.id],fps:1}));
  invoke.mockImplementation(async(command,args)=>{
   if(command==='prepare_project')return captured;
   if(command==='start_build'){expect(args.job.snapshot.project.announcerId).toBe(project.announcerId);expect(args.job.renders.map((v:{variantId:string})=>v.variantId)).toEqual(['one','two']);return 'queued';}

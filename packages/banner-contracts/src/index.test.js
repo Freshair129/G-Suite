@@ -67,6 +67,23 @@ test("JSON Schema and runtime contract accept the same template, video and still
   const invalid = structuredClone(template); invalid.files = [{ ...base().files[0] }];
   assert.equal(schemaValidate(invalid), false);
 });
+test("supports distinct BannerProject asset IDs and managed source file IDs", () => {
+  const value = base(); value.mediaKind = "editable-template"; delete value.durationMs; delete value.silent;
+  value.files = [{ id: "managed-image", path: "assets/banner.png", role: "supportingAsset", mediaType: "image/png", sizeBytes: 4, sha256: base().files[0].sha256 }];
+  value.template = { schemaVersion: 1, bannerProject: { schemaVersion: 1, id: "project-1", title: "Project", eventId: "kill", artboard: { width: 1280, height: 560, safeZonePreset: "dota-hud" }, revision: 1, layers: [], assets: [{ id: "banner-layer-image", name: "Banner art", kind: "image", mime: "image/png", source: "asset:managed-image" }] } };
+  value.editableControls = { title: true, outerMotion: [] };
+  assert.deepEqual(validateBannerAssetManifest(value), []);
+  assert.equal(schemaValidate(value), true, JSON.stringify(schemaValidate.errors));
+
+  const mismatchedMediaType = structuredClone(value);
+  mismatchedMediaType.files[0].mediaType = "image/jpeg";
+  assert.equal(schemaValidate(mismatchedMediaType), true, JSON.stringify(schemaValidate.errors));
+  assert.ok(validateBannerAssetManifest(mismatchedMediaType).some((issue) => issue.includes("must match its indexed file media type")));
+
+  const duplicateSource = structuredClone(value);
+  duplicateSource.template.bannerProject.assets.push({ ...duplicateSource.template.bannerProject.assets[0], id: "second-layer-image" });
+  assert.ok(validateBannerAssetManifest(duplicateSource).some((issue) => issue.includes("multiple BannerAssets cannot claim one package file ID")));
+});
 test("returns validation issues for malformed untrusted manifests without throwing", () => {
   const numericIds = base(); numericIds.assetId = 17; numericIds.files[0].id = 42;
   const badMotion = base(); badMotion.editableControls.outerMotion = "outerOpacity";

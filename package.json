@@ -11,7 +11,7 @@
     "3d-studio:dev": "pnpm -C packages/3d-studio tauri dev",
     "3d-studio:build": "pnpm -C packages/3d-studio build:desktop",
     "3d-studio:build:fe": "pnpm -C packages/3d-studio build:fe",
-    "3d-studio:test": "pnpm -C packages/3d-studio test:workspace",
+    "3d-studio:test": "corepack pnpm -C packages/3d-studio test:workspace",
     "banner-contracts:test": "pnpm -C packages/banner-contracts test"
   },
   "engines": {

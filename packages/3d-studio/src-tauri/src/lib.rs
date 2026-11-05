@@ -1,4 +1,6 @@
+mod banner_asset_export;
 mod workspace;
+use banner_asset_export::{export_still_banner_asset, BannerAssetExportResult};
 use serde::Serialize;
 use std::{fs, path::PathBuf, process::Command};
 use tauri::Manager;
@@ -151,14 +153,40 @@ async fn list_projects(app: tauri::AppHandle) -> Result<Vec<ProjectSummary>, Str
     .map_err(studio_error)?
 }
 
+#[tauri::command]
+async fn export_banner_asset(
+    app: tauri::AppHandle,
+    project_id: String,
+    asset_id: String,
+    name: String,
+    revision: u64,
+    source_path: PathBuf,
+) -> Result<BannerAssetExportResult, String> {
+    let workspace = paths(&app)?.workspace;
+    tauri::async_runtime::spawn_blocking(move || {
+        export_still_banner_asset(
+            &workspace,
+            &project_id,
+            &asset_id,
+            &name,
+            revision,
+            &source_path,
+        )
+    })
+    .await
+    .map_err(studio_error)?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_studio_status,
             create_empty_project,
-            list_projects
+            list_projects,
+            export_banner_asset
         ])
         .run(tauri::generate_context!())
         .expect("error while running G-Maiden 3D Studio");

@@ -15,6 +15,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
+      '@tauri-apps/plugin-dialog':
+        specifier: ^2
+        version: 2.7.1
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.7.2
@@ -52,6 +55,9 @@ importers:
 
   packages/ann-studio/src:
     dependencies:
+      '@g-suite/banner-contracts':
+        specifier: workspace:*
+        version: link:../../banner-contracts
       '@supabase/supabase-js':
         specifier: 2.110.7
         version: 2.110.7
