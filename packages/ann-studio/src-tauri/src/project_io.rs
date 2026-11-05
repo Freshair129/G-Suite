@@ -1361,6 +1361,58 @@ fn recovery_candidate_from_bytes(
     })
 }
 
+fn add_recovery_file(
+    project_id: &str,
+    path: &Path,
+    kind: &str,
+    expected: Option<&str>,
+    listing: &mut RecoveryListing,
+    scanned: &mut usize,
+    bytes_read: &mut u64,
+) {
+    if *scanned >= MAX_RECOVERY_CANDIDATES || *bytes_read >= MAX_RECOVERY_LIST_BYTES {
+        listing.truncated = true;
+        return;
+    }
+    *scanned += 1;
+    let mut document = Vec::new();
+    let read_result = open_regular_file(path, MAX_DOCUMENT).and_then(|file| {
+        let size = file.metadata().map_err(err)?.len();
+        let remaining = MAX_RECOVERY_LIST_BYTES.saturating_sub(*bytes_read);
+        if size > remaining {
+            return Err("Recovery listing reached its metadata byte limit".into());
+        }
+        copy_bounded(file.take(size), &mut document, size).and_then(|count| {
+            (count == size)
+                .then_some(count)
+                .ok_or_else(|| "Recovery candidate changed while listing".to_owned())
+        })
+    });
+    match read_result {
+        Ok(count) => {
+            *bytes_read += count;
+            match recovery_candidate_from_bytes(project_id, kind, &document, expected) {
+                Ok(candidate) => listing.candidates.push(candidate),
+                Err(error) => listing.warnings.push(RecoveryWarning {
+                    id: expected
+                        .map(str::to_owned)
+                        .or_else(|| Some(g_ann_package::sha256(&document))),
+                    message: error,
+                }),
+            }
+        }
+        Err(error) => {
+            if error == "Recovery listing reached its metadata byte limit" {
+                listing.truncated = true;
+            }
+            listing.warnings.push(RecoveryWarning {
+                id: expected.map(str::to_owned),
+                message: error,
+            });
+        }
+    }
+}
+
 fn recovery_listing_locked(project_id: &str, workspace: &Path) -> Result<RecoveryListing, String> {
     let root = workspace.join(project_id);
     let mut listing = RecoveryListing {
@@ -1370,53 +1422,18 @@ fn recovery_listing_locked(project_id: &str, workspace: &Path) -> Result<Recover
     };
     let mut scanned = 0usize;
     let mut bytes_read = 0u64;
-    let mut add_file = |path: &Path, kind: &str, expected: Option<&str>| {
-        if scanned >= MAX_RECOVERY_CANDIDATES || bytes_read >= MAX_RECOVERY_LIST_BYTES {
-            listing.truncated = true;
-            return;
-        }
-        scanned += 1;
-        let mut document = Vec::new();
-        let read_result = open_regular_file(path, MAX_DOCUMENT).and_then(|file| {
-            let size = file.metadata().map_err(err)?.len();
-            let remaining = MAX_RECOVERY_LIST_BYTES.saturating_sub(bytes_read);
-            if size > remaining {
-                return Err("Recovery listing reached its metadata byte limit".into());
-            }
-            copy_bounded(file.take(size), &mut document, size).and_then(|count| {
-                (count == size)
-                    .then_some(count)
-                    .ok_or_else(|| "Recovery candidate changed while listing".to_owned())
-            })
-        });
-        match read_result {
-            Ok(count) => {
-                bytes_read += count;
-                match recovery_candidate_from_bytes(project_id, kind, &document, expected) {
-                    Ok(candidate) => listing.candidates.push(candidate),
-                    Err(error) => listing.warnings.push(RecoveryWarning {
-                        id: expected
-                            .map(str::to_owned)
-                            .or_else(|| Some(g_ann_package::sha256(&document))),
-                        message: error,
-                    }),
-                }
-            }
-            Err(error) => {
-                if error == "Recovery listing reached its metadata byte limit" {
-                    listing.truncated = true;
-                }
-                listing.warnings.push(RecoveryWarning {
-                    id: expected.map(str::to_owned),
-                    message: error,
-                });
-            }
-        }
-    };
 
     let active = root.join("recovery.json");
     match fs::symlink_metadata(&active) {
-        Ok(_) => add_file(&active, "active", None),
+        Ok(_) => add_recovery_file(
+            project_id,
+            &active,
+            "active",
+            None,
+            &mut listing,
+            &mut scanned,
+            &mut bytes_read,
+        ),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => listing.warnings.push(RecoveryWarning {
             id: None,
@@ -1478,7 +1495,15 @@ fn recovery_listing_locked(project_id: &str, workspace: &Path) -> Result<Recover
                     });
                     continue;
                 }
-                add_file(&path, "history", Some(digest));
+                add_recovery_file(
+                    project_id,
+                    &path,
+                    "history",
+                    Some(digest),
+                    &mut listing,
+                    &mut scanned,
+                    &mut bytes_read,
+                );
                 if listing.truncated && bytes_read >= MAX_RECOVERY_LIST_BYTES {
                     break;
                 }
