@@ -13,6 +13,8 @@ pub const MAX_PROJECT: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_ASSET: u64 = 512 * 1024 * 1024;
 const MAX_DOCUMENT: u64 = 16 * 1024 * 1024;
 const MAX_ASSETS: usize = 4096;
+const MAX_RECOVERY_DIRECTORY_ENTRIES: usize = 4096;
+const DESTINATION_CONFLICT_PREFIX: &str = "DESTINATION_CONFLICT:";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -243,6 +245,146 @@ fn lock(root: &Path) -> Result<File, String> {
         .map_err(|_| "Project is locked by another operation".to_string())?;
     Ok(file)
 }
+
+fn destination_lock(path: &Path, workspace: &Path) -> Result<File, String> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or("Project destination requires a folder")?;
+    let name = path.file_name().ok_or("Project destination has no name")?;
+    fs::create_dir_all(parent).map_err(err)?;
+    let parent = fs::canonicalize(parent).map_err(err)?;
+    let mut identity = format!(
+        "{}{}{}",
+        parent.display(),
+        std::path::MAIN_SEPARATOR,
+        name.to_string_lossy()
+    );
+    if cfg!(windows) {
+        identity = identity.to_lowercase();
+    }
+    let digest = g_ann_package::sha256(identity.as_bytes());
+    let lock_root = workspace.join("destination-locks");
+    fs::create_dir_all(&lock_root).map_err(err)?;
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(lock_root.join(format!("{digest}.lock")))
+        .map_err(err)?;
+    file.try_lock()
+        .map_err(|_| "Project destination is locked by another save".to_string())?;
+    Ok(file)
+}
+
+enum DestinationInspection {
+    Missing,
+    Project {
+        project_id: String,
+        announcer_id: String,
+    },
+    Unreadable,
+}
+
+fn inspect_destination(path: &Path) -> Result<DestinationInspection, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(DestinationInspection::Missing)
+        }
+        Err(error) => return Err(err(error)),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err("Project destination must be a regular file".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err("Project destination cannot be a reparse point".into());
+        }
+    }
+
+    let identity = (|| -> Result<(String, String), String> {
+        let mut archive =
+            zip::ZipArchive::new(open_regular_file(path, MAX_PROJECT)?).map_err(err)?;
+        let mut entry = archive.by_name("project.json").map_err(err)?;
+        let mut document = Vec::new();
+        copy_bounded(&mut entry, &mut document, MAX_DOCUMENT)?;
+        let snapshot: Value = serde_json::from_slice(&document).map_err(err)?;
+        validate(&snapshot)?;
+        let fingerprint = project_fingerprint(&snapshot)?;
+        if snapshot["fingerprint"].as_str() != Some(fingerprint.as_str()) {
+            return Err("Project fingerprint mismatch".into());
+        }
+        Ok((
+            project_id(&snapshot)?.to_owned(),
+            text(&snapshot["project"], "announcerId")?.to_owned(),
+        ))
+    })();
+    Ok(match identity {
+        Ok((project_id, announcer_id)) => DestinationInspection::Project {
+            project_id,
+            announcer_id,
+        },
+        Err(_) => DestinationInspection::Unreadable,
+    })
+}
+
+fn destination_digest(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+
+    let mut file = open_regular_file(path, MAX_PROJECT)?;
+    let mut hasher = Sha256::new();
+    let mut total = 0u64;
+    let mut buffer = [0u8; 65536];
+    loop {
+        let count = file.read(&mut buffer).map_err(err)?;
+        if count == 0 {
+            break;
+        }
+        total = total
+            .checked_add(count as u64)
+            .ok_or("Project destination size overflow")?;
+        if total > MAX_PROJECT {
+            return Err("Project destination exceeds the 2 GiB limit".into());
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn check_destination_conflict(
+    path: &Path,
+    snapshot: &Value,
+    confirmed_digest: Option<&str>,
+) -> Result<(), String> {
+    if confirmed_digest.is_some_and(|digest| {
+        digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) {
+        return Err("Invalid destination overwrite confirmation".into());
+    }
+    let same_project = match inspect_destination(path)? {
+        DestinationInspection::Missing => return Ok(()),
+        DestinationInspection::Project {
+            project_id: existing_project_id,
+            announcer_id: existing_announcer_id,
+        } => {
+            existing_project_id == project_id(snapshot)?
+                && existing_announcer_id == text(&snapshot["project"], "announcerId")?
+        }
+        DestinationInspection::Unreadable => false,
+    };
+    if same_project && confirmed_digest.is_none() {
+        return Ok(());
+    }
+    let current_digest = destination_digest(path)?;
+    if confirmed_digest == Some(current_digest.as_str()) {
+        return Ok(());
+    }
+    Err(format!("{DESTINATION_CONFLICT_PREFIX}{current_digest}"))
+}
+
 fn copy_bounded(mut input: impl Read, output: &mut impl Write, limit: u64) -> Result<u64, String> {
     let mut scratch = [0u8; 65536];
     let mut total = 0;
@@ -1185,13 +1327,13 @@ fn recovery_listing_locked(project_id: &str, workspace: &Path) -> Result<Recover
     }
     match history_directory(&root) {
         Ok(Some(history)) => {
-            let remaining = MAX_RECOVERY_CANDIDATES.saturating_sub(scanned);
             let mut entries = Vec::new();
+            let mut directory_truncated = false;
             match fs::read_dir(&history) {
                 Ok(read_dir) => {
                     for entry in read_dir {
-                        if entries.len() >= remaining {
-                            listing.truncated = true;
+                        if entries.len() >= MAX_RECOVERY_DIRECTORY_ENTRIES {
+                            directory_truncated = true;
                             break;
                         }
                         match entry {
@@ -1208,12 +1350,24 @@ fn recovery_listing_locked(project_id: &str, workspace: &Path) -> Result<Recover
                     message: err(error),
                 }),
             }
+            if directory_truncated {
+                listing.truncated = true;
+                entries.clear();
+                listing.warnings.push(RecoveryWarning {
+                    id: None,
+                    message: "Recovery history has too many entries for a deterministic listing; active recovery remains available".into(),
+                });
+            }
             entries.sort_by(|left: &PathBuf, right: &PathBuf| {
                 left.file_name().cmp(&right.file_name())
             });
             for path in entries {
                 if path.extension().and_then(|value| value.to_str()) != Some("json") {
                     continue;
+                }
+                if scanned >= MAX_RECOVERY_CANDIDATES {
+                    listing.truncated = true;
+                    break;
                 }
                 let digest = path
                     .file_stem()
@@ -1345,7 +1499,13 @@ fn open_recovery_document(
 }
 
 // Listing reads bounded metadata only. Materialize managed assets only after a
-// user selects one stable digest ID. Intermediate paths remain app-owned data.
+// user selects one stable digest ID.
+//
+// SECURITY BOUNDARY: Tauri commands pass `<app_local_data_dir>/projects`; the
+// renderer cannot choose this workspace. Leaf files and the history directory
+// reject reparse points, but same-user tampering that swaps an intermediate
+// directory is outside the app-owned-data threat model. If this workspace ever
+// becomes user-selected or shared, replace these paths with handle-relative IO.
 pub fn open_recovery_candidate(
     project_id: &str,
     digest: &str,
@@ -1375,22 +1535,18 @@ pub fn open_recovery_candidate(
     let active = root.join("recovery.json");
     let history = history_directory(&root).ok().flatten();
     let mut document = Vec::new();
-    let active_bytes = if active.exists() {
-        let mut bytes = Vec::new();
-        if copy_bounded(
-            open_regular_file(&active, MAX_DOCUMENT)?,
-            &mut bytes,
-            MAX_DOCUMENT,
-        )
-        .is_ok()
-            && g_ann_package::sha256(&bytes) == digest
-        {
-            Some(bytes)
-        } else {
-            None
+    let active_bytes = match open_regular_file(&active, MAX_DOCUMENT) {
+        Ok(file) => {
+            let mut bytes = Vec::new();
+            if copy_bounded(file, &mut bytes, MAX_DOCUMENT).is_ok()
+                && g_ann_package::sha256(&bytes) == digest
+            {
+                Some(bytes)
+            } else {
+                None
+            }
         }
-    } else {
-        None
+        Err(_) => None,
     };
     if let Some(bytes) = active_bytes {
         document = bytes;
@@ -1490,11 +1646,12 @@ pub fn open_retained_candidate(
     open_recovery_document(project_id, &document, &root)
 }
 
-pub fn save_with_session(
+pub fn save_with_session_confirmed_destination(
     path: &Path,
     snapshot: Value,
     asset_paths: BTreeMap<String, String>,
     session_token: &str,
+    confirmed_destination_digest: Option<&str>,
     workspace: &Path,
 ) -> Result<ProjectSaveResult, String> {
     if path
@@ -1524,6 +1681,8 @@ pub fn save_with_session(
         return Err("Project session is no longer active".into());
     }
     let prepared = prepare_locked(snapshot, asset_paths, &root, true)?;
+    let _destination_guard = destination_lock(path, workspace)?;
+    check_destination_conflict(path, &prepared.snapshot, confirmed_destination_digest)?;
     // Recovery is committed first, so a failed destination write still retains this snapshot.
     persist_session_locked(&prepared.snapshot, session_token, &root)?;
     archive_bytes(path, &prepared.snapshot, &prepared.asset_paths)?;
@@ -1533,6 +1692,23 @@ pub fn save_with_session(
         path: path.to_string_lossy().into_owned(),
         session_token: session_token.to_owned(),
     })
+}
+
+pub fn save_with_session(
+    path: &Path,
+    snapshot: Value,
+    asset_paths: BTreeMap<String, String>,
+    session_token: &str,
+    workspace: &Path,
+) -> Result<ProjectSaveResult, String> {
+    save_with_session_confirmed_destination(
+        path,
+        snapshot,
+        asset_paths,
+        session_token,
+        None,
+        workspace,
+    )
 }
 
 #[cfg(test)]

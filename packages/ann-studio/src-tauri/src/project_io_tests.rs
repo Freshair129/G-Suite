@@ -451,6 +451,94 @@ fn reopening_an_older_archive_can_save_a_copy_without_erasing_newer_recovery() {
 }
 
 #[test]
+fn different_projects_cannot_replace_a_shared_destination_without_matching_confirmation() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("shared.ann");
+    let first = save(&destination, snapshot(), paths.clone(), &workspace).unwrap();
+
+    let mut second_snapshot = snapshot();
+    second_snapshot["project"]["projectId"] = json!("00000000-0000-4000-8000-000000000006");
+    second_snapshot["project"]["announcerId"] = json!("ann_00000000-0000-4000-8000-000000000007");
+    second_snapshot["fingerprint"] = json!(project_fingerprint(&second_snapshot).unwrap());
+    let second = activate_project_session(second_snapshot, paths, None, &workspace).unwrap();
+    let second_token = second.session_token.clone().unwrap();
+
+    let conflict = save_with_session_confirmed_destination(
+        &destination,
+        second.snapshot.clone(),
+        second.asset_paths.clone(),
+        &second_token,
+        None,
+        &workspace,
+    )
+    .unwrap_err();
+    let first_confirmation = conflict
+        .strip_prefix(DESTINATION_CONFLICT_PREFIX)
+        .expect("a different project requires explicit overwrite confirmation");
+    assert_eq!(
+        first_confirmation,
+        destination_digest(&destination).unwrap()
+    );
+    assert_eq!(
+        open(&destination, &workspace).unwrap().snapshot["project"]["projectId"],
+        first.snapshot["project"]["projectId"]
+    );
+
+    fs::write(
+        &destination,
+        b"changed while the confirmation dialog was open",
+    )
+    .unwrap();
+    let changed_bytes = fs::read(&destination).unwrap();
+    let changed_conflict = save_with_session_confirmed_destination(
+        &destination,
+        second.snapshot.clone(),
+        second.asset_paths.clone(),
+        &second_token,
+        Some(first_confirmation),
+        &workspace,
+    )
+    .unwrap_err();
+    let second_confirmation = changed_conflict
+        .strip_prefix(DESTINATION_CONFLICT_PREFIX)
+        .expect("a changed destination requires a fresh confirmation");
+    assert_ne!(first_confirmation, second_confirmation);
+    assert_eq!(fs::read(&destination).unwrap(), changed_bytes);
+
+    save_with_session_confirmed_destination(
+        &destination,
+        second.snapshot,
+        second.asset_paths,
+        &second_token,
+        Some(second_confirmation),
+        &workspace,
+    )
+    .unwrap();
+    assert_eq!(
+        open(&destination, &workspace).unwrap().snapshot["project"]["projectId"],
+        "00000000-0000-4000-8000-000000000006"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn destination_lock_serializes_saves_for_a_canonical_destination_path() {
+    let root = root();
+    let workspace = root.join("cache");
+    let destination = root.join("shared.ann");
+    let held = destination_lock(&destination, &workspace).unwrap();
+    assert!(destination_lock(&destination, &workspace).is_err());
+    drop(held);
+    let released = destination_lock(&destination, &workspace).unwrap();
+    drop(released);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn edits_after_opening_older_archive_do_not_replace_newer_recovery() {
     let root = root();
     let source = root.join("voice.wav");
@@ -535,6 +623,98 @@ fn recovery_history_is_listed_without_materializing_archives_when_active_is_miss
         .extension()
         .unwrap()
         == "json"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn truncated_recovery_listing_selects_a_stable_sorted_candidate_subset() {
+    let root = root();
+    let workspace = root.join("cache");
+    let history = workspace
+        .join("00000000-0000-4000-8000-000000000001")
+        .join("recovery-history");
+    fs::create_dir_all(&history).unwrap();
+    let mut expected = Vec::new();
+    for index in 0..=MAX_RECOVERY_CANDIDATES {
+        let mut candidate = snapshot();
+        candidate["generation"] = json!(index as u64 + 1);
+        candidate["project"]["name"] = json!(format!("Recovery {index:03}"));
+        candidate["fingerprint"] = json!(project_fingerprint(&candidate).unwrap());
+        let bytes = serde_json::to_vec(&candidate).unwrap();
+        let digest = g_ann_package::sha256(&bytes);
+        fs::write(history.join(format!("{digest}.json")), bytes).unwrap();
+        expected.push(digest);
+    }
+    expected.sort();
+    expected.truncate(MAX_RECOVERY_CANDIDATES);
+
+    let first = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    let second = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    assert!(first.truncated);
+    assert!(second.truncated);
+    assert_eq!(
+        first
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.clone())
+            .collect::<BTreeSet<_>>(),
+        expected.into_iter().collect::<BTreeSet<_>>()
+    );
+    assert_eq!(
+        first
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.clone())
+            .collect::<BTreeSet<_>>(),
+        second
+            .candidates
+            .iter()
+            .map(|candidate| candidate.id.clone())
+            .collect::<BTreeSet<_>>()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn selected_history_opens_when_active_recovery_is_unreadable() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let prepared = prepare(snapshot(), paths, &workspace).unwrap();
+    let project_root = workspace.join("00000000-0000-4000-8000-000000000001");
+    let history = project_root.join("recovery-history");
+    fs::create_dir_all(&history).unwrap();
+    let bytes = serde_json::to_vec(&prepared.snapshot).unwrap();
+    let digest = g_ann_package::sha256(&bytes);
+    fs::write(history.join(format!("{digest}.json")), bytes).unwrap();
+
+    let active = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(project_root.join("recovery.json"))
+        .unwrap();
+    active.set_len(MAX_DOCUMENT + 1).unwrap();
+    drop(active);
+
+    let listing = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    assert!(listing
+        .warnings
+        .iter()
+        .any(|warning| warning.message.contains("Invalid file or size")));
+    assert!(listing
+        .candidates
+        .iter()
+        .any(|candidate| candidate.id == digest));
+    let opened =
+        open_recovery_candidate("00000000-0000-4000-8000-000000000001", &digest, &workspace)
+            .unwrap();
+    assert_eq!(
+        opened.snapshot["project"]["name"],
+        prepared.snapshot["project"]["name"]
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

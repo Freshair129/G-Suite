@@ -49,6 +49,7 @@ async fn save_project(
     snapshot: serde_json::Value,
     asset_paths: std::collections::BTreeMap<String, String>,
     session_token: String,
+    confirmed_destination_digest: Option<String>,
 ) -> Result<project_io::ProjectSaveResult, String> {
     use tauri::Manager;
     gann::trusted(&window)?;
@@ -58,11 +59,12 @@ async fn save_project(
         .map_err(|e| e.to_string())?
         .join("projects");
     tauri::async_runtime::spawn_blocking(move || {
-        project_io::save_with_session(
+        project_io::save_with_session_confirmed_destination(
             Path::new(&path),
             snapshot,
             asset_paths,
             &session_token,
+            confirmed_destination_digest.as_deref(),
             &workspace,
         )
     })

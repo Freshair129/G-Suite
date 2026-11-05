@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { save, open } from "@tauri-apps/plugin-dialog";
+import { confirm, save, open } from "@tauri-apps/plugin-dialog";
 import { validateBannerAssetManifest, type BannerAssetManifest } from "@g-suite/banner-contracts";
 import { useStudioStore } from "../store/useStudioStore";
 import { captureProject, createPackProject, duplicatePackProject, resolveProjectEditor, type Asset, type PackProject, type ProjectBuild, type ProjectOpenResult, type ProjectSaveResult, type Variant } from "./packProject";
@@ -74,6 +74,7 @@ export async function snapshotProject(){
 
 async function activateInspectedProject(result:ProjectOpenResult,path:string,expected:ReturnType<typeof origin>,generation:number):Promise<boolean>{
   if(!sameOrigin(expected)||useStudioStore.getState().projectGeneration!==generation)return false;
+  validateProjectSnapshot(result.snapshot);
   if(!isNative()){hydrateProject(result,path);return true;}
   const state=useStudioStore.getState();
   const expectedSessionToken=state.projectDocument?.projectId===result.snapshot.project.projectId?state.projectSessionToken:null;
@@ -204,7 +205,24 @@ export async function saveProject(saveAs=false):Promise<string>{
     if(!sameOrigin(expected))return changedProject;
     const captured=await snapshotProject();
     if(!sameOrigin(expected))return changedProject;
-    const result=await invoke<ProjectSaveResult>("save_project",{path,...captured,sessionToken:captured.sessionToken});
+    let confirmedDestinationDigest:string|null=null;
+    let result:ProjectSaveResult|undefined;
+    for(let attempt=0;attempt<3&&!result;attempt++){
+      try{
+        result=await invoke<ProjectSaveResult>("save_project",{path,...captured,sessionToken:captured.sessionToken,confirmedDestinationDigest});
+      }catch(error){
+        const conflict=/DESTINATION_CONFLICT:([0-9a-f]{64})/i.exec(String(error));
+        if(!conflict)throw error;
+        if(!saveAs)return "บันทึกไม่สำเร็จ: ไฟล์ปลายทางเป็นโปรเจกต์อื่นหรืออ่านไม่ได้ กรุณาใช้บันทึกสำเนาและยืนยันการแทนที่";
+        if(attempt===2)throw new Error("ไฟล์ปลายทางเปลี่ยนระหว่างการยืนยัน กรุณาลองใหม่");
+        if(!sameOrigin(expected))return changedProject;
+        const replace=await confirm("ไฟล์นี้เป็นโปรเจกต์อื่นหรืออ่านไม่ได้ หากแทนที่ เนื้อหาเดิมจะถูกเขียนทับ ต้องการดำเนินการต่อหรือไม่?",{title:"แทนที่ไฟล์โปรเจกต์?",kind:"warning"});
+        if(!replace)return "ยกเลิกแล้ว";
+        if(!sameOrigin(expected))return changedProject;
+        confirmedDestinationDigest=conflict[1].toLowerCase();
+      }
+    }
+    if(!result)throw new Error("ไม่สามารถบันทึกปลายทางที่เปลี่ยนแปลงได้");
     if(!sameOrigin(expected))return changedProject;
     validateProjectSnapshot(result.snapshot);
     if(result.snapshot.project.projectId!==expected.projectId||result.snapshot.project.announcerId!==expected.announcerId)throw new Error("Saved project identity mismatch");

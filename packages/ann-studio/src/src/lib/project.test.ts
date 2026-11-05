@@ -1,14 +1,14 @@
 import { afterEach,beforeEach,describe,expect,it,vi } from "vitest";
 vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn(),convertFileSrc:(path:string)=>`http://asset.localhost/${encodeURIComponent(path)}`}));
-vi.mock("@tauri-apps/plugin-dialog",()=>({open:vi.fn(),save:vi.fn()}));
+vi.mock("@tauri-apps/plugin-dialog",()=>({confirm:vi.fn(),open:vi.fn(),save:vi.fn()}));
 import { invoke } from "@tauri-apps/api/core";
-import { open,save } from "@tauri-apps/plugin-dialog";
+import { confirm,open,save } from "@tauri-apps/plugin-dialog";
 import { useStudioStore } from "../store/useStudioStore";
 import { newProject,snapshotProject,selectProjectVariant,saveProject,openProject,recoverProject,initializeProject,importLegacyProject,updateProjectBinding,acceptProjectBuild,inspectBannerAssetArchive,captureBannerAssetImportContext,applyBannerAssetArchive,registerRecoveryPicker } from "./project";
 
 let unregisterRecoveryPicker:(()=>void)|undefined;
 function setRecoveryPicker(picker:Parameters<typeof registerRecoveryPicker>[0]){unregisterRecoveryPicker?.();unregisterRecoveryPicker=registerRecoveryPicker(picker);}
-beforeEach(()=>{unregisterRecoveryPicker?.();unregisterRecoveryPicker=undefined;vi.mocked(invoke).mockReset();vi.mocked(open).mockReset();vi.mocked(save).mockReset();newProject();useStudioStore.setState({sourcePath:"C:/เสียง.wav",wavPath:"C:/เสียง.wav",clips:[{id:"one",name:"หนึ่ง",start:0,end:1,event:"kill",color:"red"},{id:"two",name:"สอง",start:1,end:2,event:"kill",color:"blue"}]});});
+beforeEach(()=>{unregisterRecoveryPicker?.();unregisterRecoveryPicker=undefined;vi.mocked(invoke).mockReset();vi.mocked(open).mockReset();vi.mocked(save).mockReset();vi.mocked(confirm).mockReset();newProject();useStudioStore.setState({sourcePath:"C:/เสียง.wav",wavPath:"C:/เสียง.wav",clips:[{id:"one",name:"หนึ่ง",start:0,end:1,event:"kill",color:"red"},{id:"two",name:"สอง",start:1,end:2,event:"kill",color:"blue"}]});});
 afterEach(()=>{unregisterRecoveryPicker?.();unregisterRecoveryPicker=undefined;vi.unstubAllGlobals();});
 describe("portable project UI integration",()=>{
   it("keeps IDs stable and preserves second variant canvas edits across selection",async()=>{
@@ -81,6 +81,23 @@ describe("portable project UI integration",()=>{
       return {...captured,path:"D:/saved.ann"};
     });
     expect(await saveProject()).toContain("บันทึกแล้ว");expect(useStudioStore.getState().clips[1].name).toBe("edited while saving");
+  });
+  it("requires a content-bound confirmation before replacing another project's archive",async()=>{
+    const sessionToken="d".repeat(64),destinationDigest="e".repeat(64);
+    useStudioStore.setState({projectSessionToken:sessionToken});vi.mocked(save).mockResolvedValue("D:/existing.ann");vi.mocked(confirm).mockResolvedValue(true);
+    vi.mocked(invoke).mockRejectedValueOnce(`DESTINATION_CONFLICT:${destinationDigest}`).mockImplementationOnce(async(command,args)=>{
+      expect(command).toBe("save_project");
+      expect((args as {confirmedDestinationDigest:string}).confirmedDestinationDigest).toBe(destinationDigest);
+      return {...args as object,path:"D:/existing.ann",sessionToken};
+    });
+    expect(await saveProject(true)).toContain("บันทึกแล้ว");expect(confirm).toHaveBeenCalledTimes(1);expect(invoke).toHaveBeenCalledTimes(2);
+  });
+  it("validates inspected project data before activating a native session",async()=>{
+    const before=useStudioStore.getState().clips,inspected=await snapshotProject();
+    inspected.snapshot.project.editor.trackCount=-1;vi.stubGlobal("window",{__TAURI_INTERNALS__:{}});vi.mocked(open).mockResolvedValue("D:/invalid.ann");
+    vi.mocked(invoke).mockResolvedValue(inspected);
+    expect(await openProject()).toContain("Invalid project");
+    expect(vi.mocked(invoke).mock.calls.map(([command])=>command)).toEqual(["open_project"]);expect(useStudioStore.getState().clips).toBe(before);
   });
   it("activates a new native project without invalidating its first save",async()=>{
     const sessionToken="c".repeat(64);
