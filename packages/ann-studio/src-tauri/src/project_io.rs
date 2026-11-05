@@ -286,6 +286,112 @@ enum DestinationInspection {
     Unreadable,
 }
 
+fn digest_bounded(mut input: impl Read, limit: u64) -> Result<(u64, String), String> {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    let mut total = 0u64;
+    let mut buffer = [0u8; 65536];
+    loop {
+        let count = input.read(&mut buffer).map_err(err)?;
+        if count == 0 {
+            break;
+        }
+        total = total
+            .checked_add(count as u64)
+            .ok_or("Project size overflow")?;
+        if total > limit {
+            return Err("Project expanded/asset size limit".into());
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok((total, format!("{:x}", hasher.finalize())))
+}
+
+fn validate_project_archive(archive: &mut zip::ZipArchive<File>) -> Result<Value, String> {
+    if archive.len() > MAX_ASSETS + 1 {
+        return Err("Project asset count limit".into());
+    }
+
+    let mut names = BTreeSet::new();
+    let mut declared_total = 0u64;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(err)?;
+        let name = entry.name().to_owned();
+        if !names.insert(name.to_ascii_lowercase())
+            || entry.is_dir()
+            || entry.is_symlink()
+            || (name != "project.json" && !asset_name(&name))
+        {
+            return Err("Unsafe or duplicate project archive entry".into());
+        }
+        let limit = if name == "project.json" {
+            MAX_DOCUMENT
+        } else {
+            MAX_ASSET
+        };
+        if entry.size() > limit {
+            return Err("Project entry size limit".into());
+        }
+        declared_total = declared_total
+            .checked_add(entry.size())
+            .ok_or("Project size overflow")?;
+        if declared_total > MAX_PROJECT {
+            return Err("Project expanded size limit".into());
+        }
+    }
+
+    let mut document = Vec::new();
+    copy_bounded(
+        archive.by_name("project.json").map_err(err)?,
+        &mut document,
+        MAX_DOCUMENT,
+    )?;
+    let mut snapshot: Value = serde_json::from_slice(&document).map_err(err)?;
+    validate(&snapshot)?;
+    if snapshot["fingerprint"].as_str() != Some(project_fingerprint(&snapshot)?.as_str()) {
+        return Err("Project fingerprint mismatch".into());
+    }
+
+    let mut expected = BTreeSet::from(["project.json".to_owned()]);
+    let mut actual_total = document.len() as u64;
+    for asset in snapshot["project"]["assets"]
+        .as_array()
+        .ok_or("Missing assets")?
+    {
+        let id = text(asset, "id")?;
+        let name = text(asset, "relativePath")?;
+        let hash = text(asset, "sha256")?;
+        if hash.len() != 64 || Path::new(name).file_stem().is_none_or(|stem| stem != hash) {
+            return Err(format!("Invalid content-addressed asset {id}"));
+        }
+        expected.insert(name.to_ascii_lowercase());
+        let entry = archive
+            .by_name(name)
+            .map_err(|_| format!("Missing asset {id}"))?;
+        let (size, actual_hash) = digest_bounded(entry, MAX_ASSET)
+            .map_err(|_| format!("Corrupt or unreadable asset {id}"))?;
+        actual_total = actual_total
+            .checked_add(size)
+            .ok_or("Project size overflow")?;
+        if actual_total > MAX_PROJECT {
+            return Err("Project expanded size limit".into());
+        }
+        if actual_hash != hash {
+            return Err(format!(
+                "Corrupt asset {id}: repair from the original source"
+            ));
+        }
+    }
+    if expected != names {
+        return Err("Unindexed project archive payload".into());
+    }
+    if let Some(object) = snapshot.as_object_mut() {
+        object.remove("sessionToken");
+    }
+    Ok(snapshot)
+}
+
 fn inspect_destination(path: &Path) -> Result<DestinationInspection, String> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -308,15 +414,7 @@ fn inspect_destination(path: &Path) -> Result<DestinationInspection, String> {
     let identity = (|| -> Result<(String, String), String> {
         let mut archive =
             zip::ZipArchive::new(open_regular_file(path, MAX_PROJECT)?).map_err(err)?;
-        let mut entry = archive.by_name("project.json").map_err(err)?;
-        let mut document = Vec::new();
-        copy_bounded(&mut entry, &mut document, MAX_DOCUMENT)?;
-        let snapshot: Value = serde_json::from_slice(&document).map_err(err)?;
-        validate(&snapshot)?;
-        let fingerprint = project_fingerprint(&snapshot)?;
-        if snapshot["fingerprint"].as_str() != Some(fingerprint.as_str()) {
-            return Err("Project fingerprint mismatch".into());
-        }
+        let snapshot = validate_project_archive(&mut archive)?;
         Ok((
             project_id(&snapshot)?.to_owned(),
             text(&snapshot["project"], "announcerId")?.to_owned(),

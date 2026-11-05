@@ -526,6 +526,57 @@ fn different_projects_cannot_replace_a_shared_destination_without_matching_confi
 }
 
 #[test]
+fn damaged_same_project_destination_requires_overwrite_confirmation() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("project.ann");
+    let saved = save(&destination, snapshot(), paths, &workspace).unwrap();
+
+    let mut original = zip::ZipArchive::new(File::open(&destination).unwrap()).unwrap();
+    let mut document = Vec::new();
+    original
+        .by_name("project.json")
+        .unwrap()
+        .read_to_end(&mut document)
+        .unwrap();
+    let asset_name = saved.snapshot["project"]["assets"][0]["relativePath"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let incomplete = root.join("incomplete.ann");
+    let mut damaged = zip::ZipWriter::new(File::create(&incomplete).unwrap());
+    damaged
+        .start_file("project.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    damaged.write_all(&document).unwrap();
+    damaged
+        .start_file(&asset_name, zip::write::SimpleFileOptions::default())
+        .unwrap();
+    damaged.write_all(b"corrupt asset bytes").unwrap();
+    damaged.finish().unwrap();
+    fs::remove_file(&destination).unwrap();
+    fs::rename(&incomplete, &destination).unwrap();
+    let damaged_bytes = fs::read(&destination).unwrap();
+
+    let conflict = save_with_session_confirmed_destination(
+        &destination,
+        saved.snapshot,
+        saved.asset_paths,
+        &saved.session_token,
+        None,
+        &workspace,
+    )
+    .unwrap_err();
+
+    assert!(conflict.starts_with(DESTINATION_CONFLICT_PREFIX));
+    assert_eq!(fs::read(&destination).unwrap(), damaged_bytes);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn destination_lock_serializes_saves_for_a_canonical_destination_path() {
     let root = root();
     let workspace = root.join("cache");
