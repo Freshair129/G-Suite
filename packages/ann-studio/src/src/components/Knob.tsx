@@ -1,24 +1,26 @@
-import { useRef, useCallback, useId } from "react";
+import { useCallback, useId, useRef } from "react";
 
 interface KnobProps {
   value: number;
   min: number;
   max: number;
   label: string;
+  accessibleLabel?: string;
   size?: "sm" | "md" | "lg";
   color?: string;
   onChange: (value: number) => void;
+  onKeyboardCommit?: () => void;
   format?: (value: number) => string;
 }
 
 const SIZES = { sm: 48, md: 64, lg: 96 };
 
 export default function Knob({
-  value, min, max, label, size = "md",
-  color = "#e0ff00", onChange, format,
+  value, min, max, label, accessibleLabel, size = "md",
+  color = "#e0ff00", onChange, onKeyboardCommit, format,
 }: KnobProps) {
-  const knobRef = useRef<HTMLDivElement>(null);
   const gradId = useId();
+  const committedKey = useRef<string | null>(null);
   const px = SIZES[size];
 
   const norm = (value - min) / (max - min);
@@ -63,7 +65,31 @@ export default function Knob({
 
   return (
     <div className="flex flex-col items-center gap-0.5 select-none">
-      <div className="cursor-grab active:cursor-grabbing" onMouseDown={handleMouseDown} style={{ width: px, height: px }}>
+      <div className="cursor-grab active:cursor-grabbing rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
+        role="slider" tabIndex={0} aria-label={accessibleLabel ?? label} aria-valuemin={min} aria-valuemax={max}
+        aria-valuenow={value} aria-valuetext={display}
+        onKeyDown={(e) => {
+          const step = (max - min) / 100;
+          let next: number;
+          switch (e.key) {
+            case "ArrowUp": case "ArrowRight": next = value + step; break;
+            case "ArrowDown": case "ArrowLeft": next = value - step; break;
+            case "PageUp": next = value + step * 10; break;
+            case "PageDown": next = value - step * 10; break;
+            case "Home": next = min; break;
+            case "End": next = max; break;
+            default: committedKey.current = null; return;
+          }
+          e.preventDefault();
+          next = Math.max(min, Math.min(max, Number(next.toFixed(6))));
+          if (next !== value) {
+            if (committedKey.current !== e.key) onKeyboardCommit?.();
+            committedKey.current = e.key;
+            onChange(next);
+          }
+        }}
+        onKeyUp={() => { committedKey.current = null; }} onBlur={() => { committedKey.current = null; }}
+        onMouseDown={handleMouseDown} style={{ width: px, height: px }}>
         <svg viewBox="0 0 100 100" width={px} height={px}>
           <defs>
             <radialGradient id={gradId} cx="40%" cy="35%">

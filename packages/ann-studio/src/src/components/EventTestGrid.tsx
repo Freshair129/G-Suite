@@ -112,6 +112,20 @@ export default function EventTestGrid() {
   const [preview,setPreview]=useState<{path:string;event:string}|null>(null);
   const [previewBusy,setPreviewBusy]=useState(false);
   const [previewError,setPreviewError]=useState('');
+  const projectId = useStudioStore((s) => s.projectDocument?.projectId ?? null);
+  const projectSession = useStudioStore((s) => s.projectSession);
+  const projectOwner = `${projectSession}:${projectId ?? ''}`;
+  const previewSession = useRef(0);
+  const previewOwner = useRef(projectOwner);
+  useEffect(() => {
+    if (previewOwner.current === projectOwner) return;
+    previewOwner.current = projectOwner;
+    previewSession.current += 1;
+    setPreview(null);
+    setPreviewBusy(false);
+    setPreviewError('');
+  }, [projectOwner]);
+  useEffect(() => () => { previewSession.current += 1; }, []);
   const [installing, setInstalling] = useState(false);
   const [animate, setAnimate] = useState(true);
   const [voiceCaption, setVoiceCaption] = useState(true);
@@ -203,9 +217,16 @@ export default function EventTestGrid() {
   }
 
   async function fire(id:string) {
-    if(previewBusy)return;setPreviewBusy(true);setPreviewError('');
-    try{const pack=await buildCurrentGann('event',id,undefined,'Event preview','',animate,voiceCaption,reactive);setPreview({path:pack.path,event:id});}
-    catch(error){setPreviewError(String(error));}finally{setPreviewBusy(false);}
+    if(previewBusy)return;
+    const session = previewSession.current;
+    setPreviewBusy(true);setPreviewError('');
+    const pending = buildCurrentGann('event',id,undefined,'Event preview','',animate,voiceCaption,reactive);
+    const current = useStudioStore.getState();
+    const owner = `${current.projectSession}:${current.projectDocument?.projectId ?? ''}`;
+    previewOwner.current = owner;
+    const isCurrent = () => { const state = useStudioStore.getState(); return session === previewSession.current && `${state.projectSession}:${state.projectDocument?.projectId ?? ''}` === owner; };
+    try{const pack=await pending;if(isCurrent())setPreview({path:pack.path,event:id});}
+    catch(error){if(isCurrent())setPreviewError(String(error));}finally{if(isCurrent())setPreviewBusy(false);}
   }
 
   return (
@@ -307,6 +328,7 @@ export default function EventTestGrid() {
                 <button
                   onClick={() => fire(ev.id)}
                   className="group relative block w-full"
+                  aria-label={`ทดสอบ event: ${ev.label} (${total} เสียง)`}
                   title={ev.trigger}
                 >
                   <BannerView event={ev.id} width={280} override={ov} caption={captionOf(ev.id)} />

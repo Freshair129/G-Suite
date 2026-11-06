@@ -284,8 +284,8 @@ export default function MasteringPanel({ tool, setTool, height }: {
             <div className="text-[10px] uppercase tracking-wide text-ink-faint mb-1 text-center">{g.title}</div>
             <div className="flex-1 flex items-center gap-3">
               {g.knobs.map(([key, label]) => (
-                <Knob key={key} value={master[key] ?? 0} min={-100} max={100} label={label} size="sm" color="#4ea8ff"
-                  onChange={(v) => setMaster(key, v)} format={(v) => `${Math.round(v)}`} />
+                <Knob key={key} value={master[key] ?? 0} min={-100} max={100} label={label} accessibleLabel={`${g.title} ${label}`} size="sm" color="#4ea8ff"
+                  onChange={(v) => setMaster(key, v)} onKeyboardCommit={pushHistory} format={(v) => `${Math.round(v)}`} />
               ))}
             </div>
           </div>
@@ -294,10 +294,10 @@ export default function MasteringPanel({ tool, setTool, height }: {
         <div className="shrink-0 px-4 py-2 border-r border-line/40 flex flex-col">
           <div className="text-[10px] uppercase tracking-wide text-ink-faint mb-1 text-center">Fades / Norm</div>
           <div className="flex-1 flex items-center gap-3">
-            <Knob value={clip.fadeIn ?? 0} min={0} max={Math.max(0.5, Math.min(2, dur))} label="In" size="sm"
-              onChange={(v) => updateClipSilent(clip.id, { fadeIn: v })} format={(v) => `${Math.round(v * 1000)}ms`} />
-            <Knob value={clip.fadeOut ?? 0} min={0} max={Math.max(0.5, Math.min(2, dur))} label="Out" size="sm"
-              onChange={(v) => updateClipSilent(clip.id, { fadeOut: v })} format={(v) => `${Math.round(v * 1000)}ms`} />
+            <Knob value={clip.fadeIn ?? 0} min={0} max={Math.max(0.5, Math.min(2, dur))} label="In" accessibleLabel="Fade In" size="sm"
+              onChange={(v) => updateClipSilent(clip.id, { fadeIn: v })} onKeyboardCommit={pushHistory} format={(v) => `${Math.round(v * 1000)}ms`} />
+            <Knob value={clip.fadeOut ?? 0} min={0} max={Math.max(0.5, Math.min(2, dur))} label="Out" accessibleLabel="Fade Out" size="sm"
+              onChange={(v) => updateClipSilent(clip.id, { fadeOut: v })} onKeyboardCommit={pushHistory} format={(v) => `${Math.round(v * 1000)}ms`} />
             <button onClick={() => updateClip(clip.id, { normalize: !(clip.normalize ?? false) })}
               className={`self-center px-2.5 py-2 rounded-xl border text-[10px] font-medium transition ${clip.normalize ? "bg-lime/15 border-lime/50 text-lime" : "bg-panel border-line text-ink-muted hover:text-ink"}`}>
               Norm
@@ -308,8 +308,8 @@ export default function MasteringPanel({ tool, setTool, height }: {
         <div className="shrink-0 px-5 py-2 flex items-center gap-4 ml-auto">
           <div className="flex flex-col items-center">
             <div className="text-[10px] uppercase tracking-wide text-ink-faint mb-1">Loudness</div>
-            <Knob value={clip.gain ?? 0} min={-24} max={24} label="Amount" size="lg" color="#4ea8ff"
-              onChange={(v) => updateClipSilent(clip.id, { gain: v })} format={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}dB`} />
+            <Knob value={clip.gain ?? 0} min={-24} max={24} label="Amount" accessibleLabel="Loudness Amount" size="lg" color="#4ea8ff"
+              onChange={(v) => updateClipSilent(clip.id, { gain: v })} onKeyboardCommit={pushHistory} format={(v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}dB`} />
           </div>
           <div className="flex flex-col items-center gap-1 self-stretch justify-center py-3">
             <div className="w-2 flex-1 rounded-full bg-black/50 overflow-hidden relative min-h-[70px]">

@@ -139,6 +139,7 @@ export interface Pack {
 
 interface StudioState {
   projectDocument: PackProject | null;
+  projectSession: number;
   projectGeneration: number;
   projectPath: string | null;
   projectAssetPaths: Record<string, string>;
@@ -304,6 +305,7 @@ export const useStudioStore = create<StudioState>()(
   persist(
     (set) => ({
       projectDocument: null,
+      projectSession: 0,
       projectGeneration: 0,
       projectPath: null,
       projectAssetPaths: {},

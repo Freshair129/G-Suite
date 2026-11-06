@@ -19,7 +19,9 @@ function FaderBar({ label, level, gain, onChange, onCommit }: {
   onChange: (v: number) => void; onCommit: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const gFrac = (gain - GMIN) / (GMAX - GMIN);
+  const committedKey = useRef<string | null>(null);
+  const keyboardMax = label === "M" ? 24 : GMAX;
+  const gFrac = Math.max(0, Math.min(1, (gain - GMIN) / (GMAX - GMIN)));
 
   function onDown(e: React.PointerEvent) {
     e.preventDefault();
@@ -44,7 +46,29 @@ function FaderBar({ label, level, gain, onChange, onCommit }: {
       <div
         ref={ref}
         onPointerDown={onDown}
-        className="relative w-3 flex-1 rounded-sm overflow-hidden bg-black/70 border border-white/5 cursor-ns-resize"
+        role="slider" tabIndex={0} aria-label={`${label} gain`} aria-orientation="vertical"
+        aria-valuemin={GMIN} aria-valuemax={keyboardMax} aria-valuenow={gain} aria-valuetext={`${gain > 0 ? "+" : ""}${gain.toFixed(1)} dB`}
+        onKeyDown={(e) => {
+          let next: number;
+          switch (e.key) {
+            case "ArrowUp": case "ArrowRight": next = gain + 0.5; break;
+            case "ArrowDown": case "ArrowLeft": next = gain - 0.5; break;
+            case "PageUp": next = gain + 3; break;
+            case "PageDown": next = gain - 3; break;
+            case "Home": next = GMIN; break;
+            case "End": next = keyboardMax; break;
+            default: committedKey.current = null; return;
+          }
+          e.preventDefault();
+          next = Math.max(GMIN, Math.min(keyboardMax, +next.toFixed(1)));
+          if (next !== gain) {
+            if (committedKey.current !== e.key) onCommit();
+            committedKey.current = e.key;
+            onChange(next);
+          }
+        }}
+        onKeyUp={() => { committedKey.current = null; }} onBlur={() => { committedKey.current = null; }}
+        className="relative w-3 flex-1 rounded-sm overflow-hidden bg-black/70 border border-white/5 cursor-ns-resize focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
         title={`${label}: ${gain > 0 ? "+" : ""}${gain} dB`}
       >
         <div className="absolute inset-0" style={{ background: "linear-gradient(to top,#3ecf7f 0%,#3ecf7f 52%,#ffd76b 78%,#ff5b5b 100%)" }} />

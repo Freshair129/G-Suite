@@ -151,11 +151,11 @@ export default function GameProfile() {
   }
 
   return (
-    <div className="flex-1 flex min-h-0">
+    <div className="flex-1 flex min-w-0 min-h-0">
     {/* Left: main content */}
-    <div className="flex-1 flex flex-col min-h-0 p-6 overflow-y-auto">
+    <div className="flex-1 flex flex-col min-w-0 min-h-0 p-6 overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
           <div className="grid place-items-center w-10 h-10 rounded-xl bg-panel border border-line">
             <Gamepad2 size={20} className="text-lime" />
@@ -168,11 +168,11 @@ export default function GameProfile() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleIntegrate}
             disabled={integrating}
-            className={`flex items-center gap-2 px-4 h-9 rounded-full text-xs font-medium transition disabled:opacity-50 ${
+            className={`flex shrink-0 whitespace-nowrap items-center gap-2 px-4 h-9 rounded-full text-xs font-medium transition disabled:opacity-50 ${
               gmaidenConnected
                 ? "bg-panel border border-line text-ink hover:bg-panel-hover"
                 : "bg-panel border border-lime/30 text-lime hover:bg-lime/10"
@@ -196,7 +196,7 @@ export default function GameProfile() {
             <button
               onClick={handleQuickInstall}
               disabled={quickInstalling}
-              className="flex items-center gap-2 px-4 h-9 rounded-full bg-orange-500/20 border border-orange-500/40 text-orange-400 text-xs font-medium hover:bg-orange-500/30 transition disabled:opacity-50"
+              className="flex shrink-0 whitespace-nowrap items-center gap-2 px-4 h-9 rounded-full bg-orange-500/20 border border-orange-500/40 text-orange-400 text-xs font-medium hover:bg-orange-500/30 transition disabled:opacity-50"
             >
               {quickInstalling ? (
                 <RefreshCw size={14} className="animate-spin" />
@@ -209,7 +209,7 @@ export default function GameProfile() {
 
           <button
             onClick={() => setShowCreator(true)}
-            className="flex items-center gap-2 px-5 h-9 rounded-full bg-gradient-to-r from-lime to-grass text-black text-xs font-semibold hover:opacity-90 transition"
+            className="flex shrink-0 whitespace-nowrap items-center gap-2 px-5 h-9 rounded-full bg-gradient-to-r from-lime to-grass text-black text-xs font-semibold hover:opacity-90 transition"
           >
             <Plus size={15} />
             เพิ่ม Pack

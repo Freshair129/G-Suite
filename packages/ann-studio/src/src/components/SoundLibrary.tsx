@@ -164,7 +164,7 @@ export default function SoundLibrary() {
                 >
                   {expanded[pkg.id] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   <Package size={13} className="text-lime/70 shrink-0" />
-                  <span className="truncate flex-1 text-left">{pkg.name}</span>
+                  <span className="truncate min-w-0 flex-1 text-left" title={pkg.name}>{pkg.name}</span>
                   <span className="text-[9px] font-mono text-ink-faint shrink-0">{pkg.clip_count}</span>
                   <button
                     onClick={(e) => handleDeletePkg(pkg, e)}
@@ -300,12 +300,12 @@ function SoundRow({ sound, libraryRoot }: { sound: LibSound; libraryRoot: string
       <div
         draggable
         onDragStart={handleDragStart}
-        className="group flex items-center gap-1 px-2 py-1 text-xs hover:bg-panel-hover transition cursor-grab active:cursor-grabbing"
+        className="group flex flex-wrap items-center gap-1 px-2 py-1 text-xs hover:bg-panel-hover transition cursor-grab active:cursor-grabbing"
         title={`${sound.name_th || sound.name_en} (${sound.duration.toFixed(1)}s)`}
       >
         <GripVertical size={10} className="text-ink-faint/40 shrink-0 opacity-0 group-hover:opacity-100 transition" />
         <FileAudio size={12} className="text-lime/70 shrink-0" />
-        <span className="truncate flex-1 min-w-0 text-ink-muted" title={sound.name_en}>
+        <span className="truncate flex-1 min-w-[60px] text-ink-muted" title={sound.name_en}>
           {sound.name_th || sound.name_en}
           {sound.name_en && <span className="text-ink-faint/70 ml-1">· {sound.name_en}</span>}
         </span>
