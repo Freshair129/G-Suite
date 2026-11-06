@@ -1,0 +1,56 @@
+/* DS-ANN-GLASS-RESPONSIVE-001
+ * Scoped, opt-in tokens. Nothing on the legacy editor changes until a view
+ * explicitly adopts .ann-glass. Do not set typography using viewport units.
+ */
+.ann-glass {
+  --ann-bg: #080e13;
+  --ann-panel: rgba(19, 31, 40, .88);
+  --ann-panel-raised: rgba(28, 44, 53, .93);
+  --ann-glass: rgba(18, 33, 42, .76);
+  --ann-outline: rgba(179, 220, 218, .16);
+  --ann-outline-strong: rgba(179, 220, 218, .32);
+  --ann-text: #edf6f5;
+  --ann-text-soft: #b7c9cd;
+  --ann-text-muted: #94a9b0;
+  --ann-lime: #b9f66c;
+  --ann-on-lime: #12200c;
+  --ann-danger: #ff8a96;
+  --ann-warning: #ffd07c;
+  --ann-info: #83cbd5;
+  --ann-card-radius: 14px;
+  --ann-control-radius: 9px;
+  --ann-blur: 16px;
+  --ann-shadow: 0 14px 40px rgba(0,0,0,.22);
+  color: var(--ann-text);
+  background: var(--ann-bg);
+  font-family: "Prompt", "Noto Sans Thai", "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+}
+.ann-glass, .ann-glass * { box-sizing: border-box; }
+.ann-glass :is(button, input, select, textarea, summary, [role="button"]):focus-visible {
+  outline: 2px solid var(--ann-lime);
+  outline-offset: 2px;
+}
+.ann-glass :is(button, input, select, textarea) { font: inherit; }
+.ann-glass :is(button, summary) { cursor: pointer; }
+.ann-glass button:disabled { cursor: not-allowed; opacity: .48; }
+.ann-glass ::selection { color: var(--ann-on-lime); background: var(--ann-lime); }
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .ann-glass { --ann-glass: #14252d; --ann-panel: #172831; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ann-glass *, .ann-glass *::before, .ann-glass *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (prefers-contrast: more) {
+  .ann-glass { --ann-outline: rgba(227,249,247,.48); --ann-panel: #142630; --ann-glass: #152a34; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ann-glass { --ann-panel: #142630; --ann-glass: #152a34; --ann-blur: 0px; }
+}

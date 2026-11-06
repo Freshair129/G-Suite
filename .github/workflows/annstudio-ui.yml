@@ -1,0 +1,38 @@
+name: G-AnnStudio UI (frontend)
+on:
+  pull_request:
+    paths:
+      - "packages/ann-studio/src/**"
+      - ".github/workflows/annstudio-ui.yml"
+      - "pnpm-lock.yaml"
+  push:
+    branches:
+      - "design/annstudio-glass-pr-b"
+    paths:
+      - "packages/ann-studio/src/**"
+      - ".github/workflows/annstudio-ui.yml"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "9.0.0"
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install locked workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: TypeScript and production bundle
+        run: pnpm -C packages/ann-studio/src build
+      - name: Frontend tests including Glass components
+        run: pnpm -C packages/ann-studio/src test
