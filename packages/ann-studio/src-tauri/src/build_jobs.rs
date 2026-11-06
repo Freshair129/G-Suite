@@ -23,6 +23,7 @@ pub struct VariantRender {
 pub struct BuildJob {
     pub snapshot: Value,
     pub asset_paths: BTreeMap<String, String>,
+    pub session_token: String,
     pub renders: Vec<VariantRender>,
     pub output_path: Option<String>,
 }
@@ -319,7 +320,12 @@ pub fn build(
     let _guard = BUILD.lock().map_err(|e| e.to_string())?;
     cancelled(&cancel)?;
     progress(job_id, "Validate", 0, 1);
-    let prepared = super::project_io::prepare(job.snapshot, job.asset_paths, workspace)?;
+    let prepared = super::project_io::prepare_with_session(
+        job.snapshot,
+        job.asset_paths,
+        Some(job.session_token.clone()),
+        workspace,
+    )?;
     let mut snapshot = prepared.snapshot;
     let assets = prepared.asset_paths;
     let project_id = string(&snapshot["project"], "projectId")?.to_owned();
@@ -573,7 +579,12 @@ pub fn build(
             .ok_or("Invalid report")?
             .remove("path");
         let entry = json!({"revision":revision,"digest":report.digest,"artifactId":artifact_id,"projectFingerprint":fingerprint,"toolchainFingerprint":toolchain,"report":portable_report});
-        report.superseded = !super::project_io::commit_build_snapshot(&snapshot, entry, workspace)?;
+        report.superseded = !super::project_io::commit_build_snapshot_with_session(
+            &snapshot,
+            &job.session_token,
+            entry,
+            workspace,
+        )?;
         if let Some(destination) = &job.output_path {
             g_ann_package::Package::open(Path::new(&report.path))?
                 .save_copy(Path::new(destination))?;
@@ -681,6 +692,11 @@ pub fn start_build(
     let cancel = Arc::new(AtomicBool::new(false));
     let root = workspace(&app)?;
     let project_id = string(&job.snapshot["project"], "projectId")?.to_owned();
+    if !super::project_io::session_is_active(&job.snapshot, &job.session_token, &root)? {
+        return Err(
+            "Project session was replaced; restart the build from the current project".into(),
+        );
+    }
     let mut registry = jobs().lock().map_err(|e| e.to_string())?;
     if registry
         .values()
@@ -856,12 +872,21 @@ mod tests {
         let snapshot = json!({"project":{"schemaVersion":2,"projectId":"00000000-0000-4000-8000-000000000001","announcerId":"ann_00000000-0000-4000-8000-000000000002","name":"Builder fixture","author":"Test","locale":"th","currentRevision":0,"installBindings":{},
    "assets":[{"id":"voice","relativePath":"assets/voice.wav","sha256":"","mediaType":"audio/wav","sourceMetadata":{"originalName":"voice.wav"}},{"id":"sfx","relativePath":"assets/sfx.wav","sha256":"","mediaType":"audio/wav","sourceMetadata":{"originalName":"sfx.wav"}}],
    "variants":[{"id":"one","originalSoundId":"snd_00000000-0000-4000-8000-000000000003","mixedSoundId":"snd_00000000-0000-4000-8000-000000000004","bannerId":"bnr_00000000-0000-4000-8000-000000000005","voiceAssetId":"voice","voiceClip":{"id":"one","name":"คำที่หนึ่ง","start":0,"end":1,"event":"kill","color":""},"bannerProject":{"layers":[],"assets":[]},"sfxCues":[{"assetId":"sfx","startMs":200,"trimStartMs":0,"trimEndMs":500,"fadeInMs":20,"fadeOutMs":20,"gainDb":-6}],"audioEndMs":1000,"videoEndMs":1000}],"eventMappings":[{"eventKey":"kill","variantIds":["one"]}],"inactiveStock":[],"templates":[],"buildHistory":[],"editor":{"sourceAssetId":"voice","wavAssetId":"voice","duration":1,"clips":[],"bannerProject":{"layers":[],"assets":[]},"bannerOverrides":{},"packBuilder":{},"trackItems":[],"trackCount":1,"masterVolume":1,"overlayLayout":{}}},"generation":1,"fingerprint":""});
-        BuildJob {
+        let asset_paths = BTreeMap::from([
+            ("voice".into(), voice.to_string_lossy().into_owned()),
+            ("sfx".into(), sfx.to_string_lossy().into_owned()),
+        ]);
+        let active = super::super::project_io::activate_project_session(
             snapshot,
-            asset_paths: BTreeMap::from([
-                ("voice".into(), voice.to_string_lossy().into_owned()),
-                ("sfx".into(), sfx.to_string_lossy().into_owned()),
-            ]),
+            asset_paths,
+            None,
+            &root.join("projects"),
+        )
+        .unwrap();
+        BuildJob {
+            snapshot: active.snapshot,
+            asset_paths: active.asset_paths,
+            session_token: active.session_token.unwrap(),
             renders: vec![VariantRender {
                 variant_id: "one".into(),
                 frames: vec![frame; 24],
@@ -932,11 +957,13 @@ mod tests {
         let root = test_root();
         let job = fixture(&root);
         let workspace = root.join("projects");
+        let recovery = workspace.join("00000000-0000-4000-8000-000000000001/recovery.json");
+        let before = fs::read(&recovery).unwrap();
         assert_eq!(
             build(job, &workspace, Arc::new(AtomicBool::new(true)), None).unwrap_err(),
             "Cancelled"
         );
-        assert!(!workspace.exists());
+        assert_eq!(fs::read(&recovery).unwrap(), before);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

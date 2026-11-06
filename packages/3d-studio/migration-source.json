@@ -1,0 +1,159 @@
+{
+  "source": "D:/G-Maiden-3D-Studio",
+  "date": "2026-11-03",
+  "originalFiles": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "ca8d78b5ecd383b0ac944f170981aeba196b297c1e51e74a0bbea954196d31ba"
+    },
+    {
+      "path": "index.html",
+      "sha256": "7822d26a73db455395fb18ed264712fb3d00339872bb3c8baa3ec64b89a4e791"
+    },
+    {
+      "path": "package.json",
+      "sha256": "2ba61f16b8f931c6a8b394b1430daa7651a2455d65a27c7758a8b60c70e323c4"
+    },
+    {
+      "path": "public/tauri.svg",
+      "sha256": "3f32698a9cb64f4d06d4df89ecb903418347589a17d297208a7f68741a8b5672"
+    },
+    {
+      "path": "public/vite.svg",
+      "sha256": "4a748afd443918bb16591c834c401dae33e87861ab5dbad0811c3a3b4a9214fb"
+    },
+    {
+      "path": "README.md",
+      "sha256": "fa87d8061857e6c8914b1a552299310cab4ed88e503ed3517e6a238304a7e8cd"
+    },
+    {
+      "path": "src/App.css",
+      "sha256": "d097fc06e592f0a9b34e915dffd890062c7c8a45250a9ccd8c07f1270d4fdbe3"
+    },
+    {
+      "path": "src/App.tsx",
+      "sha256": "a274d9b96157294c3c83f89f4c1cd313119bfeaa51012cd53fcb47729ceb31e4"
+    },
+    {
+      "path": "src/assets/react.svg",
+      "sha256": "35ef61ed53b323ae94a16a8ec659b3d0af3880698791133f23b084085ab1c2e5"
+    },
+    {
+      "path": "src/main.tsx",
+      "sha256": "8f55009f27569355469b6c65ddd242e2b38aa30b7a070ee2e438f4909a47a233"
+    },
+    {
+      "path": "src/vite-env.d.ts",
+      "sha256": "424faf9241dd699dda995b367ed36665732da1e6ec1f33b2fd40394488ecac92"
+    },
+    {
+      "path": "src-tauri/build.rs",
+      "sha256": "4ae2333b11623039cc115e29b696e7ff5cdfcd5b7d628280ddf48fa733e6418d"
+    },
+    {
+      "path": "src-tauri/capabilities/default.json",
+      "sha256": "f4e450983bbc94f2c2b0aa05513923a00af47d2b62d272177b48315d46719807"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "sha256": "0838c58a58a242a954d4af4d8571a3a21663b4082fb88d764deb6352d36f0a8c"
+    },
+    {
+      "path": "src-tauri/icons/128x128.png",
+      "sha256": "19b4fec485db7df51a691fcce72a3dd6f983e754fc4262da7154e4a4c688f69e"
+    },
+    {
+      "path": "src-tauri/icons/128x128@2x.png",
+      "sha256": "6c7660390d65217fe8de0892862254f47aee77e0af7096c75b8bfe168c5403f7"
+    },
+    {
+      "path": "src-tauri/icons/32x32.png",
+      "sha256": "1c6782dc65c8111c12cbc1882a0fea5e71ab8e51b18da2ce9580f5c88860ed02"
+    },
+    {
+      "path": "src-tauri/icons/icon.icns",
+      "sha256": "3dc10493b7de48a61de58f768f8a5708d3a44a068c148cedf0502b9b9b71ba5d"
+    },
+    {
+      "path": "src-tauri/icons/icon.ico",
+      "sha256": "392206b573a809997f3ff16fe68f456a52e931c372107eade9572b329bbe3321"
+    },
+    {
+      "path": "src-tauri/icons/icon.png",
+      "sha256": "273cd669e07c455ad1c7c095890a37984652157cee73128a867300067dfb80e7"
+    },
+    {
+      "path": "src-tauri/icons/Square107x107Logo.png",
+      "sha256": "54f7a0f58c96a4b023c1edc4b53fc443e27dace50e345f6936fa29bc20f785ca"
+    },
+    {
+      "path": "src-tauri/icons/Square142x142Logo.png",
+      "sha256": "fec1e2080ca73cd4c4a123b23b1cd364059a8a8efeba3076e21dfefed390693b"
+    },
+    {
+      "path": "src-tauri/icons/Square150x150Logo.png",
+      "sha256": "65fb570cb0e61ffce02ad67784cb200a0bf058400300980a46fa0d0c8f43a77a"
+    },
+    {
+      "path": "src-tauri/icons/Square284x284Logo.png",
+      "sha256": "ea0b7c5d4b1d1ab9c91d2f7c9b069c8dfbf4557b0649a5777d47332cde610262"
+    },
+    {
+      "path": "src-tauri/icons/Square30x30Logo.png",
+      "sha256": "cc72279c41b4ed343e8db7e7541ceef7b6b23edaa83d4e7338421dfcb8d63c33"
+    },
+    {
+      "path": "src-tauri/icons/Square310x310Logo.png",
+      "sha256": "9733a89c539115de3c49bd06720bfc99639d9a918f5df48a810e267cf3554119"
+    },
+    {
+      "path": "src-tauri/icons/Square44x44Logo.png",
+      "sha256": "10be9840e58fb018eb9029601d42008e16c0c9cfa66b8f9467fee94f600160d4"
+    },
+    {
+      "path": "src-tauri/icons/Square71x71Logo.png",
+      "sha256": "2937fc83324cd9a1fddcfefd5927c791af31996a6840bfb3e2f1d578ad4129de"
+    },
+    {
+      "path": "src-tauri/icons/Square89x89Logo.png",
+      "sha256": "12aed0e7ee06cb631427dc9da72c0c7ecf03857fbc4884d0c31f78314feb6c7f"
+    },
+    {
+      "path": "src-tauri/icons/StoreLogo.png",
+      "sha256": "91a54024dd47230991546088f2e75d3e3199b3ccc9fe40f3f6b7d3bf1cbf7776"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "sha256": "2da403110c69f3d8ce6397c062325e18b19c470c7eee61edcea935b6397857ee"
+    },
+    {
+      "path": "src-tauri/src/main.rs",
+      "sha256": "128144f3066ae40df2a93edf89c2f9adb345d72c2ce62454919970d961450993"
+    },
+    {
+      "path": "src-tauri/tauri.conf.json",
+      "sha256": "d3c0a0069546bf81d3d0406a3dbe13777822cd2265501e00014f1fb360aef1b7"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "cb4dd1777bc7f478cb417906c32099ae5e661865b3181df116ac70790e9a1a7e"
+    },
+    {
+      "path": "tsconfig.node.json",
+      "sha256": "6ec602b8aa146888c76f0b41ca3515f91f95919f6e6417a4670decaba8fcb982"
+    },
+    {
+      "path": "vite.config.ts",
+      "sha256": "d0c7e96eb844636ee7e73113ff6d194eb942d15398a00989d36335400ac8a86d"
+    }
+  ],
+  "excluded": [
+    "workspace",
+    "GameAssets",
+    "third_party",
+    "tools",
+    "node_modules",
+    "dist",
+    "src-tauri/target"
+  ]
+}

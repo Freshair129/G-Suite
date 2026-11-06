@@ -5,7 +5,8 @@ import type { Clip, BannerOverride, LibSound, TrackItem } from "../store/useStud
 
 export interface Asset { id:string; relativePath:string; sha256:string; mediaType:string; sourceMetadata:{originalName:string} }
 export interface SfxCue { assetId:string; startMs:number; gainDb:number; trimStartMs:number; trimEndMs:number; fadeInMs:number; fadeOutMs:number }
-export interface Variant { id:string; originalSoundId:string; mixedSoundId:string; bannerId:string; voiceAssetId:string; voiceClip:Clip; bannerProject:BannerProject; sfxCues:SfxCue[]; audioEndMs:number; videoEndMs:number }
+export interface BannerSource { assetId:string; revision:number; manifestSha256:string }
+export interface Variant { id:string; originalSoundId:string; mixedSoundId:string; bannerId:string; voiceAssetId:string; voiceClip:Clip; bannerProject:BannerProject; bannerSource?:BannerSource; sfxCues:SfxCue[]; audioEndMs:number; videoEndMs:number }
 export interface EventMapping { eventKey:string; variantIds:string[] }
 export interface ProjectTemplate { id:string; version:string; fontFamily?:string; assetIds:string[] }
 export interface ProjectBuild { revision:number; digest:string; artifactId:string; projectFingerprint:string; toolchainFingerprint:string; [key:string]:unknown }
@@ -15,8 +16,8 @@ export interface ProjectEditor {
 }
 export interface PackProject { schemaVersion:2; projectId:string; announcerId:string; name:string; author:string; locale:string; installBindings:Record<string,string>; currentRevision:number; assets:Asset[]; variants:Variant[]; eventMappings:EventMapping[]; inactiveStock:string[]; templates:ProjectTemplate[]; buildHistory:ProjectBuild[]; editor:ProjectEditor }
 export interface ProjectSnapshot { project:PackProject; generation:number; fingerprint:string }
-export interface ProjectOpenResult { snapshot:ProjectSnapshot; assetPaths:Record<string,string> }
-export interface ProjectSaveResult extends ProjectOpenResult { path:string }
+export interface ProjectOpenResult { snapshot:ProjectSnapshot; assetPaths:Record<string,string>; sessionToken?:string|null }
+export interface ProjectSaveResult extends ProjectOpenResult { path:string; sessionToken:string }
 export interface EditorState { sourcePath:string|null; wavPath:string|null; duration:number; clips:Clip[]; bannerProject:BannerProject; bannerVariantId:string|null; bannerOverrides:Record<string,BannerOverride>; packBuilder:Record<string,LibSound[]>; trackItems:TrackItem[]; trackCount:number; masterVolume:number; overlayLayout:OverlayLayout; selectedClipId:string|null; libraryRoot:string }
 
 const id=(prefix="")=>`${prefix}${crypto.randomUUID()}`;
