@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -15,6 +15,51 @@ const MAX_DOCUMENT: u64 = 16 * 1024 * 1024;
 const MAX_ASSETS: usize = 4096;
 const MAX_RECOVERY_DIRECTORY_ENTRIES: usize = 4096;
 const DESTINATION_CONFLICT_PREFIX: &str = "DESTINATION_CONFLICT:";
+
+fn enforce_zip_entry_limit<R: Read + Seek>(reader: &mut R, maximum: usize) -> Result<(), String> {
+    const END_RECORD_LEN: usize = 22;
+    const MAX_COMMENT_LEN: usize = u16::MAX as usize;
+    const END_RECORD_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+
+    let file_len = reader
+        .seek(SeekFrom::End(0))
+        .map_err(|error| format!("Cannot inspect ZIP end record: {error}"))?;
+    let scan_len = file_len.min((END_RECORD_LEN + MAX_COMMENT_LEN) as u64) as usize;
+    if scan_len < END_RECORD_LEN {
+        return Err("Invalid ZIP end record".into());
+    }
+    reader
+        .seek(SeekFrom::End(-(scan_len as i64)))
+        .map_err(|error| format!("Cannot seek to ZIP end record: {error}"))?;
+    let mut tail = vec![0; scan_len];
+    reader
+        .read_exact(&mut tail)
+        .map_err(|error| format!("Cannot read ZIP end record: {error}"))?;
+
+    let end_record = (0..=tail.len() - END_RECORD_LEN)
+        .rev()
+        .find(|offset| {
+            tail[*offset..*offset + 4] == END_RECORD_SIGNATURE
+                && *offset
+                    + END_RECORD_LEN
+                    + u16::from_le_bytes([tail[*offset + 20], tail[*offset + 21]]) as usize
+                    == tail.len()
+        })
+        .ok_or("Invalid ZIP end record")?;
+    let disk = u16::from_le_bytes([tail[end_record + 4], tail[end_record + 5]]);
+    let directory_disk = u16::from_le_bytes([tail[end_record + 6], tail[end_record + 7]]);
+    let disk_entries = u16::from_le_bytes([tail[end_record + 8], tail[end_record + 9]]);
+    let total_entries = u16::from_le_bytes([tail[end_record + 10], tail[end_record + 11]]);
+    if disk != 0 || directory_disk != 0 || disk_entries != total_entries {
+        return Err("Multi-disk ZIP archives are not supported".into());
+    }
+    if total_entries == u16::MAX || usize::from(total_entries) > maximum {
+        return Err(format!(
+            "Project ZIP entry count limit exceeded (maximum {maximum})"
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,9 +100,11 @@ pub struct RecoveryListing {
     pub truncated: bool,
 }
 
-const MAX_RECOVERY_CANDIDATES: usize = 128;
+const MAX_RECOVERY_CANDIDATES: usize = MAX_RECOVERY_DIRECTORY_ENTRIES - 1;
 const MAX_RECOVERY_LIST_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_RECOVERY_INDEX_SCAN_BYTES: u64 = MAX_PROJECT;
 const MAX_SAFE_GENERATION: u64 = 9_007_199_254_740_991;
+const RECOVERY_GENERATION_INDEX: &str = "recovery-generation.json";
 
 fn err(error: impl std::fmt::Display) -> String {
     error.to_string()
@@ -412,8 +459,9 @@ fn inspect_destination(path: &Path) -> Result<DestinationInspection, String> {
     }
 
     let identity = (|| -> Result<(String, String), String> {
-        let mut archive =
-            zip::ZipArchive::new(open_regular_file(path, MAX_PROJECT)?).map_err(err)?;
+        let mut file = open_regular_file(path, MAX_PROJECT)?;
+        enforce_zip_entry_limit(&mut file, MAX_ASSETS + 1)?;
+        let mut archive = zip::ZipArchive::new(file).map_err(err)?;
         let snapshot = validate_project_archive(&mut archive)?;
         Ok((
             project_id(&snapshot)?.to_owned(),
@@ -1101,14 +1149,14 @@ fn persist_session_locked(
     persist_locked(&document, root)
 }
 
-fn retain_active_recovery(root: &Path, next: &[u8]) -> Result<(), String> {
+fn retain_active_recovery(root: &Path, next: &[u8]) -> Result<bool, String> {
     let active = root.join("recovery.json");
     match fs::symlink_metadata(&active) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             return Err("Active recovery cannot be a symbolic link".into());
         }
         Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(err(error)),
     }
     let mut prior = Vec::new();
@@ -1118,7 +1166,7 @@ fn retain_active_recovery(root: &Path, next: &[u8]) -> Result<(), String> {
         MAX_DOCUMENT,
     )?;
     if prior == next {
-        return Ok(());
+        return Ok(false);
     }
     if let (Ok(previous), Ok(next_snapshot)) = (
         serde_json::from_slice::<Value>(&prior),
@@ -1127,7 +1175,7 @@ fn retain_active_recovery(root: &Path, next: &[u8]) -> Result<(), String> {
         if previous["generation"] == next_snapshot["generation"]
             && previous.get("fingerprint") == next_snapshot.get("fingerprint")
         {
-            return Ok(());
+            return Ok(false);
         }
     }
     let history = root.join("recovery-history");
@@ -1157,7 +1205,7 @@ fn retain_active_recovery(root: &Path, next: &[u8]) -> Result<(), String> {
         if existing != prior {
             return Err("Recovery history digest collision".into());
         }
-        return Ok(());
+        return Ok(false);
     }
     let temp = unique(&history, "history");
     let result = (|| {
@@ -1174,7 +1222,227 @@ fn retain_active_recovery(root: &Path, next: &[u8]) -> Result<(), String> {
     if result.is_err() {
         let _ = fs::remove_file(temp);
     }
+    result.map(|()| true)
+}
+
+fn generation_index_checksum(generation: u64, history_entries: usize) -> String {
+    g_ann_package::sha256(
+        format!("ann-studio-recovery-generation-v1:{generation}:{history_entries}").as_bytes(),
+    )
+}
+
+fn read_generation_index(root: &Path) -> Result<Option<(u64, usize)>, String> {
+    let path = root.join(RECOVERY_GENERATION_INDEX);
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(err(error)),
+        Ok(metadata) if !metadata.is_file() || metadata.file_type().is_symlink() => {
+            return Err("Recovery generation index must be a regular file".into())
+        }
+        Ok(_) => {}
+    }
+    let mut file = match open_regular_file(&path, 1024) {
+        Ok(file) => file,
+        Err(_) => return Ok(None),
+    };
+    let mut bytes = Vec::new();
+    copy_bounded(&mut file, &mut bytes, 1024)?;
+    let Ok(index) = serde_json::from_slice::<Value>(&bytes) else {
+        return Ok(None);
+    };
+    let Some(generation) = index["highWaterGeneration"].as_u64() else {
+        return Ok(None);
+    };
+    let Some(history_entries) = index["historyEntryCount"]
+        .as_u64()
+        .and_then(|count| usize::try_from(count).ok())
+    else {
+        return Ok(None);
+    };
+    if index["schemaVersion"] != 1
+        || generation > MAX_SAFE_GENERATION
+        || index["checksum"].as_str()
+            != Some(generation_index_checksum(generation, history_entries).as_str())
+    {
+        return Ok(None);
+    }
+    Ok(Some((generation, history_entries)))
+}
+
+fn recovery_history_entry_count(root: &Path) -> Result<usize, String> {
+    let Some(history) = history_directory(root)? else {
+        return Ok(0);
+    };
+    let mut entries = 0;
+    for (index, entry) in fs::read_dir(history).map_err(err)?.enumerate() {
+        if index >= MAX_RECOVERY_DIRECTORY_ENTRIES {
+            return Err("Recovery history exceeds the 4096-entry index limit".into());
+        }
+        let path = entry.map_err(err)?.path();
+        if path.extension().and_then(|extension| extension.to_str()) == Some("json") {
+            entries += 1;
+        }
+    }
+    Ok(entries)
+}
+
+fn candidate_generation_from_file(
+    project_id: &str,
+    path: &Path,
+    kind: &str,
+    expected_digest: Option<&str>,
+    bytes_scanned: &mut u64,
+) -> Result<Option<u64>, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(err(error)),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > MAX_DOCUMENT {
+        return Ok(None);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Ok(None);
+        }
+    }
+    let size = metadata.len();
+    *bytes_scanned = bytes_scanned
+        .checked_add(size)
+        .ok_or("Recovery generation scan size overflow")?;
+    if *bytes_scanned > MAX_RECOVERY_INDEX_SCAN_BYTES {
+        return Err("Recovery generation index scan exceeds the 2 GiB limit".into());
+    }
+    let file = open_regular_file(path, MAX_DOCUMENT)
+        .map_err(|error| format!("Cannot verify recovery generation candidate: {error}"))?;
+    let mut bytes = Vec::with_capacity(size as usize);
+    let read = copy_bounded(file.take(size), &mut bytes, size)?;
+    if read != size {
+        return Err("Recovery candidate changed during generation index scan".into());
+    }
+    Ok(
+        recovery_candidate_from_bytes(project_id, kind, &bytes, expected_digest)
+            .ok()
+            .map(|candidate| candidate.generation),
+    )
+}
+
+fn scan_recovery_generation(project_id: &str, root: &Path) -> Result<u64, String> {
+    let mut highest = 0;
+    let mut bytes_scanned = 0;
+    let active = root.join("recovery.json");
+    if let Some(generation) =
+        candidate_generation_from_file(project_id, &active, "active", None, &mut bytes_scanned)?
+    {
+        highest = highest.max(generation);
+    }
+
+    if let Some(history) = history_directory(root)? {
+        for (index, entry) in fs::read_dir(history).map_err(err)?.enumerate() {
+            if index >= MAX_RECOVERY_DIRECTORY_ENTRIES {
+                return Err("Recovery generation index scan exceeds the 4096-entry limit".into());
+            }
+            let entry = entry.map_err(err)?;
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+                continue;
+            }
+            let digest = path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("");
+            if !valid_session_token(digest) {
+                continue;
+            }
+            if let Some(generation) = candidate_generation_from_file(
+                project_id,
+                &path,
+                "history",
+                Some(digest),
+                &mut bytes_scanned,
+            )? {
+                highest = highest.max(generation);
+            }
+        }
+    }
+    Ok(highest)
+}
+
+fn write_generation_index(
+    root: &Path,
+    generation: u64,
+    history_entries: usize,
+) -> Result<(), String> {
+    let bytes = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": 1,
+        "highWaterGeneration": generation,
+        "historyEntryCount": history_entries,
+        "checksum": generation_index_checksum(generation, history_entries),
+    }))
+    .map_err(err)?;
+    let path = root.join(RECOVERY_GENERATION_INDEX);
+    let temp = unique(root, "generation-index");
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)
+            .map_err(err)?;
+        file.write_all(&bytes).map_err(err)?;
+        file.sync_all().map_err(err)?;
+        drop(file);
+        fs::rename(&temp, &path).map_err(err)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
     result
+}
+
+fn recovery_generation_high_water(
+    project_id: &str,
+    root: &Path,
+    minimum_generation: u64,
+) -> Result<(Option<u64>, u64), String> {
+    if minimum_generation > MAX_SAFE_GENERATION {
+        return Err("Project generation limit reached".into());
+    }
+    let index = read_generation_index(root)?;
+    let current_history_entries = recovery_history_entry_count(root)?;
+    let recorded = index
+        .filter(|(_, count)| *count == current_history_entries)
+        .map(|(generation, _)| generation);
+    let scanned = if recorded.is_none() {
+        scan_recovery_generation(project_id, root)?
+    } else {
+        0
+    };
+    let highest = recorded.unwrap_or(0).max(scanned).max(minimum_generation);
+    Ok((recorded, highest))
+}
+
+fn update_generation_index(
+    project_id: &str,
+    root: &Path,
+    minimum_generation: u64,
+) -> Result<(u64, usize), String> {
+    let history_entries = recovery_history_entry_count(root)?;
+    let index = read_generation_index(root)?;
+    let recorded = index
+        .filter(|(_, count)| *count == history_entries)
+        .map(|(generation, _)| generation);
+    let scanned = if recorded.is_none() {
+        scan_recovery_generation(project_id, root)?
+    } else {
+        0
+    };
+    let highest = recorded.unwrap_or(0).max(scanned).max(minimum_generation);
+    if recorded != Some(highest) || index.is_none() {
+        write_generation_index(root, highest, history_entries)?;
+    }
+    Ok((highest, history_entries))
 }
 
 fn persist_locked(snapshot: &Value, root: &Path) -> Result<(), String> {
@@ -1182,7 +1450,19 @@ fn persist_locked(snapshot: &Value, root: &Path) -> Result<(), String> {
     if bytes.len() as u64 > MAX_DOCUMENT {
         return Err("Project document exceeds 16 MiB".into());
     }
-    retain_active_recovery(root, &bytes)?;
+    let (high_water_generation, history_entries) = update_generation_index(
+        project_id(snapshot)?,
+        root,
+        snapshot["generation"]
+            .as_u64()
+            .ok_or("Missing generation")?,
+    )?;
+    if retain_active_recovery(root, &bytes)? {
+        let history_entries = history_entries
+            .checked_add(1)
+            .ok_or("Recovery history entry count overflow")?;
+        write_generation_index(root, high_water_generation, history_entries)?;
+    }
     let temp = unique(root, "recovery");
     let result = (|| {
         let mut file = OpenOptions::new()
@@ -1699,10 +1979,6 @@ pub fn activate_project_session(
     let id = project_id(&snapshot)?;
     let root = workspace.join(id);
     let _guard = lock(&root)?;
-    let listing = recovery_listing_locked(id, workspace)?;
-    if listing.truncated {
-        return Err("Recovery history is too large to safely allocate a session generation".into());
-    }
     let latest = match latest_snapshot(id, workspace) {
         Ok(latest) => latest,
         Err(_) => None,
@@ -1717,17 +1993,15 @@ pub fn activate_project_session(
     }) {
         return Err("Project announcer identity changed within the same project lineage".into());
     }
-    let highest = listing
-        .candidates
-        .iter()
-        .map(|candidate| candidate.generation)
-        .chain(std::iter::once(
-            snapshot["generation"]
-                .as_u64()
-                .ok_or("Invalid project generation")?,
-        ))
-        .max()
-        .ok_or("Missing project generation")?;
+    let snapshot_generation = snapshot["generation"]
+        .as_u64()
+        .ok_or("Invalid project generation")?;
+    let minimum_generation = latest
+        .as_ref()
+        .and_then(|current| current["generation"].as_u64())
+        .unwrap_or(0)
+        .max(snapshot_generation);
+    let (_, highest) = recovery_generation_high_water(id, &root, minimum_generation)?;
     let generation = highest
         .checked_add(1)
         .filter(|value| *value <= MAX_SAFE_GENERATION)
@@ -1864,10 +2138,11 @@ pub fn save(
 }
 
 pub fn open(path: &Path, workspace: &Path) -> Result<ProjectOpenResult, String> {
-    let file = File::open(path).map_err(err)?;
+    let mut file = File::open(path).map_err(err)?;
     if file.metadata().map_err(err)?.len() > MAX_PROJECT {
         return Err("Project archive exceeds 2 GiB".into());
     }
+    enforce_zip_entry_limit(&mut file, MAX_ASSETS + 1)?;
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|_| "Invalid .ann archive; use Import Old Project for .ann v1 JSON".to_string())?;
     if archive.len() > MAX_ASSETS + 1 {
