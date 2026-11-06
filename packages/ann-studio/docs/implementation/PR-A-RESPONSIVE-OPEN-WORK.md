@@ -1,10 +1,22 @@
 # PR-A responsive acceptance: remaining work
 
-Snapshot: 2026-11-02. PR [#18](https://github.com/Freshair129/G-Suite/pull/18), issue [#13](https://github.com/Freshair129/G-Suite/issues/13), implementation head `f0e4951` (this note may be committed later). Base: `design/annstudio-glass-responsive-v1`.
+Historical snapshot: 2026-11-02. PR [#18](https://github.com/Freshair129/G-Suite/pull/18), issue [#13](https://github.com/Freshair129/G-Suite/issues/13), implementation head `f0e4951`. Original base: `design/annstudio-glass-responsive-v1`.
 
 The user requested preparation for a limited internal MVP with the outstanding work documented, and explicitly said not to merge. This scoped MVP review does not establish full responsive acceptance or waive the existing requirements. The [change request](../change-requests/CR-ANN-UI-001.md), [design system](../design-system/GLASS-RESPONSIVE-UI-v1.md), and [handoff](CODEX-HANDOFF-ANN-UI-001.md) remain the binding requirements for full acceptance. PR-B through PR-D / issues #14–#16 follow the dependency order in epic #17 after PR-A's gate.
 
 The PR description is the detailed chronological evidence ledger. Read its latest entries as well as this summary; older entries can describe gaps that later work partially addressed. Recheck the PR head, review and checks before making any current claim.
+
+## Current clean-main port (2026-11-06)
+
+PR #18 is closed and its changes are not on `main`. A clean port is being prepared on `fix/annstudio-responsive-main`, based on `origin/main` at `1adc998de2aeb2675d6aa911f0fb209607e6f0ab`. Code and responsive tests were checked at `dfc5182`; this note is a documentation-only follow-up.
+
+- **PASS — AnnStudio unit tests:** 30 files, 171 tests.
+- **PASS — TypeScript:** `node ./node_modules/typescript/bin/tsc --noEmit --incremental false` from `packages/ann-studio/src`.
+- **PASS — populated browser matrix:** `node e2e/responsive.mjs` with Chrome at viewport sizes 960×600, 1024×768, 1280×720, 1440×900, and 1920×1080, each at browser DPR 1, 1.25, and 1.5. The run also covered the 101-clip Thai/English fixture, event toolbar text at simulated 125% CSS zoom, populated library dialog labels and Tab/Shift-Tab/Escape/focus return, Agent draft and compact drawer focus, and connected Profile actions.
+- The first browser run exposed a timing flaw in the focus test: it resized again before the app's `ResizeObserver` had committed the previous layout. The regression test now waits for the measured layout mode before focusing or asserting; a separate browser probe confirmed focus returns to Agent/Assets after the corresponding measured transition. No responsive application defect was found in that probe.
+- **Not captured on this clean port:** the passing browser matrix does not save screenshots and is not Tauri/native evidence. The existing `pr18-*` screenshots below are historical diagnostics from the closed PR, not fresh captures from `dfc5182`.
+- **Native acceptance still open:** no current-candidate Tauri viewport/DPI, install, audio, keyboard/screen-reader or real desktop screenshot run was performed. A process probe at 2026-11-06 08:35 Asia/Bangkok found no `dota2.exe` or `gameoverlayui64.exe`; the connected G-Maiden monitor only had an observation from 2026-11-01, so its state is unverified. This checkout has no qualified owner-scoped native/Cargo build lane and storage-floor evidence, so a local native candidate was not built or installed. Hosted CI does not replace that UAT.
+- The initial `pnpm test`/`pnpm exec tsc` invocations were stopped by pnpm's safety prompt before it could remove/reinstall the workspace `node_modules` without a TTY. No dependency install or removal occurred. The checks above were run through the already-installed Node binaries. Hosted CI must still verify the clean port and frozen-lockfile build.
 
 ## Evidence already collected, with limits
 
