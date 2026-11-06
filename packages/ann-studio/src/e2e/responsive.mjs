@@ -6,6 +6,16 @@ import { fileURLToPath } from 'node:url';
 const packageDir = fileURLToPath(new URL('..', import.meta.url));
 const vite = fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url));
 const server = spawn(process.execPath, [vite, '--host', '127.0.0.1', '--port', '5175', '--strictPort'], { cwd: packageDir, stdio: 'inherit' });
+async function waitForLayout(page, mode) {
+  await page.waitForFunction(expected => {
+    const assets = document.getElementById('asset-rail');
+    const agent = document.getElementById('agent-rail');
+    if (!assets || !agent) return false;
+    if (expected === 'wide') return agent.classList.contains('shrink-0');
+    if (expected === 'medium') return assets.classList.contains('shrink-0') && agent.classList.contains('absolute');
+    return assets.classList.contains('absolute');
+  }, mode);
+}
 async function waitForServer() {
   for (let attempt = 0; attempt < 100; attempt++) {
     if (server.exitCode !== null) throw new Error(`Vite exited ${server.exitCode}`);
@@ -37,18 +47,23 @@ try {
   assert.equal(await page.getByRole('button', {name:'Studio', exact:true}).isVisible(), false, 'Escape should close the menu');
   assert.equal(await menu.evaluate(el => el === document.activeElement), true, 'closing menu should restore focus');
   await page.setViewportSize({width:1440,height:900});
+  await waitForLayout(page, 'wide');
   await page.getByPlaceholder('พิมพ์คำสั่ง AI…').focus();
   await page.setViewportSize({width:1200,height:720});
+  await waitForLayout(page, 'medium');
   await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Agent');
   await page.getByTitle('Refresh', {exact:true}).focus();
   await page.setViewportSize({width:960,height:600});
+  await waitForLayout(page, 'compact');
   await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Assets');
   await page.setViewportSize({width:1200,height:720});
+  await waitForLayout(page, 'medium');
   await page.getByRole('button', {name:'Agent', exact:true}).click();
   const agentInput = page.getByPlaceholder('พิมพ์คำสั่ง AI…');
   await agentInput.fill('ช่วย test draft');
   await agentInput.focus();
   await page.setViewportSize({width:960,height:600});
+  await waitForLayout(page, 'compact');
   await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Agent');
   await page.getByRole('button', {name:'Agent', exact:true}).click();
   assert.equal(await agentInput.inputValue(), 'ช่วย test draft', 'Agent draft lost on layout transition');
@@ -58,7 +73,7 @@ try {
   const expectedName = await clipName.inputValue();
   for (const [width, height] of [[960,600],[1024,768],[1280,720],[1440,900],[1920,1080]]) {
     await page.setViewportSize({width,height});
-    await page.waitForTimeout(250);
+    await waitForLayout(page, width >= 1380 ? 'wide' : width >= 1000 ? 'medium' : 'compact');
     const result = await page.evaluate(() => {
       const failures = [];
       if (document.documentElement.scrollWidth > document.documentElement.clientWidth) failures.push('document overflows');
