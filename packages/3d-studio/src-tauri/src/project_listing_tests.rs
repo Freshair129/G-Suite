@@ -51,20 +51,26 @@ fn project_source_junction_is_not_enumerated() {
 
     #[cfg(windows)]
     {
-        let command = format!(
-            "mklink /J \"{}\" \"{}\"",
-            source.display(),
-            external.display()
-        );
-        let output = std::process::Command::new("cmd.exe")
-            .args(["/C", command.as_str()])
+        // Avoid cmd.exe /C re-parsing quoted Windows paths. The paths travel
+        // through environment variables so spaces and shell metacharacters are
+        // not interpreted as part of the PowerShell command.
+        let output = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "New-Item -ItemType Junction -Path $env:G_SUITE_TEST_JUNCTION_LINK -Target $env:G_SUITE_TEST_JUNCTION_TARGET -ErrorAction Stop | Out-Null",
+            ])
+            .env("G_SUITE_TEST_JUNCTION_LINK", &source)
+            .env("G_SUITE_TEST_JUNCTION_TARGET", &external)
             .output()
             .unwrap();
-        assert!(
-            output.status.success(),
-            "junction setup failed: {}",
+        let details = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        assert!(output.status.success(), "junction setup failed: {details}");
     }
     #[cfg(unix)]
     std::os::unix::fs::symlink(&external, &source).unwrap();
