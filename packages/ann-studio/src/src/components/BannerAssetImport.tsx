@@ -127,7 +127,7 @@ export default function BannerAssetImport() {
         }}
         className="w-full max-w-xl rounded-xl border border-line bg-panel p-5 text-ink shadow-2xl outline-none"
       >
-        <h2 id="banner-import-title" className="text-lg font-bold">ตรวจสอบ Banner Asset: {manifest.name}</h2>
+        <h2 id="banner-import-title" className="min-w-0 break-words [overflow-wrap:anywhere] text-lg font-bold">ตรวจสอบ Banner Asset: {manifest.name}</h2>
         <p className="mt-1 text-xs text-ink-muted">{manifest.assetId} · revision {manifest.revision} · {manifest.mediaKind}</p>
         <p className="mt-3 rounded border border-line bg-black/20 p-3 text-sm leading-relaxed">{capabilities(manifest)}</p>
         {manifest.mediaKind === "baked-video" && <p className="mt-2 text-xs text-amber-200">Importer เก็บวิดีโอเป็น media layer เงียบ; ไม่รับรอง alpha/playback parity ของ G-Maiden</p>}

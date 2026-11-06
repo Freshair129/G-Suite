@@ -59,6 +59,21 @@ describe("BannerAssetImport", () => {
     expect(await screen.findByText(/นำเข้าแบนเนอร์แล้ว/)).toBeTruthy();
   });
 
+  it("wraps long Thai and English banner names inside the import dialog", async () => {
+    const name = `${"ภาษาไทยยาวมาก ".repeat(12)}${"UnbrokenEnglishBannerName".repeat(8)}`;
+    vi.mocked(inspectBannerAssetArchive).mockResolvedValue({
+      ...preview,
+      manifest: { ...preview.manifest, name },
+    });
+
+    render(<BannerAssetImport />);
+    fireEvent.click(screen.getByRole("button", { name: /นำเข้า Banner Asset/ }));
+
+    const heading = await screen.findByRole("heading", { name: `ตรวจสอบ Banner Asset: ${name}` });
+    expect(heading.className).toContain("break-words");
+    expect(heading.className).toContain("[overflow-wrap:anywhere]");
+  });
+
   it("keeps Apply disabled when no voice variant is available", async () => {
     useStudioStore.setState({ clips: [], selectedClipId: null });
     render(<BannerAssetImport />);

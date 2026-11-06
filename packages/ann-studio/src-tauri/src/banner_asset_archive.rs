@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::OnceLock,
 };
@@ -17,6 +17,51 @@ const MAX_FILE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = MAX_BUNDLE_BYTES + MAX_MANIFEST_BYTES + 1024 * 1024;
 const SCHEMA: &str = include_str!("../../../../schemas/banner-asset-v1.schema.json");
+
+fn enforce_zip_entry_limit<R: Read + Seek>(reader: &mut R, maximum: usize) -> Result<(), String> {
+    const END_RECORD_LEN: usize = 22;
+    const MAX_COMMENT_LEN: usize = u16::MAX as usize;
+    const END_RECORD_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+
+    let file_len = reader
+        .seek(SeekFrom::End(0))
+        .map_err(|error| format!("Cannot inspect ZIP end record: {error}"))?;
+    let scan_len = file_len.min((END_RECORD_LEN + MAX_COMMENT_LEN) as u64) as usize;
+    if scan_len < END_RECORD_LEN {
+        return Err("Invalid ZIP end record".into());
+    }
+    reader
+        .seek(SeekFrom::End(-(scan_len as i64)))
+        .map_err(|error| format!("Cannot seek to ZIP end record: {error}"))?;
+    let mut tail = vec![0; scan_len];
+    reader
+        .read_exact(&mut tail)
+        .map_err(|error| format!("Cannot read ZIP end record: {error}"))?;
+
+    let end_record = (0..=tail.len() - END_RECORD_LEN)
+        .rev()
+        .find(|offset| {
+            tail[*offset..*offset + 4] == END_RECORD_SIGNATURE
+                && *offset
+                    + END_RECORD_LEN
+                    + u16::from_le_bytes([tail[*offset + 20], tail[*offset + 21]]) as usize
+                    == tail.len()
+        })
+        .ok_or("Invalid ZIP end record")?;
+    let disk = u16::from_le_bytes([tail[end_record + 4], tail[end_record + 5]]);
+    let directory_disk = u16::from_le_bytes([tail[end_record + 6], tail[end_record + 7]]);
+    let disk_entries = u16::from_le_bytes([tail[end_record + 8], tail[end_record + 9]]);
+    let total_entries = u16::from_le_bytes([tail[end_record + 10], tail[end_record + 11]]);
+    if disk != 0 || directory_disk != 0 || disk_entries != total_entries {
+        return Err("Multi-disk ZIP archives are not supported".into());
+    }
+    if total_entries == u16::MAX || usize::from(total_entries) > maximum {
+        return Err(format!(
+            "ZIP entry count limit exceeded (maximum {maximum})"
+        ));
+    }
+    Ok(())
+}
 
 static SCHEMA_VALIDATOR: OnceLock<Result<Validator, String>> = OnceLock::new();
 
@@ -167,6 +212,56 @@ fn manifest_file_map(manifest: &Value) -> Result<BTreeMap<String, Value>, String
     Ok(map)
 }
 
+fn validate_layer_hierarchy(layers: &[Value]) -> Result<(), String> {
+    let mut by_id = BTreeMap::new();
+    let mut parents = BTreeMap::new();
+    for layer in layers {
+        let id = layer["id"].as_str().ok_or("BannerLayer ID is missing")?;
+        if !valid_id(id) || by_id.insert(id, layer).is_some() {
+            return Err("BannerLayer IDs must be unique safe identifiers".into());
+        }
+        if let Some(parent_id) = layer["parentId"].as_str() {
+            parents.insert(id, parent_id);
+        }
+    }
+
+    for parent_id in parents.values() {
+        let parent = by_id
+            .get(*parent_id)
+            .ok_or("BannerLayer parent is missing")?;
+        if parent["kind"] != "group" {
+            return Err("BannerLayer parent must be a group".into());
+        }
+    }
+
+    // Each layer transitions from unseen to visiting to complete at most once.
+    // This keeps validation linear in the number of layers rather than walking
+    // every ancestor chain from every layer.
+    let mut state = BTreeMap::<&str, u8>::new();
+    for start in by_id.keys().copied() {
+        let mut cursor = start;
+        let mut path = Vec::new();
+        loop {
+            match state.get(cursor).copied() {
+                Some(1) => return Err("BannerProject group hierarchy contains a cycle".into()),
+                Some(2) => break,
+                _ => {
+                    state.insert(cursor, 1);
+                    path.push(cursor);
+                    match parents.get(cursor) {
+                        Some(parent_id) => cursor = *parent_id,
+                        None => break,
+                    }
+                }
+            }
+        }
+        for id in path {
+            state.insert(id, 2);
+        }
+    }
+    Ok(())
+}
+
 fn validate_cross_fields(manifest: &Value, files: &BTreeMap<String, Value>) -> Result<(), String> {
     let kind = manifest["mediaKind"]
         .as_str()
@@ -290,16 +385,7 @@ fn validate_cross_fields(manifest: &Value, files: &BTreeMap<String, Value>) -> R
             if layers.len() > 4096 {
                 return Err("BannerProject exceeds AnnStudio's 4096 layer limit".into());
             }
-            let mut layer_ids = BTreeSet::new();
-            let mut parents = Vec::new();
             for layer in layers {
-                let id = layer["id"].as_str().ok_or("BannerLayer ID is missing")?;
-                if !valid_id(id) || !layer_ids.insert(id) {
-                    return Err("BannerLayer IDs must be unique safe identifiers".into());
-                }
-                if let Some(parent) = layer["parentId"].as_str() {
-                    parents.push((id, parent));
-                }
                 if let Some(asset_id) = layer["content"].get("assetId").and_then(Value::as_str) {
                     if !asset_ids.contains(asset_id) {
                         return Err("BannerLayer references an unknown BannerProject asset".into());
@@ -323,32 +409,7 @@ fn validate_cross_fields(manifest: &Value, files: &BTreeMap<String, Value>) -> R
                     }
                 }
             }
-            for (_, parent_id) in parents {
-                let parent = layers
-                    .iter()
-                    .find(|layer| layer["id"] == parent_id)
-                    .ok_or("BannerLayer parent is missing")?;
-                if parent["kind"] != "group" {
-                    return Err("BannerLayer parent must be a group".into());
-                }
-            }
-            for layer in layers {
-                let mut seen = BTreeSet::new();
-                let mut cursor = layer;
-                loop {
-                    let id = cursor["id"].as_str().ok_or("BannerLayer ID is missing")?;
-                    if !seen.insert(id) {
-                        return Err("BannerProject group hierarchy contains a cycle".into());
-                    }
-                    let Some(parent_id) = cursor["parentId"].as_str() else {
-                        break;
-                    };
-                    cursor = layers
-                        .iter()
-                        .find(|candidate| candidate["id"] == parent_id)
-                        .ok_or("BannerLayer parent is missing")?;
-                }
-            }
+            validate_layer_hierarchy(layers)?;
             if project["schemaVersion"] != 1 {
                 return Err("Unsupported BannerProject schema version".into());
             }
@@ -491,6 +552,8 @@ fn extract(
     if length > MAX_ARCHIVE_BYTES {
         return Err("Banner ZIP exceeds the 514 MiB transfer limit".into());
     }
+    let mut file = file;
+    enforce_zip_entry_limit(&mut file, MAX_FILES + 1)?;
     let mut archive = ZipArchive::new(file).map_err(|e| format!("Invalid banner ZIP: {e}"))?;
     let entries = read_archive_entries(&mut archive)?;
     let manifest_entry = entries
@@ -681,6 +744,14 @@ mod tests {
         zip.finish().unwrap();
     }
 
+    fn end_record_with_entry_count(count: u16) -> Vec<u8> {
+        let mut record = vec![0; 22];
+        record[0..4].copy_from_slice(&0x0605_4b50u32.to_le_bytes());
+        record[8..10].copy_from_slice(&count.to_le_bytes());
+        record[10..12].copy_from_slice(&count.to_le_bytes());
+        record
+    }
+
     #[test]
     fn inspects_and_extracts_a_valid_banner_archive_with_exact_manifest_digest() {
         let root = root();
@@ -772,6 +843,58 @@ mod tests {
         );
         assert!(super::inspect(&extra).is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_excessive_entry_count_before_parsing_the_central_directory() {
+        let root = root();
+        let path = root.join("excessive-entry-count.zip");
+        fs::write(
+            &path,
+            end_record_with_entry_count((super::MAX_FILES + 2) as u16),
+        )
+        .unwrap();
+
+        let error = super::inspect(&path).unwrap_err();
+        assert!(error.contains("entry count limit"), "{error}");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn validates_the_maximum_depth_layer_hierarchy_with_bounded_work() {
+        let layers = (0..4096)
+            .map(|index| {
+                json!({
+                    "id": format!("layer-{index}"),
+                    "kind": "group",
+                    "parentId": if index == 0 {
+                        Value::Null
+                    } else {
+                        json!(format!("layer-{}", index - 1))
+                    },
+                })
+            })
+            .collect::<Vec<_>>();
+        let started = std::time::Instant::now();
+
+        super::validate_layer_hierarchy(&layers).unwrap();
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "validating 4096 layers took {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn rejects_layer_hierarchy_cycles() {
+        let layers = vec![
+            json!({"id":"root","kind":"group","parentId":"child"}),
+            json!({"id":"child","kind":"group","parentId":"root"}),
+        ];
+        assert!(super::validate_layer_hierarchy(&layers)
+            .unwrap_err()
+            .contains("cycle"));
     }
 
     #[test]

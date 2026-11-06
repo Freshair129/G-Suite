@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import "./App.css";
 
 type StudioStatus = { blenderPath: string | null; blenderAvailable: boolean; blenderVersion: string | null; workspaceRoot: string };
-type ProjectSummary = { id: string; state: string; provenance: string; hasBlendSource: boolean };
+type ProjectSummary = { id: string; state: string; provenance: string; hasBlendSource: boolean; sourceScanLimited: boolean };
 
 export default function App() {
   const [status, setStatus] = useState<StudioStatus | null>(null);
@@ -77,7 +77,7 @@ export default function App() {
     <section className="workspace">
       <header><div><p>LOCAL CREATIVE PIPELINE</p><h1>G‑Maiden 3D Studio</h1></div><span className={status?.blenderAvailable ? "online" : "offline"}>{status ? (status.blenderVersion ?? "Blender not verified") : "Checking Blender"}</span></header>
       <div className="canvas"><div className="empty-orbit"><span>◇</span><p>ไม่มีโมเดลที่ผ่านการ review</p><small>สร้าง project เพื่อเริ่ม source, preview และ export manifest</small></div>
-        <div className="project-list" aria-label="Local Studio projects">{projects.map((project) => <article key={project.id}><strong>{project.id}</strong><span>{project.state}</span><small>{project.hasBlendSource ? "Blender source found" : "No Blender source yet"}</small><p>{project.provenance}</p></article>)}</div>
+        <div className="project-list" aria-label="Local Studio projects">{projects.map((project) => <article key={project.id}><strong>{project.id}</strong><span>{project.state}</span><small>{project.hasBlendSource ? "Blender source found" : project.sourceScanLimited ? "Source list limited to the first 256 entries" : "No Blender source yet"}</small><p>{project.provenance}</p></article>)}</div>
       </div>
       <footer><span>{notice}</span><span>{status?.workspaceRoot ?? "Workspace not loaded"}</span></footer>
     </section>

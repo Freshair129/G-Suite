@@ -462,6 +462,50 @@ fn reopening_an_older_archive_can_save_a_copy_without_erasing_newer_recovery() {
 }
 
 #[test]
+fn recovery_generation_index_tracks_history_created_by_each_save() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let destination = root.join("original.ann");
+    let initial = save(&destination, snapshot(), paths, &workspace).unwrap();
+    let project_root = workspace.join("00000000-0000-4000-8000-000000000001");
+    let history = project_root.join("recovery-history");
+
+    for (generation, name, expected_count) in [(6, "First edit", 1), (7, "Second edit", 2)] {
+        let mut edited = initial.snapshot.clone();
+        edited["generation"] = json!(generation);
+        edited["project"]["name"] = json!(name);
+        edited["fingerprint"] = json!(project_fingerprint(&edited).unwrap());
+        prepare_with_session(
+            edited,
+            initial.asset_paths.clone(),
+            Some(initial.session_token.clone()),
+            &workspace,
+        )
+        .unwrap();
+
+        let actual_count = fs::read_dir(&history)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry.path().extension().and_then(|value| value.to_str()) == Some("json")
+            })
+            .count();
+        assert_eq!(actual_count, expected_count);
+        let index: Value = serde_json::from_slice(
+            &fs::read(project_root.join(RECOVERY_GENERATION_INDEX)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(index["highWaterGeneration"], generation);
+        assert_eq!(index["historyEntryCount"], expected_count);
+    }
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn different_projects_cannot_replace_a_shared_destination_without_matching_confirmation() {
     let root = root();
     let source = root.join("voice.wav");
@@ -734,6 +778,98 @@ fn truncated_recovery_listing_selects_a_stable_sorted_candidate_subset() {
             .map(|candidate| candidate.id.clone())
             .collect::<BTreeSet<_>>()
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_zip_entry_limit_is_checked_before_central_directory_parsing() {
+    let root = root();
+    let path = root.join("excessive-entry-count.ann");
+    let count = (MAX_ASSETS + 2) as u16;
+    let mut record = vec![0; 22];
+    record[0..4].copy_from_slice(&0x0605_4b50u32.to_le_bytes());
+    record[8..10].copy_from_slice(&count.to_le_bytes());
+    record[10..12].copy_from_slice(&count.to_le_bytes());
+    fs::write(&path, record).unwrap();
+
+    let error = open(&path, &root.join("cache")).unwrap_err();
+    assert!(error.contains("entry count limit"), "{error}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn more_than_128_recoveries_remain_listable_openable_and_saveable() {
+    let root = root();
+    let source = root.join("voice.wav");
+    fs::write(&source, b"preserved voice").unwrap();
+    let workspace = root.join("cache");
+    let paths = BTreeMap::from([("asset-one".into(), source.to_string_lossy().into_owned())]);
+    let prepared = prepare(snapshot(), paths, &workspace).unwrap();
+    let project_root = workspace.join("00000000-0000-4000-8000-000000000001");
+    let history = project_root.join("recovery-history");
+    fs::create_dir_all(&history).unwrap();
+
+    for index in 0..160u64 {
+        let mut candidate = prepared.snapshot.clone();
+        candidate["generation"] = json!(index + 1);
+        candidate["project"]["name"] = json!(format!("Recovery {index:03}"));
+        candidate["fingerprint"] = json!(project_fingerprint(&candidate).unwrap());
+        let bytes = serde_json::to_vec(&candidate).unwrap();
+        let digest = g_ann_package::sha256(&bytes);
+        fs::write(history.join(format!("{digest}.json")), bytes).unwrap();
+    }
+
+    let corrupt = br#"{"not":"a project"}"#;
+    fs::write(
+        history.join(format!("{}.json", g_ann_package::sha256(corrupt))),
+        corrupt,
+    )
+    .unwrap();
+    fs::remove_file(project_root.join("recovery.json")).unwrap();
+    fs::remove_file(project_root.join("recovery-generation.json")).unwrap();
+
+    let listing = recover("00000000-0000-4000-8000-000000000001", &workspace).unwrap();
+    assert!(!listing.truncated, "{:#?}", listing.warnings);
+    assert_eq!(listing.candidates.len(), 160);
+    assert!(listing
+        .warnings
+        .iter()
+        .any(|warning| warning.message.contains("Project missing")));
+    let selected_older = listing
+        .candidates
+        .iter()
+        .find(|candidate| candidate.generation == 5)
+        .unwrap();
+    let opened = open_recovery_candidate(
+        "00000000-0000-4000-8000-000000000001",
+        &selected_older.id,
+        &workspace,
+    )
+    .unwrap();
+    let activated =
+        activate_project_session(opened.snapshot, opened.asset_paths, None, &workspace).unwrap();
+    assert_eq!(activated.snapshot["generation"], 161);
+    let session_token = activated.session_token.as_deref().unwrap();
+    let destination = root.join("recovery-round-trip.ann");
+    save_with_session(
+        &destination,
+        activated.snapshot.clone(),
+        activated.asset_paths.clone(),
+        session_token,
+        &workspace,
+    )
+    .unwrap();
+    let reopened = open(&destination, &workspace).unwrap();
+    assert_eq!(reopened.snapshot["generation"], 161);
+    let generation_index: Value =
+        serde_json::from_slice(&fs::read(project_root.join("recovery-generation.json")).unwrap())
+            .unwrap();
+    assert_eq!(generation_index["highWaterGeneration"], 161);
+    let retained_count = fs::read_dir(&history)
+        .unwrap()
+        .filter_map(Result::ok)
+        .count();
+    assert!((161..=162).contains(&retained_count));
     fs::remove_dir_all(root).unwrap();
 }
 
