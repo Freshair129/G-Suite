@@ -2,6 +2,10 @@
 
 Guidance for Claude Code working in this repo.
 
+## Git, Worktree & Multi-Agent Lifecycle
+
+For Git/worktree operations read the relevant sections of [the local lifecycle policy](docs/engineering/GIT-WORKTREE-POLICY.md). This remains the primary project guide. Reuse owned workspaces, serialize writers, protect active AnnStudio/3D Studio work and integrate stacked prerequisites before dependent merges.
+
 ## What this is
 
 **G-Suite** — a pnpm-workspace monorepo of developer tools for the **G-Maiden** Dota 2 AI

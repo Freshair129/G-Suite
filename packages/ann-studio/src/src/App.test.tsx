@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { useStudioStore } from "./store/useStudioStore";
-vi.mock("./lib/project", () => ({ initializeProject: () => Promise.resolve(null) }));
+vi.mock("./lib/project", () => ({ initializeProject: () => Promise.resolve(null), registerRecoveryPicker: () => () => {} }));
 vi.mock("./lib/gidAuth", () => ({ restoreGidSession: vi.fn() }));
 vi.mock("./components/Header", () => ({ default: () => <div>Header</div> }));
 vi.mock("./components/StatusBar", () => ({ default: () => <div>Status</div> }));

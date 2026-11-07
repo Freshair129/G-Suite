@@ -143,6 +143,8 @@ interface StudioState {
   projectGeneration: number;
   projectPath: string | null;
   projectAssetPaths: Record<string, string>;
+  projectSessionToken: string | null;
+  projectTransitionPending: boolean;
   projectRecoveryError: string | null;
   recentProjectId: string | null;
   sourcePath: string | null;
@@ -307,6 +309,8 @@ export const useStudioStore = create<StudioState>()(
       projectGeneration: 0,
       projectPath: null,
       projectAssetPaths: {},
+      projectSessionToken: null,
+      projectTransitionPending: false,
       projectRecoveryError: null,
       recentProjectId: null,
       sourcePath: null,

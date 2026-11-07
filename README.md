@@ -9,6 +9,8 @@ Where this is headed: [`ROADMAP.md`](ROADMAP.md).
 
 | Package | Description | Status |
 | --- | --- | --- |
+| [`banner-contracts`](packages/banner-contracts) | Versioned authoring banner manifest, capability and byte verification foundation. | CR-SUITE-002 |
+| [`3d-studio`](packages/3d-studio) | Independent Blender-connected Studio shell; production assets remain external. | Migration / CR-SUITE-001 |
 | [`ann-studio`](packages/ann-studio) | **G-AnnStudio** — Tauri desktop app to author Dota 2 announcer packs for G-Maiden: import audio/video, AI auto-split, AI event mapping, and one-click install into G-Maiden. | v0.1.0 |
 
 ## G-AnnStudio — what it does
@@ -66,3 +68,7 @@ speech sidecar (CPU vs GPU, models) and [`CLAUDE.md`](CLAUDE.md) for repo conven
 
 Tools keep the `G-` prefix (per G-Maiden's ADR-01) for brand unity: **G-AnnStudio**, future
 **G-…** packs slot in under `packages/`.
+
+## Studio monorepo architecture
+
+See [ADR-001](docs/architecture/ADR-001-studio-monorepo.md) and [3D Studio setup](packages/3d-studio/README.md). AnnStudio and 3D Studio ship independently. Shared asset delivery and banner workflow integration are subsequent CRs, not implemented by this shell migration.

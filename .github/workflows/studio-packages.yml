@@ -1,0 +1,91 @@
+name: Studio packages
+
+on:
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'schemas/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/studio-packages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontends:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [ann-studio/src, 3d-studio]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C packages/${{ matrix.package }} build
+      - if: matrix.package == 'ann-studio/src'
+        run: pnpm -C packages/ann-studio/src test
+  studio-native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm 3d-studio:build:fe
+      - run: pnpm 3d-studio:test
+      - run: cargo fmt --check --manifest-path packages/3d-studio/src-tauri/Cargo.toml
+      - run: cargo check --locked --manifest-path packages/3d-studio/src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/3d-studio/src-tauri/Cargo.toml
+  ann-studio-native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C packages/ann-studio/src build
+      - run: node tools/prepare-ann-media.mjs
+      - run: cargo fmt --check --manifest-path packages/ann-studio/src-tauri/Cargo.toml
+      - run: cargo check --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml
+      - name: Round-trip a Studio-produced Banner Asset through AnnStudio and reopen
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/test-banner-roundtrip.ps1
+  banner-contracts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm banner-contracts:test

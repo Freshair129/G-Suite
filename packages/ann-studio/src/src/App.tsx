@@ -8,17 +8,22 @@ import Settings from "./components/Settings";
 import EventTestGrid from "./components/EventTestGrid";
 import SourceView from "./components/SourceView";
 import OverlayLab from "./components/OverlayLab";
+import RecoveryCandidateDialog from "./components/RecoveryCandidateDialog";
 import { useStudioStore } from "./store/useStudioStore";
-import { initializeProject } from "./lib/project";
+import { initializeProject, registerRecoveryPicker, type RecoveryListing } from "./lib/project";
 import { restoreGidSession } from "./lib/gidAuth";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { layoutMode, railWidths } from "./responsiveLayout";
 
 export default function App() {
   const view = useStudioStore((s) => s.view);
   const undoClips = useStudioStore((s) => s.undoClips);
   const redoClips = useStudioStore((s) => s.redoClips);
+  const projectTransitionPending = useStudioStore((s) => s.projectTransitionPending);
   const [projectMessage,setProjectMessage]=useState<string|null>(null);
+  const [recoveryRequest,setRecoveryRequest]=useState<{listing:RecoveryListing;resolve:(candidateId:string|null)=>void}|null>(null);
+  const appContentRef=useRef<HTMLDivElement>(null);
+  const transitionDialogRef=useRef<HTMLDivElement>(null);
   const [leftW, setLeftW] = useState(220);
   const [rightW, setRightW] = useState(340);
 
@@ -110,29 +115,44 @@ export default function App() {
   }
 
   useEffect(() => {
+    const unregister=registerRecoveryPicker((listing)=>new Promise(resolve=>setRecoveryRequest(current=>{current?.resolve(null);return {listing,resolve};})));
     void restoreGidSession();
     void initializeProject().then(setProjectMessage).catch(e=>setProjectMessage(String(e)));
+    return ()=>{unregister();setRecoveryRequest(current=>{current?.resolve(null);return null;});};
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (projectTransitionPending) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       const mod = e.ctrlKey || e.metaKey;
       if (!mod || e.key.toLowerCase() !== "z") return;
+      if (recoveryRequest) { e.preventDefault(); return; }
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       e.preventDefault();
       if (e.shiftKey) redoClips();
       else undoClips();
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undoClips, redoClips]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [undoClips, redoClips, projectTransitionPending, recoveryRequest]);
+
+  useLayoutEffect(() => {
+    const content=appContentRef.current;
+    if(!content)return;
+    if(!projectTransitionPending){content.removeAttribute("inert");return;}
+    const previousFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    content.setAttribute("inert","");
+    transitionDialogRef.current?.focus();
+    return ()=>{content.removeAttribute("inert");previousFocus?.focus();};
+  }, [projectTransitionPending]);
 
   return (
-    <div className="h-screen flex flex-col bg-base text-ink overflow-hidden">
-      <Header />
-      {projectMessage&&<p role="status" className="px-4 py-2 text-sm">{projectMessage}<button className="ml-3" onClick={()=>setProjectMessage(null)}>ปิด</button></p>}
-      <div ref={shellRef} className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
+    <div className="relative h-screen bg-base text-ink">
+      <div ref={appContentRef} className="h-full flex flex-col overflow-hidden" aria-hidden={projectTransitionPending}>
+        <Header />
+        {projectMessage&&<p role="status" className="px-4 py-2 text-sm">{projectMessage}<button className="ml-3" onClick={()=>setProjectMessage(null)}>ปิด</button></p>}
+        <div ref={shellRef} className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden">
         {view === "creator" ? (
           <PackWorkflow />
         ) : view === "settings" ? (
@@ -161,8 +181,11 @@ export default function App() {
             </div>
           </div>
         )}
+        </div>
+        <StatusBar />
       </div>
-      <StatusBar />
+      {projectTransitionPending&&<div ref={transitionDialogRef} tabIndex={-1} className="fixed inset-0 z-[110] grid place-items-center bg-black/50" role="dialog" aria-modal="true" aria-labelledby="project-transition-title"><span id="project-transition-title" className="rounded-lg border border-line bg-panel px-4 py-3">กำลังตรวจและเปิดโปรเจกต์…</span></div>}
+      {recoveryRequest&&<RecoveryCandidateDialog listing={recoveryRequest.listing} onSelect={candidateId=>{recoveryRequest.resolve(candidateId);setRecoveryRequest(null);}} onCancel={()=>{recoveryRequest.resolve(null);setRecoveryRequest(null);}}/>}
     </div>
   );
 }
