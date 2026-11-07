@@ -3,11 +3,12 @@
   "$id": "https://github.com/Freshair129/G-Suite/schemas/gmaiden-events.json",
   "title": "G-Maiden Announcer Event Taxonomy",
   "description": "Canonical event taxonomy. Studio authors and verifies GANN audio/video pairs; Maiden resolves only the selected verified GANN event mapping. Detection and eligibility remain native runtime responsibilities.",
-  "version": "1.1",
+  "version": "1.2",
   "x-events": [
     { "id": "danger",        "label": "Danger",           "category": "signal",   "priority": "critical", "status": "active", "trigger": "อันตรายทั่วไป — เลือดต่ำ/สถานการณ์เสี่ยง (G-Signal)" },
     { "id": "gank",          "label": "Gank Warning",     "category": "signal",   "priority": "critical", "status": "active", "trigger": "ศัตรูหายจาก vision + ความเสี่ยงโดนรุมข้ามเกณฑ์ Sensitivity — ค่าเริ่มต้น Med = 0.65 (Low = 0.85 ตาม SRS, High = 0.50) (G-Signal Alert — ยิงจาก CV loop ใน capture.rs)" },
     { "id": "revision",      "label": "Belief Revision",  "category": "signal",   "priority": "high",     "status": "active", "trigger": "เตือน gank แล้วความเสี่ยงตกใต้เกณฑ์ clear — ค่าเริ่มต้น Med = 0.40 (Low = 0.50, High = 0.30) — แก้คำพูดกลางคัน" },
+    { "id": "enemy_missing", "label": "Enemy Missing",    "category": "signal",   "priority": "low",      "status": "new",    "trigger": "ฮีโร่ศัตรูที่ยืนยันตัวตนแล้วหายจาก minimap เกิน 5 วินาที ภายใต้ capture coverage ที่ยืนยันแล้ว (G-Sentry/capture)" },
     { "id": "match_start",   "label": "Match Start",      "category": "flow",     "priority": "normal",   "status": "new",    "trigger": "เกมเริ่ม (clock เริ่มเดินจาก 0)" },
     { "id": "first_blood",   "label": "First Blood",      "category": "kill",     "priority": "high",     "status": "new",    "trigger": "ฆ่าครั้งแรกของทั้งเกม" },
     { "id": "kill",          "label": "Kill",             "category": "kill",     "priority": "normal",   "status": "active", "trigger": "ผู้เล่นฆ่าศัตรูได้ (เดี่ยว)" },
