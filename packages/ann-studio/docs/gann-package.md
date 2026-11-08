@@ -18,6 +18,8 @@ Select the variant before editing its banner. Layer timing, declarative keyframe
 
 Build freezes one snapshot, renders every mapped variant, writes/validates the GANN and commits its revision under a project lock. Failed/cancelled builds retain the preceding revision. Unchanged snapshot/toolchain/raster output reuses its artifact. Changing project during work cannot apply results to another document; superseded artifacts cannot be used as current.
 
+Exporting a saved sound-library pack makes a standalone copy with a fresh announcer identity. Studio reads its mapped sounds from the library and builds in a temporary directory. An export releases its working files after copying the GANN. Direct installation keeps them until the install attempt completes or is canceled. To deliver ongoing revisions with the same announcer identity and profile binding, use an editable `.ann` project.
+
 **ทดสอบแพ็ก** opens that exact GANN with the shared reader. **ส่งออก .gann** copies the same verified bytes; it does not rebuild. Opening a different project or editing after build disables current export/install until a current artifact is selected/built.
 
 ## Install in Maiden

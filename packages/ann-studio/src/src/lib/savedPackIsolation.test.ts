@@ -13,21 +13,17 @@ it.each([false, true])('exports a library pack separately from the editor (build
   const project = createPackProject();
   project.name = 'Project A';
   useStudioStore.setState({projectDocument:project, projectPath:'A.ann', projectSessionToken:'active-token',
-    libraryRoot:'D:/library', clips:[{id:'clip-A',name:'A',event:'kill',start:0,end:1,color:''}]});
+    libraryRoot:'D:/ProjectA/assets', clips:[{id:'clip-A',name:'A',event:'kill',start:0,end:1,color:''}]});
   const before = useStudioStore.getState();
-  let imported = '';
   invoke.mockImplementation(async (cmd, args) => {
+    if (cmd === 'init_library') return {root:'D:/library'};
     if (cmd === 'inspect_media') { expect(args.path).toBe('D:/library/b.wav'); return {duration_ms:500}; }
-    if (cmd === 'activate_project_session' || cmd === 'prepare_project') {
-      imported = args.snapshot.project.projectId;
-      expect(imported).not.toBe(project.projectId);
-      expect(args.snapshot.project.name).toBe('Library B');
-      expect(Object.values(args.assetPaths)).toContain('D:/library/b.wav');
-      return {...args,sessionToken:'isolated-token'};
-    }
     if (cmd === 'start_build') {
-      expect(args.job.sessionToken).toBe('isolated-token');
-      expect(args.job.snapshot.project.projectId).toBe(imported);
+      expect(args.detached).toBe(true);
+      expect(args.job.sessionToken).toBe('');
+      expect(args.job.snapshot.project.projectId).not.toBe(project.projectId);
+      expect(args.job.snapshot.project.name).toBe('Library B');
+      expect(Object.values(args.job.assetPaths)).toContain('D:/library/b.wav');
       return 'job-B';
     }
     if (cmd === 'build_status') return fails ? {state:'failed',error:'disk full'} :

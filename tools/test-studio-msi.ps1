@@ -8,7 +8,7 @@ if ($artifacts.Count -ne 1) { throw "Expected one release MSI for $Package, foun
 $msi = $artifacts[0]
 $installer = New-Object -ComObject WindowsInstaller.Installer
 $db = $installer.OpenDatabase($msi.FullName, 0)
-$view = $db.OpenView("SELECT Value FROM Property WHERE Property = 'ProductCode'")
+$view = $db.OpenView('SELECT `Value` FROM `Property` WHERE `Property` = ''ProductCode''')
 $view.Execute()
 $product = $view.Fetch().StringData(1)
 $view.Close()

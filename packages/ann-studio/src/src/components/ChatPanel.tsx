@@ -130,11 +130,13 @@ export default function ChatPanel() {
       // Primary: the chosen LLM (Ollama / Claude) with function calling.
       // Fallback: the offline rule-based parser if the provider is unreachable.
       let reply: string;
-      const owner = useStudioStore.getState().projectSession;
+      const owner = useStudioStore.getState();
       try {
         reply = await chatLlm(text);
       } catch (e) {
-        if (!(e instanceof ChatProviderUnavailable) || owner !== useStudioStore.getState().projectSession) throw e;
+        const current = useStudioStore.getState();
+        if (!(e instanceof ChatProviderUnavailable) || owner.projectSession !== current.projectSession ||
+            owner.projectGeneration !== current.projectGeneration) throw e;
         const note =
           provider === "ollama"
             ? "⚠️ ต่อ Ollama ไม่ได้ (เช็คว่ารันอยู่) — ใช้ตัวแปลคำสั่งสำรอง\n"

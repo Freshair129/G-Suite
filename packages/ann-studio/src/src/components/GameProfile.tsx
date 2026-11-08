@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore, type Pack, type LibPkg, type LibSound } from "../store/useStudioStore";
 import { open } from "@tauri-apps/plugin-dialog";
-import { buildSavedPackGann, installGann } from "../lib/exportGmaidenPack";
+import { installSavedPack, installGann } from "../lib/exportGmaidenPack";
 import PackCreator from "./PackCreator";
 import PackEditor from "./PackEditor";
 import {
@@ -119,8 +119,8 @@ export default function GameProfile() {
       return;
     }
     try {
-      const built=await buildSavedPackGann(pack);const installed=await installGann(built.path);
-      alert(`ติดตั้งและเปิดใช้ GANN แล้ว: ${installed.pack_id}`);
+      const installed=await installSavedPack(pack);
+      alert(`ติดตั้ง GANN แล้ว: ${installed.pack_id}`);
       handleIntegrate();
     } catch (e) {
       alert(`ส่งไม่สำเร็จ: ${e}`);
@@ -135,7 +135,7 @@ export default function GameProfile() {
     setQuickInstalling(true);
     try {
       const path=await open({title:'ติดตั้ง GANN',filters:[{name:'G-Ann Package',extensions:['gann']}]});if(typeof path!=='string')return;
-      const result=await installGann(path);alert(`ติดตั้งและเปิดใช้ GANN แล้ว: ${result.pack_id}`);
+      const result=await installGann(path);alert(`ติดตั้ง GANN แล้ว: ${result.pack_id}`);
       handleIntegrate();
     } catch (e) {
       alert(`ติดตั้งไม่สำเร็จ: ${e}`);

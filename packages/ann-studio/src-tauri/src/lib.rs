@@ -2048,6 +2048,7 @@ pub fn run() {
             import_banner_asset_archive,
             project_startup_path,
             build_jobs::start_build,
+            build_jobs::release_library_build,
             build_jobs::build_status,
             build_jobs::cancel_build,
             build_jobs::export_artifact,

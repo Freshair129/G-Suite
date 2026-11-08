@@ -58,6 +58,7 @@ pub struct BuildStatus {
     pub error: Option<String>,
 }
 struct Running {
+    library_files: Option<tempfile::TempDir>,
     project_id: String,
     cancel: Arc<AtomicBool>,
     status: BuildStatus,
@@ -676,11 +677,61 @@ fn workspace(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| e.to_string())?
         .join("projects"))
 }
+fn build_library_copy(
+    mut job: BuildJob,
+    cancel: Arc<AtomicBool>,
+    key: &str,
+) -> Result<(BuildReport, Option<tempfile::TempDir>), String> {
+    cancelled(&cancel)?;
+    let temp = tempfile::Builder::new()
+        .prefix("gann-library-")
+        .tempdir()
+        .map_err(|e| e.to_string())?;
+    let prepared = super::project_io::activate_project_session(
+        job.snapshot,
+        job.asset_paths,
+        None,
+        temp.path(),
+    )?;
+    job.snapshot = prepared.snapshot;
+    job.asset_paths = prepared.asset_paths;
+    job.session_token = prepared
+        .session_token
+        .ok_or("Missing library build session")?;
+    let pending_install = job.output_path.is_none();
+    let report = build(job, temp.path(), cancel, Some(key))?;
+    Ok((report, pending_install.then_some(temp)))
+}
+
+#[tauri::command]
+pub async fn release_library_build(
+    window: tauri::WebviewWindow,
+    job_id: String,
+) -> Result<(), String> {
+    super::gann::trusted(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut registry = jobs().lock().map_err(|e| e.to_string())?;
+        if !registry
+            .get(&job_id)
+            .is_some_and(|job| job.library_files.is_some())
+        {
+            return Err("No pending library installation for this job".to_string());
+        }
+        let released = registry.remove(&job_id);
+        drop(registry);
+        drop(released);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub fn start_build(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     job: BuildJob,
+    detached: Option<bool>,
 ) -> Result<String, String> {
     super::gann::trusted(&window)?;
     static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -692,7 +743,9 @@ pub fn start_build(
     let cancel = Arc::new(AtomicBool::new(false));
     let root = workspace(&app)?;
     let project_id = string(&job.snapshot["project"], "projectId")?.to_owned();
-    if !super::project_io::session_is_active(&job.snapshot, &job.session_token, &root)? {
+    let detached = detached.unwrap_or(false);
+    if !detached && !super::project_io::session_is_active(&job.snapshot, &job.session_token, &root)?
+    {
         return Err(
             "Project session was replaced; restart the build from the current project".into(),
         );
@@ -707,16 +760,20 @@ pub fn start_build(
     if registry.len() >= 128 {
         let completed: Vec<_> = registry
             .iter()
-            .filter(|(_, job)| job.status.state != "running")
+            .filter(|(_, job)| job.status.state != "running" && job.library_files.is_none())
             .map(|(id, _)| id.clone())
             .collect();
         for id in completed {
             registry.remove(&id);
         }
     }
+    if registry.len() >= 128 {
+        return Err("Too many outstanding build jobs".into());
+    }
     registry.insert(
         id.clone(),
         Running {
+            library_files: None,
             project_id,
             cancel: cancel.clone(),
             status: BuildStatus {
@@ -734,11 +791,16 @@ pub fn start_build(
     drop(registry);
     let key = id.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let result = build(job, &root, cancel, Some(&key));
+        let result = if detached {
+            build_library_copy(job, cancel, &key)
+        } else {
+            build(job, &root, cancel, Some(&key)).map(|report| (report, None))
+        };
         if let Ok(mut jobs) = jobs().lock() {
             if let Some(job) = jobs.get_mut(&key) {
                 match result {
-                    Ok(report) => {
+                    Ok((report, library_files)) => {
+                        job.library_files = library_files;
                         job.status.state = "ready".into();
                         job.status.report = Some(report);
                         job.status.completed = 1;
@@ -894,6 +956,37 @@ mod tests {
             }],
             output_path: None,
         }
+    }
+    #[test]
+    fn detached_copy_holds_only_the_pending_install_and_leaves_the_editor_session_active() {
+        let source = tempfile::tempdir().unwrap();
+        let job = fixture(source.path());
+        let active_token = job.session_token.clone();
+        let original = job.snapshot.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (report, lease) =
+            build_library_copy(job.clone(), cancel.clone(), "test-install").unwrap();
+        assert!(Path::new(&report.path).is_file());
+        let temp = lease.as_ref().unwrap().path().to_owned();
+        drop(lease);
+        assert!(!temp.exists());
+        let destination = source.path().join("export.gann");
+        let export = BuildJob {
+            output_path: Some(destination.to_string_lossy().into_owned()),
+            ..job
+        };
+        let (report, lease) = build_library_copy(export, cancel, "test-export").unwrap();
+        assert!(lease.is_none());
+        assert_eq!(
+            g_ann_package::Package::open(&destination).unwrap().digest,
+            report.digest
+        );
+        assert!(super::super::project_io::session_is_active(
+            &original,
+            &active_token,
+            &source.path().join("projects")
+        )
+        .unwrap());
     }
     #[test]
     fn actual_sfx_changes_mixed_only_equal_timeline_and_unchanged_reuses_digest() {
