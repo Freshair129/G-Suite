@@ -2006,6 +2006,7 @@ pub fn run_gann_job(args: &[String]) -> Option<Result<String, String>> {
             let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let report = runtime.block_on(gann_authoring::install(
                 serde_json::from_slice(&bytes).map_err(|e| e.to_string())?,
+                None,
             ))?;
             serde_json::to_string(&report).map_err(|e| e.to_string())
         }

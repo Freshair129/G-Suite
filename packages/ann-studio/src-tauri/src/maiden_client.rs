@@ -13,6 +13,8 @@ pub struct InstallJob {
     pub request_id: String,
     pub project_binding: Option<String>,
     pub equip_policy: local_ipc::EquipPolicy,
+    #[serde(default)]
+    pub confirm_event_taxonomy_v12: bool,
 }
 pub fn discover() -> Result<Vec<Registration>, String> {
     Ok(local_ipc::discover(&local_ipc::registration_directory()?))

@@ -24,6 +24,8 @@ Build freezes one snapshot, renders every mapped variant, writes/validates the G
 
 Choose a verified Installed/Dev/Test profile explicitly. Studio sends profile/digest/request ID over a current-user Windows named pipe. Maiden owns staging, installation registry and selection; Studio never writes Maiden cache folders or relies on its exe/cwd.
 
+Packs mapping `enemy_missing` require a runtime with event taxonomy v1.2 or later. The v1 registration does not report taxonomy support. Studio checks the chosen file digest, then asks the user to confirm the destination supports v1.2 before sending it. For a headless `--gann-install` job, set `confirmEventTaxonomyV12` to `true` only for a known compatible target. Other event mappings need no additional confirmation.
+
 Installation and activation have distinct results: installed, active, deferred until safe match boundary, or installed with activation error. A project retains Maiden-issued local lineage bindings for updates. Local packages cannot replace System/Store authority. Versions remain available for repair/rollback and active audio/video leases retain the selected revision.
 
 A signed Store release is a separate detached attestation of publisher/package bytes. It is not an entitlement; Store backend/publishing/commerce remain deferred. Local verification never creates a Purchased/Official badge.

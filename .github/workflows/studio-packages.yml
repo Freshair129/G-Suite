@@ -1,10 +1,13 @@
 name: Studio packages
 
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - 'packages/**'
       - 'schemas/**'
+      - 'tools/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -15,6 +18,21 @@ permissions:
   contents: read
 
 jobs:
+  event-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # This crate tree matches G-Maiden 6a26d62 (taxonomy v1.1).
+      - uses: actions/checkout@v4
+        with:
+          ref: 62ee66b51da5709e827093cf023d5e68a9bb6db8
+          path: legacy
+          sparse-checkout: packages/ann-studio/src-tauri/gann-package
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked --manifest-path legacy/packages/ann-studio/src-tauri/gann-package/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/ann-studio/src-tauri/gann-package/Cargo.toml --test install event_taxonomy_install_matrix -- --ignored --exact
+        env:
+          GANN_V11_CLI: ${{ github.workspace }}/legacy/packages/ann-studio/src-tauri/gann-package/target/debug/g-ann-package
   frontends:
     runs-on: windows-latest
     strategy:
@@ -34,6 +52,10 @@ jobs:
       - run: pnpm -C packages/${{ matrix.package }} build
       - if: matrix.package == 'ann-studio/src'
         run: pnpm -C packages/ann-studio/src test
+      - if: matrix.package == 'ann-studio/src'
+        run: pnpm -C packages/ann-studio/src exec playwright install chromium --only-shell
+      - if: matrix.package == 'ann-studio/src'
+        run: pnpm -C packages/ann-studio/src test:responsive
   studio-native:
     runs-on: windows-latest
     steps:

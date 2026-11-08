@@ -237,14 +237,14 @@ export default function EventTestGrid() {
       </div>
 
       <div className="p-5">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div className="flex items-baseline gap-3">
             <h2 className="text-sm font-bold text-ink">ทดสอบ Event · {EVENTS.length} รายการ</h2>
             {overrideCount > 0 && (
               <span className="text-xs text-lime">{overrideCount} banner ภาพเอง</span>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             <span className="text-xs text-ink-faint">{clips.length} clip · คลัง {packBuilderTotal}</span>
             <label className="flex items-center gap-1.5 text-xs text-ink-muted cursor-pointer select-none">
               <input
@@ -283,7 +283,7 @@ export default function EventTestGrid() {
                 }
               }}
               disabled={installing || clips.length === 0}
-              className="px-3 h-8 rounded-full bg-lime text-black text-xs font-semibold hover:bg-lime/90 transition disabled:opacity-40"
+              className="px-3 py-1 min-h-8 rounded-full bg-lime text-black text-xs font-semibold hover:bg-lime/90 transition disabled:opacity-40"
             >
               {installing ? "กำลังติดตั้ง…" : "ติดตั้งลง G-Maiden (พร้อม banner)"}
             </button>
@@ -298,7 +298,7 @@ export default function EventTestGrid() {
               }}
               disabled={installingLib || packBuilderTotal === 0}
               title="ติดตั้ง pack ที่ประกอบจากคลังเสียง (ลากเสียงมาวางบนการ์ด)"
-              className="px-3 h-8 rounded-full bg-white text-black text-xs font-semibold hover:bg-gray-200 transition disabled:opacity-40"
+              className="px-3 py-1 min-h-8 rounded-full bg-white text-black text-xs font-semibold hover:bg-gray-200 transition disabled:opacity-40"
             >
               {installingLib ? "กำลังติดตั้ง…" : `ติดตั้งจากคลัง (${packBuilderTotal})`}
             </button>

@@ -3,6 +3,10 @@ use serde_json::json;
 use std::{fs, path::PathBuf, process::Command};
 
 fn fixture(tag: &str) -> (PathBuf, PathBuf, String) {
+    fixture_for_event(tag, "kill")
+}
+
+fn fixture_for_event(tag: &str, event: &str) -> (PathBuf, PathBuf, String) {
     let root = std::env::temp_dir().join(format!("gann-install-{tag}-{}", std::process::id()));
     fs::create_dir_all(root.join("source/audio")).unwrap();
     fs::create_dir_all(root.join("source/video")).unwrap();
@@ -35,8 +39,8 @@ fn fixture(tag: &str) -> (PathBuf, PathBuf, String) {
     let registry = json!({"schema_version":1,"announcer_id":ann,"revision":1,"name":"Independent fixture","locale":"th",
         "sounds":[{"sound_id":original,"role":"original_voice","label":"Original","path":format!("audio/{original}.wav"),"sha256":sha256(&wav)},
                   {"sound_id":mixed,"role":"mixed_voice_sfx","label":"Played","path":format!("audio/{mixed}.wav"),"sha256":sha256(&wav)}],
-        "components":[],"unmapped_sound_ids":[],"events":{"kill":[{"sound_id":original,"banner_id":banner}]},
-        "banners":[{"banner_id":banner,"event_key":"kill","original_sound_id":original,"playback_sound_id":mixed,
+        "components":[],"unmapped_sound_ids":[],"events":{(event):[{"sound_id":original,"banner_id":banner}]},
+        "banners":[{"banner_id":banner,"event_key":event,"original_sound_id":original,"playback_sound_id":mixed,
             "visual_source":{"root":".","silent":true,"video":format!("video/{banner}.webm"),"sha256":sha256(video)},
             "components":[],"cues":[],"config":{"duration_seconds":1}}]});
     let manifest = format!("{ann}.json");
@@ -48,6 +52,42 @@ fn fixture(tag: &str) -> (PathBuf, PathBuf, String) {
     let package = root.join("fixture.gann");
     g_ann_package::create(&root.join("source"), &manifest, &package).unwrap();
     (root, package, ann.into())
+}
+
+#[test]
+#[ignore = "requires GANN_V11_CLI built from the pinned v1.1 consumer"]
+fn event_taxonomy_install_matrix() {
+    let legacy = std::env::var_os("GANN_V11_CLI").expect("v1.1 consumer path");
+    for event in ["kill", "enemy_missing"] {
+        let (root, package, _) = fixture_for_event(event, event);
+        let old_root = root.join("legacy");
+        let old = Command::new(&legacy)
+            .arg("install")
+            .arg(&package)
+            .arg(&old_root)
+            .output()
+            .unwrap();
+        if event == "enemy_missing" {
+            assert!(!old.status.success());
+            assert!(String::from_utf8_lossy(&old.stderr).contains("unknown/empty event"));
+            assert!(
+                !old_root.exists(),
+                "incompatible package wrote to the old profile"
+            );
+        } else {
+            assert!(
+                old.status.success(),
+                "{}",
+                String::from_utf8_lossy(&old.stderr)
+            );
+        }
+        let installed = g_ann_package::install(&package, &root.join("current")).unwrap();
+        assert_eq!(
+            installed.container_sha256,
+            Package::open(&package).unwrap().digest
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[test]
