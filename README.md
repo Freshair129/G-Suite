@@ -34,7 +34,7 @@ a raw clip into a working G-Maiden announcer pack:
 
 Shared, language-agnostic specs in [`schemas/`](schemas) — neither repo depends on the other's code:
 
-- [`gmaiden-events.json`](schemas/gmaiden-events.json) — canonical event IDs and trigger eligibility; event media is resolved from `registry.events` in GANN.
+- [`gmaiden-events.json`](schemas/gmaiden-events.json) — event IDs and trigger eligibility, **generated** from G-Maiden `src-tauri/events/g-events.toml` (ADR-21 / CR-049; do not hand-edit); event media is resolved from `registry.events` in GANN.
 - [GANN package contract](packages/ann-studio/docs/gann-package.md) — the sole audio/visual export, event-preview and install handoff. The shared vendored Rust crate verifies indexed files, hashes and playback contracts.
 - `pack-manifest.schema.json` and `announcer-manifest.schema.json` describe retired layouts. Active Studio exporters/installers no longer write them or install flat event directories.
 

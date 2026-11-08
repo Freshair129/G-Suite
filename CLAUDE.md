@@ -21,10 +21,16 @@ JSON contracts in [`schemas/`](schemas) + the install channel — neither import
 The interface contract is frozen in **`../G-Maiden/docs/change request/CR-009-…md`** (read it before
 changing anything under "The G-Maiden seam" below).
 
+> **Event taxonomy owner (ADR-21 / CR-049, 2026-11-09):** the source of truth is G-Maiden
+> `src-tauri/events/g-events.toml`. `schemas/gmaiden-events.json` is **generated** from it in G-Maiden
+> and synced here; do not hand-edit it, re-type it in TS, or add a second event list. To add/rename an
+> event or change labels, edit the TOML in G-Maiden, regenerate, bump `[taxonomy] version`, then sync.
+
 ## Layout
 
 ```
-schemas/                 shared contracts (gmaiden-events.json = event taxonomy; pack-manifest =
+schemas/                 shared contracts (gmaiden-events.json = event taxonomy, GENERATED from G-Maiden
+                         src-tauri/events/g-events.toml — never hand-edit; pack-manifest =
                          installed pack manifest.json, the real install contract; announcer-manifest
                          = plain-export sidecar, G-Maiden never reads it)
 packages/ann-studio/
