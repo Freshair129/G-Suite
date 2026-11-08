@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from "react";
 import { Send, Sparkles, Bot, Cpu, ChevronUp, Check } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore } from "../store/useStudioStore";
-import { runAutoSplit, runExport } from "../lib/actions";
-import { chatLlm } from "../lib/llm";
+import { clearTimeline, runAutoSplit, runExport } from "../lib/actions";
+import { chatLlm, ChatProviderUnavailable } from "../lib/llm";
+import { saveProject } from "../lib/project";
 
 function shortModel(m: string): string {
   return (m.split("/").pop() || m).split(":")[0].replace(/-gguf$/i, "");
@@ -30,14 +31,15 @@ const HELP = [
   "คำสั่งที่ใช้ได้ (พิมพ์ไทยหรืออังกฤษก็ได้):",
   "• “แยกอัตโนมัติ” / “ถอดเสียง” — ถอดเสียงแล้วแบ่ง clip",
   "• “ใช้ large-v3” — เปลี่ยนโมเดล (small / medium / large-v3)",
-  "• “ส่งออก” — บันทึก WAV + manifest",
+  "• “บันทึก” — บันทึกโปรเจกต์ .ann",
+  "• “ส่งออก” — สร้างแพ็ก .gann",
   "• “มีกี่ clip” — สรุปจำนวน/ความยาว",
   "• “ลบ clip 3” — ลบตามลำดับ",
   "• “เปลี่ยนชื่อ 3 เป็น triple-kill” — ตั้งชื่อ clip",
   "• “ล้างทั้งหมด” — ลบ clip ทุกอัน",
 ].join("\n");
 
-async function handleCommand(raw: string): Promise<string> {
+export async function handleCommand(raw: string): Promise<string> {
   const text = raw.trim();
   const low = text.toLowerCase();
   const s = useStudioStore.getState();
@@ -48,22 +50,19 @@ async function handleCommand(raw: string): Promise<string> {
   if (has("ช่วย", "help", "คำสั่ง", "ทำอะไรได้")) return HELP;
 
   // change model
-  const m = low.match(/large-v3|large|medium|small/);
-  if (m && has("model", "โมเดล", "ใช้", "เปลี่ยนโมเดล", "use")) {
-    const model = m[0] === "large" ? "large-v3" : m[0];
+  const m = low.match(/^(?:ใช้|เปลี่ยนโมเดล|โมเดล|use|model)\s+(large-v3|large|medium|small)$/);
+  if (m) {
+    const model = m[1] === "large" ? "large-v3" : m[1];
     s.setModel(model);
     return `เปลี่ยนโมเดลเป็น ${model} แล้ว`;
   }
 
-  if (has("แยก", "ถอด", "split", "auto", "transcrib")) return runAutoSplit();
-  if (has("ส่งออก", "export", "บันทึก", "save")) return runExport();
-
-  if (has("ล้าง", "ลบทั้งหมด", "ลบหมด", "clear", "reset")) {
-    if (!s.clips.length) return "ยังไม่มี clip อยู่แล้วครับ";
-    const n = s.clips.length;
-    s.setClips([]);
-    return `ล้าง ${n} clips แล้ว`;
+  if (/^(?:แยกอัตโนมัติ|ถอดเสียง|auto[ -]?split|transcribe|split)$/.test(low)) {
+    return window.confirm("ถอดเสียงและแบ่งคลิปใหม่ทั้งหมด?") ? runAutoSplit() : "ยกเลิกแล้ว";
   }
+  if (/^(?:บันทึก(?:โปรเจกต์)?|save(?: project)?)$/.test(low)) return saveProject();
+  if (/^(?:ส่งออก(?:แพ็ก)?|export(?: pack)?)$/.test(low)) return runExport();
+  if (/^(?:ล้างทั้งหมด|ลบทั้งหมด|ลบหมด|clear(?: all(?: clips)?)?|reset)$/.test(low)) return clearTimeline();
 
   if (has("กี่", "จำนวน", "count", "how many", "สรุป", "info", "สถานะ")) {
     if (!s.wavPath) return "ยังไม่ได้นำเข้าไฟล์เสียง";
@@ -73,17 +72,18 @@ async function handleCommand(raw: string): Promise<string> {
   }
 
   // delete clip N
-  const del = low.match(/(?:ลบ|delete|remove)\D*(\d+)/);
+  const del = low.match(/^(?:ลบ|delete|remove)\s*(?:clip|คลิป)?\s*(\d+)$/);
   if (del) {
     const i = parseInt(del[1], 10) - 1;
     if (i < 0 || i >= ordered.length) return `ไม่มี clip หมายเลข ${del[1]}`;
     const c = ordered[i];
+    if (!window.confirm(`ลบคลิป “${c.name}”?`)) return "ยกเลิกแล้ว";
     s.removeClip(c.id);
     return `ลบ clip ${del[1]} (“${c.name}”) แล้ว`;
   }
 
   // rename N to X
-  const ren = text.match(/(?:เปลี่ยนชื่อ|rename|ตั้งชื่อ)\D*(\d+)\s*(?:เป็น|to|=|:)\s*(.+)/i);
+  const ren = text.match(/^(?:เปลี่ยนชื่อ|rename|ตั้งชื่อ)\s*(?:clip|คลิป)?\s*(\d+)\s*(?:เป็น|to|=|:)\s*(.+)$/i);
   if (ren) {
     const i = parseInt(ren[1], 10) - 1;
     const name = ren[2].trim();
@@ -130,9 +130,11 @@ export default function ChatPanel() {
       // Primary: the chosen LLM (Ollama / Claude) with function calling.
       // Fallback: the offline rule-based parser if the provider is unreachable.
       let reply: string;
+      const owner = useStudioStore.getState().projectSession;
       try {
         reply = await chatLlm(text);
       } catch (e) {
+        if (!(e instanceof ChatProviderUnavailable) || owner !== useStudioStore.getState().projectSession) throw e;
         const note =
           provider === "ollama"
             ? "⚠️ ต่อ Ollama ไม่ได้ (เช็คว่ารันอยู่) — ใช้ตัวแปลคำสั่งสำรอง\n"

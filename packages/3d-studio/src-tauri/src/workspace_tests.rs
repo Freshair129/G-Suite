@@ -5,9 +5,12 @@ use std::{fs, path::PathBuf};
 use workspace::{create_project, StudioPaths};
 
 fn temporary_root() -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     std::env::temp_dir().join(format!(
-        "g-suite-studio-test-{}-{}",
+        "g-suite-studio-test-{}-{}-{}",
         std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

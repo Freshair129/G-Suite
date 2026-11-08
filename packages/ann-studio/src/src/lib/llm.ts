@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore } from "../store/useStudioStore";
-import { runAutoSplit, runExport, sendToGMaiden } from "./actions";
+import { clearTimeline, runAutoSplit, runExport, sendToGMaiden } from "./actions";
 import { installGmaidenPack } from "./exportGmaidenPack";
 import { eventContractForPrompt, GMAIDEN_EVENTS } from "../data/gmaiden-events";
 import { analyzeClip, featuresYaml } from "./features";
+import { saveProject } from "./project";
 import { matchAnnouncerLabel } from "./honEventMap";
 
 /**
@@ -16,7 +17,8 @@ const ACTIONS = `
 - auto_split            ถอดเสียงด้วย AI แล้วแบ่ง clip ใหม่ทั้งหมด
 - auto_map              ให้ AI จับคู่ทุก clip กับ event ของ G-Maiden อัตโนมัติ
 - send_gmaiden          ส่ง pack ไป G-Maiden (ติดตั้งเสียงตาม event)
-- export                ส่งออก WAV + manifest
+- save_project          บันทึกโปรเจกต์ .ann
+- export                ส่งออกแพ็ก .gann
 - clear                 ลบ clip ทั้งหมด
 - delete_clip {index}   ลบ clip ตามลำดับ (index เริ่มที่ 1)
 - rename_clip {index,name}  เปลี่ยนชื่อ clip
@@ -91,7 +93,7 @@ function parseAction(raw: string): LlmAction | null {
 
 // Actions that change/destroy data (or push outside the app) require a
 // window.confirm before running. Non-destructive edits run silently.
-const DESTRUCTIVE = new Set(["clear", "delete_clip", "send_gmaiden", "install_gmaiden", "export", "split"]);
+const DESTRUCTIVE = new Set(["auto_split", "delete_clip", "send_gmaiden", "install_gmaiden", "export", "split"]);
 
 // Keys of `tune` args that live under clip.master (each -100..100).
 const MASTER_KEYS = [
@@ -126,12 +128,10 @@ async function execute(action: string, args: Record<string, any> = {}): Promise<
       return sendToGMaiden();
     case "export":
       return runExport();
-    case "clear": {
-      if (!s.clips.length) return "ยังไม่มี clip อยู่แล้ว";
-      const n = s.clips.length;
-      s.setClips([]);
-      return `ล้าง ${n} clips แล้ว`;
-    }
+    case "save_project":
+      return saveProject();
+    case "clear":
+      return clearTimeline();
     case "delete_clip": {
       const c = idxClip(args.index);
       if (!c) return `ไม่มี clip หมายเลข ${args.index}`;
@@ -279,10 +279,14 @@ ${eventContractForPrompt()}
   return `map event ให้ ${direct + applied}/${total} clips แล้ว 🎯${doneNote}`;
 }
 
+export class ChatProviderUnavailable extends Error {}
+
 /** Send a user message through the LLM and run whatever action it picks. */
 export async function chatLlm(userText: string): Promise<string> {
   const s = useStudioStore.getState();
   const { provider, llmModel } = s;
+  if (/^(?:บันทึก(?:โปรเจกต์)?|save(?: project)?)$/i.test(userText.trim())) return saveProject();
+
   // extract audio features for the selected clip — the agent decides from numbers
   let featuresBlock = "";
   const sel = s.clips.find((c) => c.id === s.selectedClipId);
@@ -296,7 +300,10 @@ export async function chatLlm(userText: string): Promise<string> {
     model: provider === "ollama" ? llmModel || undefined : undefined,
     system: buildSystem(featuresBlock),
     prompt: userText,
-  });
+  }).catch(error => { throw new ChatProviderUnavailable(String(error)); });
+  const current = useStudioStore.getState();
+  if (current.projectSession !== s.projectSession || current.projectDocument?.projectId !== s.projectDocument?.projectId ||
+      current.projectGeneration !== s.projectGeneration) throw new Error("โปรเจกต์เปลี่ยนแล้ว กรุณาส่งคำสั่งอีกครั้ง");
   const parsed = parseAction(raw);
   if (!parsed) {
     // model didn't return JSON — just surface its text
