@@ -40,6 +40,7 @@
     }
   },
   "bundle": {
+    "active": true,
     "fileAssociations": [
       {
         "ext": [
