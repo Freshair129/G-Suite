@@ -78,6 +78,12 @@ jobs:
       - run: cargo test --locked --manifest-path packages/3d-studio/src-tauri/Cargo.toml
       - run: pnpm --dir packages/3d-studio exec tauri build --bundles msi
       - run: ./tools/test-studio-msi.ps1 packages/3d-studio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3d-studio-windows-msi-${{ github.event.pull_request.head.sha || github.sha }}
+          path: packages/3d-studio/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 7
   ann-studio-native:
     runs-on: windows-latest
     steps:
@@ -103,6 +109,12 @@ jobs:
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ./tools/test-banner-roundtrip.ps1
       - run: pnpm --dir packages/ann-studio exec tauri build --bundles msi
       - run: ./tools/test-studio-msi.ps1 packages/ann-studio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ann-studio-windows-msi-${{ github.event.pull_request.head.sha || github.sha }}
+          path: packages/ann-studio/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 7
   banner-contracts:
     runs-on: windows-latest
     steps:
