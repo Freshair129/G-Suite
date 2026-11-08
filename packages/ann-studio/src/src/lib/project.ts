@@ -48,15 +48,19 @@ function canonical(value:unknown):string {
   return JSON.stringify(value);
 }
 
+export async function projectFingerprint(project:PackProject):Promise<string> {
+  const content={...project,currentRevision:0,buildHistory:[],installBindings:{}};
+  const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(canonical(content)));
+  return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,"0")).join("");
+}
+
 export async function snapshotProject(){
   const current=document(),state=useStudioStore.getState();
   const captured=captureProject(current,state,state.projectAssetPaths);
   hydrating=true;
   try{useStudioStore.setState({projectDocument:captured.project,projectAssetPaths:captured.assetPaths});}
   finally{hydrating=false;}
-  const content={...captured.project,currentRevision:0,buildHistory:[],installBindings:{}};
-  const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(canonical(content)));
-  const fingerprint=Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,"0")).join("");
+  const fingerprint=await projectFingerprint(captured.project);
   const result={snapshot:{project:captured.project,generation:state.projectGeneration,fingerprint},assetPaths:captured.assetPaths,sessionToken:state.projectSessionToken};
   if(isNative()&&!state.projectSessionToken){
     const expected=origin(),generation=state.projectGeneration;

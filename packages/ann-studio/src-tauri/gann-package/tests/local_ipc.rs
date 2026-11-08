@@ -16,7 +16,7 @@ fn profile_nonce_and_protocol_are_bound_before_install() {
 fn frames_are_bounded_and_reject_unknown_authority() {
     assert!(decode_frame(&vec![b'x'; MAX_FRAME + 1]).is_err());
     let request = json!({"protocol_version":1,"request_id":"request1","profile_id":"test-profile",
-        "source_path":"C:/แพ็ก/เสียง.gann","expected_digest":"a".repeat(64),"project_binding":null,"equip_policy":"never"});
+        "source_path":std::env::temp_dir().join("แพ็ก/เสียง.gann"),"expected_digest":"a".repeat(64),"project_binding":null,"equip_policy":"never"});
     assert!(serde_json::from_value::<LocalInstall>(request.clone()).unwrap().validate().is_ok());
     let mut forged = request;
     forged["authority"] = "store".into();

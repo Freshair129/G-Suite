@@ -75,7 +75,7 @@ packages/ann-studio/
 ## AI / providers
 
 - The chat + auto-map go through Rust `llm_complete(provider, model, system, prompt)`:
-  **Ollama** (HTTP `localhost:11434`, free/local) or **Claude** (`cmd /c claude -p … --output-format json`
+  **Ollama** (HTTP `localhost:11434`, free/local) or **Claude** (direct native executable or npm Node entry point, with the prompt on stdin and CLI tools disabled
   = the signed-in Claude plan's quota, no API key). `list_ollama_models` fills the header selector.
 - Function-calling is a JSON protocol: the model returns `{action,args,reply}`; `src/lib/llm.ts`
   parses (slice first `{`..last `}`, so reasoning models that emit `<think>` still work) and an

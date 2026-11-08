@@ -1829,24 +1829,69 @@ async fn ollama_chat(model: String, system: String, prompt: String) -> Result<St
         .ok_or_else(|| "ollama: empty response".into())
 }
 
+fn claude_program(path: &std::ffi::OsStr) -> Result<Command, String> {
+    let dirs: Vec<_> = std::env::split_paths(path)
+        .filter(|dir| dir.is_absolute())
+        .collect();
+    for dir in &dirs {
+        let npm = dir.join("node_modules/@anthropic-ai/claude-code");
+        for exe in [dir.join("claude.exe"), npm.join("bin/claude.exe")] {
+            if exe.is_file() {
+                return Ok(Command::new(exe));
+            }
+        }
+        let script = npm.join("cli.js");
+        if script.is_file() {
+            if let Some(node) = dirs
+                .iter()
+                .map(|d| d.join("node.exe"))
+                .find(|p| p.is_file())
+            {
+                let mut command = Command::new(node);
+                command.arg(script);
+                return Ok(command);
+            }
+        }
+    }
+    Err("Claude CLI not found. Install Claude Code and add its executable or npm global bin directory to PATH.".into())
+}
+
 async fn claude_cli(system: String, prompt: String) -> Result<String, String> {
-    // Drive the installed `claude` CLI in print mode — uses the user's signed-in
-    // Claude plan, no API key. Routed through cmd so the npm shim resolves.
-    let output = Command::new("cmd")
+    let command = claude_program(&std::env::var_os("PATH").unwrap_or_default())?;
+    run_claude(command, system, prompt).await
+}
+
+async fn run_claude(
+    mut command: Command,
+    system: String,
+    prompt: String,
+) -> Result<String, String> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+    let mut child = command
         .creation_flags(CREATE_NO_WINDOW)
         .args([
-            "/c",
-            "claude",
             "-p",
-            &prompt,
             "--append-system-prompt",
             &system,
             "--output-format",
             "json",
+            "--tools",
+            "",
         ])
-        .output()
-        .await
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
         .map_err(|e| format!("claude spawn: {e}"))?;
+    let mut stdin = child.stdin.take().ok_or("Claude stdin unavailable")?;
+    let write = async move {
+        stdin.write_all(prompt.as_bytes()).await?;
+        stdin.shutdown().await
+    };
+    let (_, output) = tokio::try_join!(write, child.wait_with_output())
+        .map_err(|e| format!("claude I/O: {e}"))?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
         return Err(format!("claude: {err}"));
@@ -1857,6 +1902,60 @@ async fn claude_cli(system: String, prompt: String) -> Result<String, String> {
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "claude: no result field".into())
+}
+
+#[cfg(all(test, windows))]
+mod claude_launch_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn npm_entry_receives_literal_utf8_stdin_and_system_argument() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("claude.cmd"), "@exit /b 37").unwrap();
+        assert!(claude_program(temp.path().as_os_str()).is_err());
+
+        let npm = temp.path().join("node_modules/@anthropic-ai/claude-code");
+        std::fs::create_dir_all(&npm).unwrap();
+        std::fs::write(
+            npm.join("cli.js"),
+            r#"
+            let text = '';
+            process.stdin.setEncoding('utf8');
+            process.stdin.on('data', s => { text += s; });
+            process.stdin.on('end', () => console.log(JSON.stringify({
+                result: JSON.stringify([text, process.argv.slice(2)])
+            })));
+        "#,
+        )
+        .unwrap();
+        let node_dir = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+            .find(|dir| dir.join("node.exe").is_file())
+            .expect("CI requires Node.js");
+        let path = std::env::join_paths([temp.path(), node_dir.as_path()]).unwrap();
+        let prompt = "เสียง & | ^ < > %PATH% ! \"ทดสอบ\"\n".repeat(4096);
+        let system = "system & echo %PATH% | \"literal\"";
+        let raw = run_claude(
+            claude_program(&path).unwrap(),
+            system.into(),
+            prompt.clone(),
+        )
+        .await
+        .unwrap();
+        let (input, args): (String, Vec<String>) = serde_json::from_str(&raw).unwrap();
+        assert_eq!(input, prompt);
+        assert_eq!(
+            args,
+            [
+                "-p",
+                "--append-system-prompt",
+                system,
+                "--output-format",
+                "json",
+                "--tools",
+                ""
+            ]
+        );
+    }
 }
 
 #[tauri::command]
@@ -1949,6 +2048,7 @@ pub fn run() {
             import_banner_asset_archive,
             project_startup_path,
             build_jobs::start_build,
+            build_jobs::release_library_build,
             build_jobs::build_status,
             build_jobs::cancel_build,
             build_jobs::export_artifact,
@@ -2006,6 +2106,7 @@ pub fn run_gann_job(args: &[String]) -> Option<Result<String, String>> {
             let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
             let report = runtime.block_on(gann_authoring::install(
                 serde_json::from_slice(&bytes).map_err(|e| e.to_string())?,
+                None,
             ))?;
             serde_json::to_string(&report).map_err(|e| e.to_string())
         }

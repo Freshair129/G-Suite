@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStudioStore, type Pack } from "../store/useStudioStore";
-import { snapshotProject, acceptProjectBuild, updateProjectBinding } from "./project";
+import { projectFingerprint, snapshotProject, acceptProjectBuild, updateProjectBinding } from "./project";
 import { renderBannerProject } from "./renderBannerProject";
-import type { ProjectOpenResult, ProjectSnapshot } from "./packProject";
+import { captureProject, createPackProject, resolveProjectEditor, type ProjectOpenResult, type ProjectSnapshot } from "./packProject";
 
-export interface GannBuildReport { [key:string]:unknown; path:string; digest:string; pack_id:string; revision:number; events:number; clips:number; banners:number; artifactId:string; projectFingerprint:string; toolchainFingerprint:string; generation:number; reused:boolean; superseded:boolean }
+export interface GannBuildReport { [key:string]:unknown; path:string; digest:string; pack_id:string; revision:number; events:number; clips:number; banners:number; artifactId:string; projectFingerprint:string; toolchainFingerprint:string; generation:number; reused:boolean; superseded:boolean; libraryJobId?:string }
 export interface GannBuildJob { snapshot:ProjectSnapshot; assetPaths:Record<string,string>; sessionToken:string; renders:Array<{variantId:string;frames:string[];fps:number}>;outputPath:string|null }
 type Mode="session"|"library"|"event";
 type Progress={stage:string;completed:number;total:number};
@@ -19,6 +19,9 @@ export async function prepareCurrentGannBuild(outputPath?:string,signal?:AbortSi
  const captured=await snapshotProject();
  const prepared=await invoke<ProjectOpenResult>('prepare_project',captured);
  if(!prepared.sessionToken)throw new Error('Project session is missing; reopen the project before building');
+ return renderBuildJob(prepared,outputPath,signal);
+}
+async function renderBuildJob(prepared:ProjectOpenResult,outputPath?:string,signal?:AbortSignal):Promise<GannBuildJob>{
  const mapped=new Set(prepared.snapshot.project.eventMappings.flatMap(mapping=>mapping.variantIds));
  if(!mapped.size)throw new Error('ยังไม่มีเสียงที่ map event');
  const renders:GannBuildJob['renders']=[];let encodedBytes=0;
@@ -29,35 +32,50 @@ export async function prepareCurrentGannBuild(outputPath?:string,signal?:AbortSi
   encodedBytes+=render.frames.reduce((total,frame)=>total+frame.length,0);if(encodedBytes>256*1024*1024)throw new Error('Rendered pack exceeds 256 MiB; reduce artboard size');
   renders.push({variantId:variant.id,...render});
  }
- return {...prepared,sessionToken:prepared.sessionToken,renders,outputPath:outputPath??null};
+ return {...prepared,sessionToken:prepared.sessionToken??"",renders,outputPath:outputPath??null};
 }
 export async function buildCurrentGann(_mode:Mode='session',_event?:string,outputPath?:string,_name='ann-pack',_author='',_animate=true,_voiceCaption=true,_reactive=false):Promise<GannBuildReport>{
+ return runBuild(signal=>prepareCurrentGannBuild(outputPath,signal),true);
+}
+async function runBuild(prepare:(signal:AbortSignal)=>Promise<GannBuildJob>,attachToEditor:boolean):Promise<GannBuildReport>{
  if(activeBuild)throw new Error('กำลังสร้างแพ็กอยู่');
  const active={controller:new AbortController(),jobId:undefined as string|undefined};activeBuild=active;
  try{
-  notify({stage:'Snapshot',completed:0,total:1});const job=await prepareCurrentGannBuild(outputPath,active.controller.signal);
+  notify({stage:'Snapshot',completed:0,total:1});const job=await prepare(active.controller.signal);
   if(active.controller.signal.aborted)throw new Error('Cancelled');
-  active.jobId=await invoke<string>('start_build',{job});
+  active.jobId=await invoke<string>('start_build',attachToEditor?{job}:{job,detached:true});
   if(active.controller.signal.aborted)await invoke('cancel_build',{jobId:active.jobId});
   for(;;){
    const status=await invoke<{state:string;stage:string;completed:number;total:number;report?:GannBuildReport;error?:string}>('build_status',{jobId:active.jobId});
    notify(status);
    if(status.state==='cancelled')throw new Error('Cancelled');if(status.state==='failed')throw new Error(status.error||'Build failed');
-   if(status.state==='ready'&&status.report){const report=status.report;const accepted=acceptProjectBuild({...report,originProjectId:job.snapshot.project.projectId,originAnnouncerId:job.snapshot.project.announcerId,generation:report.generation??job.snapshot.generation,projectFingerprint:report.projectFingerprint??job.snapshot.fingerprint},job.snapshot,job.assetPaths);if(accepted===false)report.superseded=true;return report;}
+   if(status.state==='ready'&&status.report){const report=status.report;if(!attachToEditor)return job.outputPath?report:{...report,libraryJobId:active.jobId};const accepted=acceptProjectBuild({...report,originProjectId:job.snapshot.project.projectId,originAnnouncerId:job.snapshot.project.announcerId,generation:report.generation??job.snapshot.generation,projectFingerprint:report.projectFingerprint??job.snapshot.fingerprint},job.snapshot,job.assetPaths);if(accepted===false)report.superseded=true;return report;}
    await new Promise(resolve=>setTimeout(resolve,120));
   }
  }finally{if(activeBuild===active)activeBuild=undefined;}
 }
 export async function buildSavedPackGann(pack:Pack,outputPath?:string){
- // Explicitly importing a saved library pack makes it the editable source of truth before build.
- const state=useStudioStore.getState();
- const clips=await Promise.all(Object.entries(pack.mappings).map(async([event,m])=>{
-  const path=/^(?:[A-Za-z]:[\\/]|\/)/.test(m.sound_path)?m.sound_path:`${state.libraryRoot}/${m.sound_path}`;
-  const info=await invoke<{duration_ms:number}>('inspect_media',{path});
-  return {id:`saved-${pack.id}-${event}`,event,name:m.sound_name,start:0,end:info.duration_ms/1000,filePath:m.sound_path,color:'#9dff3f',gain:m.volume>0?20*Math.log10(m.volume):-80,speed:m.speed};
- }));
- useStudioStore.setState({clips,packBuilder:{},...(state.projectDocument?{projectDocument:{...state.projectDocument,name:pack.name}}:{})});
- return buildCurrentGann('session',undefined,outputPath,pack.name);
+ return runBuild(async signal=>{
+   const {root:libraryRoot}=await invoke<{root:string}>('init_library');
+   const project=createPackProject();
+   project.name=pack.name;
+   const editor=resolveProjectEditor(project,{});
+   editor.libraryRoot=libraryRoot;
+   editor.clips=await Promise.all(Object.entries(pack.mappings).map(async ([event,m])=>{
+     const path=/^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(m.sound_path)?m.sound_path:`${libraryRoot}/${m.sound_path}`;
+     const info=await invoke<{duration_ms:number}>('inspect_media',{path});
+     return {id:`saved-${pack.id}-${event}`,event,name:m.sound_name,start:0,end:info.duration_ms/1000,filePath:path,color:'#9dff3f',gain:m.volume>0?20*Math.log10(m.volume):-80,speed:m.speed};
+   }));
+   if(signal.aborted)throw new Error('Cancelled');
+   const captured=captureProject(project,editor,{});
+   const snapshot={project:captured.project,generation:0,fingerprint:await projectFingerprint(captured.project)};
+   return renderBuildJob({snapshot,assetPaths:captured.assetPaths},outputPath,signal);
+ },false);
+}
+export async function installSavedPack(pack:Pack){
+ const artifact=await buildSavedPackGann(pack);
+ try { return await installGann(artifact.path); }
+ finally { await invoke('release_library_build',{jobId:artifact.libraryJobId}); }
 }
 export async function installGann(path:string){
  const pack=await invoke<{token:string;index:{announcer_id:string}}>('gann_open',{path});

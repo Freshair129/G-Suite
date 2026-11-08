@@ -113,3 +113,11 @@ export async function runExport(): Promise<string> {
  if(!path)return 'ยกเลิกการส่งออกแล้ว';
  try{const pack=await buildCurrentGann('session',undefined,path);return `ส่งออก GANN สำเร็จ ✅ ${pack.events} events · ${pack.clips} คู่เสียง/ภาพ\n${pack.path}`;}catch(e){return `ส่งออกไม่สำเร็จ: ${e}`;}
 }
+
+export function clearTimeline(): string {
+  const {clips, setClips} = useStudioStore.getState();
+  if (!clips.length) return "ยังไม่มีคลิป";
+  if (!window.confirm(`ล้างทั้ง ${clips.length} คลิปจากไทม์ไลน์?`)) return "ยกเลิกแล้ว";
+  setClips([]);
+  return `ล้าง ${clips.length} คลิปแล้ว`;
+}

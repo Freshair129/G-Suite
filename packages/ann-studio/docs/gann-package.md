@@ -18,11 +18,15 @@ Select the variant before editing its banner. Layer timing, declarative keyframe
 
 Build freezes one snapshot, renders every mapped variant, writes/validates the GANN and commits its revision under a project lock. Failed/cancelled builds retain the preceding revision. Unchanged snapshot/toolchain/raster output reuses its artifact. Changing project during work cannot apply results to another document; superseded artifacts cannot be used as current.
 
+Exporting a saved sound-library pack makes a standalone copy with a fresh announcer identity. Studio reads its mapped sounds from the library and builds in a temporary directory. An export releases its working files after copying the GANN. Direct installation keeps them until the install attempt completes or is canceled. To deliver ongoing revisions with the same announcer identity and profile binding, use an editable `.ann` project.
+
 **ทดสอบแพ็ก** opens that exact GANN with the shared reader. **ส่งออก .gann** copies the same verified bytes; it does not rebuild. Opening a different project or editing after build disables current export/install until a current artifact is selected/built.
 
 ## Install in Maiden
 
 Choose a verified Installed/Dev/Test profile explicitly. Studio sends profile/digest/request ID over a current-user Windows named pipe. Maiden owns staging, installation registry and selection; Studio never writes Maiden cache folders or relies on its exe/cwd.
+
+Packs mapping `enemy_missing` require a runtime with event taxonomy v1.2 or later. The v1 registration does not report taxonomy support. Studio checks the chosen file digest, then asks the user to confirm the destination supports v1.2 before sending it. For a headless `--gann-install` job, set `confirmEventTaxonomyV12` to `true` only for a known compatible target. Other event mappings need no additional confirmation.
 
 Installation and activation have distinct results: installed, active, deferred until safe match boundary, or installed with activation error. A project retains Maiden-issued local lineage bindings for updates. Local packages cannot replace System/Store authority. Versions remain available for repair/rollback and active audio/video leases retain the selected revision.
 
