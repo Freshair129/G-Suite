@@ -16,15 +16,19 @@ End-to-end flow: **import audio/video → auto-split (vision + whisper) → map 
 G-Maiden event → tune (mastering deck) → build a per-event banner → install into G-Maiden**.
 Packs can also be saved to a local **library** (by voice owner) and re-assembled on the test screen.
 
-G-Maiden lives in a **separate repo** (sibling dir `../G-Maiden`). The two connect only through the
-JSON contracts in [`schemas/`](schemas) + the install channel — neither imports the other's code.
+G-Maiden lives in a **separate repo** (sibling dir `../G-Maiden`). The two connect through the
+JSON contracts in [`schemas/`](schemas), the install channel and the shared `g-ann-package` crate.
+Studio consumes that crate as a Cargo git dependency pinned to a G-Maiden revision in
+`packages/ann-studio/src-tauri/Cargo.toml`. Bumping the pin is an explicit, reviewable PR.
 The interface contract is frozen in **`../G-Maiden/docs/change request/CR-009-…md`** (read it before
 changing anything under "The G-Maiden seam" below).
 
 > **Event taxonomy owner (ADR-21 / CR-049, 2026-11-09):** the source of truth is G-Maiden
 > `src-tauri/events/g-events.toml`. `schemas/gmaiden-events.json` is **generated** from it in G-Maiden
-> and synced here; do not hand-edit it, re-type it in TS, or add a second event list. To add/rename an
-> event or change labels, edit the TOML in G-Maiden, regenerate, bump `[taxonomy] version`, then sync.
+> and vendored here byte-for-byte from the pinned crate's `events_json()`, guarded by a Rust test.
+> Keep the TS typed adapter over that JSON. To change events, edit the TOML in G-Maiden, regenerate
+> and version the taxonomy per ADR-21, then review the dependency pin and JSON refresh together.
+> Exported registries record the crate's `taxonomy_version()` and use its shared playback admission.
 
 ## Layout
 

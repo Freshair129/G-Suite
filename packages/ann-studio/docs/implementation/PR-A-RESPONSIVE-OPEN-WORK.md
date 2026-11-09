@@ -50,7 +50,7 @@ npx --yes pnpm@9.0.0 -C packages/ann-studio/src test
 npx --yes pnpm@9.0.0 -C packages/ann-studio/src build
 $env:CHROMIUM_PATH = '<installed Chrome executable>'
 npx --yes pnpm@9.0.0 -C packages/ann-studio/src test:responsive
-cargo test --manifest-path packages/ann-studio/src-tauri/gann-package/Cargo.toml
+cargo test --locked --manifest-path packages/ann-studio/src-tauri/Cargo.toml
 ```
 
 There is no package ESLint script/configuration in this snapshot. Do not report it as run. The native metrics Vite config is `src/e2e/native-metrics.config.mjs`; it is test-only and its overlay can hide controls, so inspect and report its limitations.

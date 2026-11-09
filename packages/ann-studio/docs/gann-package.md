@@ -8,7 +8,8 @@ G-AnnStudio creates and uses announcer packs through **สร้างแพ็�
 - `.gann` is the immutable playable artifact, not an editable project backup. It contains `gann.json`, `ann_<UUID>.json`, ID-named WAV and silent WebM plus optional inert source stock. It does not execute imported scripts.
 - The shared `g-ann-package` writer uses `gann-zip-1`: Deflate level6 for JSON/WAV/source/font; Stored for WebM. Fixed metadata and sorted paths give reproducible bytes for unchanged inputs/toolchain. Existing valid v1 methods0/8 remain readable without rewriting files.
 - All payloads have byte lengths and SHA-256; archive, paths, media references, PCM/WebM formats and duplicates are validated. Container/expanded limit512MiB, payload32MiB, descriptor/registry2MiB and2048payloads.
-- Studio and Maiden vendor identical shared-crate sources. Registry events map explicit original-sound/banner pairs; the banner names the mixed playback sound. Missing/unmapped/invalid pairs stay silent.
+- Studio consumes Maiden's `g-ann-package` through a Cargo git dependency pinned in `src-tauri/Cargo.toml`. Bumping the pin and refreshing `schemas/gmaiden-events.json` from its `events_json()` is a reviewable PR; a Rust test guards byte equality. Registry events map explicit original-sound/banner pairs; the banner names the mixed playback sound. Missing/unmapped/invalid pairs stay silent.
+- New registries record the shared crate's `taxonomy_version()`. Build, Event Test and Export use the same builder and shared `validate_playback()` admission: absent versions default to 1.1, different majors are refused, and unknown IDs in newer same-major packs are verified but inert (ADR-21 / CR-049).
 
 ## Create and test
 

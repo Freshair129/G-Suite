@@ -1,0 +1,2 @@
+# Keep the vendored taxonomy byte-identical to g_ann_package::events_json().
+schemas/gmaiden-events.json text eol=lf
