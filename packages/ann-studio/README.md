@@ -18,4 +18,6 @@ pnpm ann-studio:build    # build installer
 Requirements, the speech sidecar setup (CPU/GPU), provider config, and the architecture gotchas
 are documented in the repo root [`README.md`](../../README.md) and [`CLAUDE.md`](../../CLAUDE.md),
 and the sidecar [`README`](src-tauri/sidecar). The event contract lives in
-[`schemas/gmaiden-events.json`](../../schemas/gmaiden-events.json).
+[`schemas/gmaiden-events.json`](../../schemas/gmaiden-events.json), generated from G-Maiden
+`src-tauri/events/g-events.toml` (ADR-21 / CR-049). Studio reads it through the typed adapter
+`src/src/data/gmaiden-events.ts`; never add a hand-typed event list.

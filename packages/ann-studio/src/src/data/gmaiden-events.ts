@@ -1,6 +1,7 @@
-import schema from '../../../../../schemas/gmaiden-events.json';
+import schema from "../../../../../schemas/gmaiden-events.json";
 
-// Event eligibility and authoring choices share the runtime taxonomy.
+// The canonical JSON owns event data and order. Only category display casing
+// is adapted here to preserve the existing Studio UI.
 
 export interface GMaidenEvent {
   id: string;
@@ -11,11 +12,11 @@ export interface GMaidenEvent {
   trigger: string;
 }
 
-export const GMAIDEN_EVENTS: GMaidenEvent[] = schema['x-events'].map(event=>({
+export const GMAIDEN_EVENTS: GMaidenEvent[] = schema["x-events"].map((event) => ({
   ...event,
-  category: event.category.charAt(0).toUpperCase()+event.category.slice(1),
-  priority: event.priority as GMaidenEvent['priority'],
-  status: event.status as GMaidenEvent['status'],
+  category: event.category.charAt(0).toUpperCase() + event.category.slice(1),
+  priority: event.priority as GMaidenEvent["priority"],
+  status: event.status as GMaidenEvent["status"],
 }));
 
 export const EVENT_CATEGORIES = [...new Set(GMAIDEN_EVENTS.map((e) => e.category))];

@@ -1,8 +1,11 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+const events = JSON.parse(readFileSync(new URL('../../../../schemas/gmaiden-events.json', import.meta.url), 'utf8'))['x-events'];
+const previewEvents = events.filter(event => event.id !== 'unused');
 const packageDir = fileURLToPath(new URL('..', import.meta.url));
 const vite = fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url));
 const server = spawn(process.execPath, [vite, '--host', '127.0.0.1', '--port', '5175', '--strictPort'], { cwd: packageDir, stdio: 'inherit' });
@@ -130,9 +133,13 @@ try {
   await page.setViewportSize({width: 960, height: 600});
   await page.getByRole('button', {name:'ทดสอบ', exact:true}).click();
   const eventButtons = page.getByRole('button', {name: /^ทดสอบ event: /});
-  assert.equal(await eventButtons.count(), 24, 'each event preview needs an accessible event name');
-  assert.equal(await page.getByRole('button', {name: /^ทดสอบ event: Danger/}).count(), 1);
-  assert.equal(await page.getByRole('button', {name: /^ทดสอบ event: Gank Warning/}).count(), 1);
+  assert.equal(await eventButtons.count(), previewEvents.length, 'each canonical event needs a preview');
+  for (const event of previewEvents) {
+    const namePrefix = `ทดสอบ event: ${event.label} (`;
+    assert.equal(await eventButtons.evaluateAll((buttons, prefix) =>
+      buttons.filter(button => button.getAttribute('aria-label')?.startsWith(prefix)).length,
+    namePrefix), 1, `missing or duplicate preview for ${event.id}`);
+  }
   await page.evaluate(() => { document.documentElement.style.zoom = '1.25'; });
   const eventOverflow = await page.evaluate(() => {
     const buttons = [...document.querySelectorAll('button')].filter(el => /ติดตั้งลง G-Maiden|ติดตั้งจากคลัง/.test(el.textContent));

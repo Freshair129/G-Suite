@@ -5,7 +5,7 @@
 // pack export (frames baked to alpha WebP via the ffmpeg sidecar).
 //
 // Author can override the tone default with their own image/animation later;
-// this guarantees every one of the 23 events has a visible banner with zero work.
+// this guarantees every event has a visible banner with zero work.
 
 import { GMAIDEN_EVENTS } from "../data/gmaiden-events";
 
@@ -56,7 +56,7 @@ export function eventTone(id: string): ToneKey {
 
 // Thai subtitle per event (banner second line).
 export const EVENT_THAI: Record<string, string> = {
-  danger: "ระวังโดนรุม!", revision: "เอ๊ะ เดี๋ยวก่อน", hpLow: "เลือดวิกฤต", manaLow: "มานาต่ำ",
+  danger: "อันตราย!", gank: "ระวังโดนรุม!", revision: "เอ๊ะ เดี๋ยวก่อน", hpLow: "เลือดวิกฤต", manaLow: "มานาต่ำ",
   match_start: "เริ่มเกม", levelUp: "เลเวลอัป",
   first_blood: "เลือดแรก!", kill: "สังหาร", death: "ล้มแล้ว", respawn: "เกิดใหม่",
   double_kill: "ดับเบิลคิล", triple_kill: "ทริปเปิลคิล", ultra_kill: "อัลตร้าคิล", rampage: "แรมเพจ!",
