@@ -525,7 +525,7 @@ pub fn build(
             }
         }
         let manifest = format!("{ann}.json");
-        let registry = json!({"schema_version":1,"announcer_id":ann,"revision":revision,"name":project["name"],"author":project["author"],"locale":project["locale"],"sounds":sounds,"banners":banners,"events":events,"components":[],"unmapped_sound_ids":[]});
+        let registry = json!({"schema_version":1,"taxonomy_version":g_ann_package::taxonomy_version(),"announcer_id":ann,"revision":revision,"name":project["name"],"author":project["author"],"locale":project["locale"],"sounds":sounds,"banners":banners,"events":events,"components":[],"unmapped_sound_ids":[]});
         fs::write(
             stage.join(&manifest),
             serde_json::to_vec_pretty(&registry).map_err(|e| e.to_string())?,
@@ -797,6 +797,17 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn vendored_taxonomy_matches_shared_crate() {
+        assert_eq!(
+            include_str!("../../../../schemas/gmaiden-events.json"),
+            g_ann_package::events_json(),
+            "Refresh schemas/gmaiden-events.json with the exact bytes of \
+             src-tauri/gann-package/events.json from the G-Maiden revision pinned \
+             in packages/ann-studio/src-tauri/Cargo.toml (git show <rev>:<path>); \
+             preserve UTF-8 and LF line endings. Review the pin and JSON together."
+        );
+    }
+    #[test]
     fn changed_revision_and_reuse_are_content_based() {
         let mut p = json!({"currentRevision":2,"buildHistory":[{"revision":2,"projectFingerprint":"a","toolchainFingerprint":"tool"}]});
         assert_eq!(next_revision(&p, "a", "tool"), (2, true));
@@ -1041,6 +1052,14 @@ mod tests {
             g_ann_package::file_digest(&exported).unwrap(),
             report.digest
         );
+        let package = g_ann_package::Package::open(&exported).unwrap();
+        let taxonomy_version = g_ann_package::taxonomy_version();
+        assert_eq!(package.registry["taxonomy_version"], taxonomy_version);
+        package.validate_playback().unwrap();
+        let admission = g_ann_package::validate_playback_registry(&package.registry).unwrap();
+        assert_eq!(admission.pack_taxonomy_version, taxonomy_version);
+        assert_eq!(admission.runtime_taxonomy_version, taxonomy_version);
+        assert!(admission.inert_events.is_empty());
         let recovery = workspace.join("00000000-0000-4000-8000-000000000001/recovery.json");
         let mut snapshot: Value = serde_json::from_slice(&fs::read(&recovery).unwrap()).unwrap();
         snapshot["project"]["buildHistory"] = json!([]);

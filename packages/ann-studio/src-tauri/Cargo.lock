@@ -1064,6 +1064,7 @@ dependencies = [
 [[package]]
 name = "g-ann-package"
 version = "0.1.0"
+source = "git+https://github.com/Freshair129/G-Maiden.git?rev=9ed47ccce8772b4d35e1578cdf97e20c34414e81#9ed47ccce8772b4d35e1578cdf97e20c34414e81"
 dependencies = [
  "base64 0.22.1",
  "ring",

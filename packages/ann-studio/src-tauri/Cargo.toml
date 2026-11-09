@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 banner-image-validation = { path = "../../banner-image-validation" }
-g-ann-package = { path = "gann-package" }
+g-ann-package = { git = "https://github.com/Freshair129/G-Maiden.git", rev = "9ed47ccce8772b4d35e1578cdf97e20c34414e81" }
 tauri      = { version = "2.0", features = ["protocol-asset"] }
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"

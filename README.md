@@ -32,10 +32,12 @@ a raw clip into a working G-Maiden announcer pack:
 
 ## Contracts (the seam with G-Maiden)
 
-Shared, language-agnostic specs in [`schemas/`](schemas) — neither repo depends on the other's code:
+Shared, language-agnostic specs live in [`schemas/`](schemas). Studio also consumes `g-ann-package`
+as a Cargo git dependency pinned to a G-Maiden revision in
+[`Cargo.toml`](packages/ann-studio/src-tauri/Cargo.toml). Bumping the pin is an explicit, reviewable PR:
 
-- [`gmaiden-events.json`](schemas/gmaiden-events.json) — event IDs and trigger eligibility, **generated** from G-Maiden `src-tauri/events/g-events.toml` (ADR-21 / CR-049; do not hand-edit); event media is resolved from `registry.events` in GANN.
-- [GANN package contract](packages/ann-studio/docs/gann-package.md) — the sole audio/visual export, event-preview and install handoff. The shared vendored Rust crate verifies indexed files, hashes and playback contracts.
+- [`gmaiden-events.json`](schemas/gmaiden-events.json) — event IDs and trigger eligibility, **generated** from G-Maiden `src-tauri/events/g-events.toml` (ADR-21 / CR-049; do not hand-edit). A Rust test keeps this vendored copy byte-identical to the pinned crate's `events_json()`; refresh it with the pin. The TS adapter consumes this JSON, and event media is resolved from `registry.events` in GANN.
+- [GANN package contract](packages/ann-studio/docs/gann-package.md) — the sole audio/visual export, event-preview and install handoff. The shared pinned Rust crate verifies indexed files, hashes and playback contracts, including taxonomy-version admission. Studio writes its `taxonomy_version()` into exported registries.
 - `pack-manifest.schema.json` and `announcer-manifest.schema.json` describe retired layouts. Active Studio exporters/installers no longer write them or install flat event directories.
 
 ## Stack
