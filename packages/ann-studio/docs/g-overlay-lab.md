@@ -12,7 +12,7 @@ G-Overlay Lab is a dedicated G-AnnStudio view for arranging G-Maiden's passive C
 ## Contract
 
 - Payload: [`gmaiden-overlay-layout.schema.json`](../../../schemas/gmaiden-overlay-layout.schema.json), version `1`.
-- Transport: `POST http://127.0.0.1:3000/overlay/layout`.
+- Transport: `POST http://127.0.0.1:<selected-port>/overlay/layout`; G-AnnStudio reads the selected port from `%LOCALAPPDATA%/G-Maiden/gsi-port.txt` and verifies `GET /health` first. G-Maiden uses 3000 by default and selects a free port through 3010 on conflict.
 - G-Ann sends all 19 known modules. Every position is screen-relative percent, `x/y` are 0–100, and `scale` is 0.60–1.60.
 - G-Maiden rejects an unknown, partial, non-finite, or out-of-range layout. On success it changes only `settings.layout`, writes its normal atomic settings file, and emits the normal `settings` event to the open Combat HUD.
 - The payload contains no match state, CV result, audio asset, account data, or file path.

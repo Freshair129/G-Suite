@@ -17,7 +17,7 @@ attributes:
 | React editor | Source, mastering, pack authoring, and G-Overlay Lab UI | Local WebView |
 | Zustand studio store | Local drafts, clips, overlay layout, and `BannerProject` state | Persisted locally |
 | Tauri Rust commands | File, audio, bake, and explicit installation operations | Desktop process |
-| G-Maiden sync receiver | Validates and persists only HUD layout geometry | `127.0.0.1:3000` |
+| G-Maiden sync receiver | Validates and persists only HUD layout geometry | Loopback port discovered from `%LOCALAPPDATA%/G-Maiden/gsi-port.txt`; verified with `GET /health` |
 | Private cloud sync (approved contract) | Owner-only project manifest and author-asset persistence | Supabase `gstore`, `ann_` tables, private bucket |
 
 ## Key boundaries

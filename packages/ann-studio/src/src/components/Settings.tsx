@@ -291,10 +291,11 @@ function GMaidenSection({ path, connected }: { path: string; connected: boolean 
         </div>
       </FieldGroup>
 
-      <FieldGroup label="Install Endpoint" description="URL ของ G-Maiden server สำหรับ install pack">
+      <FieldGroup label="G-Maiden Endpoint" description="ค้นหาพอร์ตที่ G-Maiden เลือกจากไฟล์ LocalAppData และตรวจ /health ก่อนส่ง">
         <input
           type="text"
-          defaultValue="localhost:3000"
+          value="อัตโนมัติ · 127.0.0.1:3000–3010"
+          readOnly
           className="w-40 bg-panel border border-line rounded-lg px-2 py-1.5 text-xs text-ink font-mono outline-none"
         />
       </FieldGroup>

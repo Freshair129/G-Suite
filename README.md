@@ -27,7 +27,7 @@ a raw clip into a working G-Maiden announcer pack:
    header chip: **Ollama** (local, free) or **Claude** (your plan quota, via the `claude` CLI — no API
    key). Chat also runs split / export / rename / delete / send commands in Thai or English.
 5. **Send to G-Maiden** — cuts every event-mapped clip into `G-Maiden/assets/voice-cache/{event}/`
-   and `POST`s `http://127.0.0.1:3000/announcer/install` so G-Maiden picks the pack up live.
+   and discovers G-Maiden's selected loopback port from `%LOCALAPPDATA%\G-Maiden\gsi-port.txt`, verifies `/health`, then `POST`s `/announcer/install` so G-Maiden picks the pack up live (default port 3000; automatic fallback through 3010).
 
 ## Contracts (the seam with G-Maiden)
 
@@ -63,7 +63,7 @@ pnpm ann-studio:build         # build the G-AnnStudio installer
 
 ### Requirements
 
-- Node ≥ 20, pnpm 9; Rust toolchain (for Tauri)
+- Node ≥ 22, pnpm 11; Rust toolchain (for Tauri)
 - **ffmpeg** on `PATH` (or `FFMPEG_PATH`). On Windows `npm i -g ffmpeg-static` is auto-detected.
 - **Speech (AI auto-split):** `cd packages/ann-studio/src-tauri/sidecar && python -m venv .venv && .venv\Scripts\python -m pip install -r requirements.txt`. GPU is optional — add `requirements-gpu.txt` (CUDA 12 / cuDNN 9) for large-v3.
 - **AI chat/map:** Ollama running locally, and/or the `claude` CLI signed in. Either works; pick in the header.

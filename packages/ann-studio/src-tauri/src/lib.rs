@@ -696,6 +696,57 @@ fn resolve_gmaiden_dir(arg: &Option<String>) -> Option<PathBuf> {
     detect_gmaiden_target()
 }
 
+/// Read G-Maiden's selected loopback port, then verify the owner before using
+/// it. The health check prevents a stale port file from sending local data to
+/// an unrelated process that later claimed the same port.
+fn gmaiden_port_from_state() -> Result<u16, String> {
+    let local_app_data = std::env::var_os("LOCALAPPDATA")
+        .ok_or("Windows ไม่พบ LocalAppData — เปิด G-Maiden แล้วลองใหม่")?;
+    let state_file = PathBuf::from(local_app_data)
+        .join("G-Maiden")
+        .join("gsi-port.txt");
+    let raw = std::fs::read_to_string(state_file)
+        .map_err(|_| "ยังไม่พบพอร์ต GSI — เปิด G-Maiden และรอให้ server พร้อมก่อน Sync".to_string())?;
+    let port = raw
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| "ไฟล์พอร์ต GSI ของ G-Maiden อ่านไม่ได้ — เปิด G-Maiden ใหม่แล้วลองอีกครั้ง".to_string())?;
+    if !(3000..=3010).contains(&port) {
+        return Err("พอร์ต GSI ของ G-Maiden อยู่นอกช่วงที่รองรับ — อัปเดตทั้งสองแอปก่อน Sync".into());
+    }
+    Ok(port)
+}
+
+async fn current_gmaiden_endpoint(path: &str) -> Result<String, String> {
+    if !matches!(path, "/health" | "/overlay/layout" | "/announcer/install") {
+        return Err("G-Maiden endpoint path นี้ไม่รองรับ".into());
+    }
+    let port = gmaiden_port_from_state()?;
+    let base = format!("http://127.0.0.1:{port}");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|error| format!("สร้างตัวเชื่อมต่อ G-Maiden ไม่สำเร็จ: {error}"))?;
+    let health = client
+        .get(format!("{base}/health"))
+        .send()
+        .await
+        .map_err(|_| "เชื่อมต่อ G-Maiden ไม่ได้ — เปิด G-Maiden ก่อนแล้วลอง Sync ใหม่".to_string())?;
+    if !health.status().is_success() {
+        return Err("G-Maiden health check ไม่ผ่าน — เปิด G-Maiden ใหม่แล้วลอง Sync".into());
+    }
+    let payload: serde_json::Value = health
+        .json()
+        .await
+        .map_err(|_| "G-Maiden health check ตอบกลับไม่ถูกต้อง".to_string())?;
+    if payload["service"].as_str() != Some("g-maiden")
+        || payload["port"].as_u64() != Some(u64::from(port))
+    {
+        return Err("พอร์ตในไฟล์ไม่ตรงกับ G-Maiden ที่กำลังทำงาน — เปิด G-Maiden ใหม่แล้วลอง Sync".into());
+    }
+    Ok(format!("{base}{path}"))
+}
+
 /// Return the installed G-Maiden directory (from its Start-menu shortcut), or
 /// "" if not found. Lets the Settings UI auto-fill the G-Maiden path.
 #[tauri::command]
@@ -713,7 +764,7 @@ async fn install_pack(
     clips: Vec<InstallClip>,
     pack_name: String,
     gmaiden_dir: Option<String>,
-    endpoint: Option<String>,
+    notify_gmaiden: Option<bool>,
 ) -> Result<InstallReport, String> {
     let base = resolve_gmaiden_dir(&gmaiden_dir)
         .ok_or("หา G-Maiden ไม่เจอ — ตั้ง path ใน Settings หรือ env GMAIDEN_DIR")?;
@@ -763,19 +814,22 @@ async fn install_pack(
         installed += 1;
     }
 
-    // Notify G-Maiden's install endpoint (best-effort — works once Phase 3 lands).
+    // Notify G-Maiden's selected local endpoint (best-effort).
     let mut endpoint_result = None;
-    if let Some(ep) = endpoint {
-        if !ep.is_empty() {
-            let body = serde_json::json!({
-                "pack": pack_name,
-                "installed": installed,
-                "voice_cache": vc.to_string_lossy(),
-            });
-            match reqwest::Client::new().post(&ep).json(&body).send().await {
-                Ok(r) => endpoint_result = Some(format!("{ep} → {}", r.status())),
-                Err(e) => endpoint_result = Some(format!("{ep} (POST ไม่ติด: {e})")),
+    if notify_gmaiden.unwrap_or(false) {
+        let body = serde_json::json!({
+            "pack": pack_name,
+            "installed": installed,
+            "voice_cache": vc.to_string_lossy(),
+        });
+        match current_gmaiden_endpoint("/announcer/install").await {
+            Ok(active_endpoint) => {
+                match reqwest::Client::new().post(&active_endpoint).json(&body).send().await {
+                    Ok(r) => endpoint_result = Some(format!("{active_endpoint} → {}", r.status())),
+                    Err(e) => endpoint_result = Some(format!("{active_endpoint} (POST ไม่ติด: {e})")),
+                }
             }
+            Err(error) => endpoint_result = Some(error),
         }
     }
 
@@ -829,7 +883,7 @@ async fn install_gmaiden_pack(
     clips: Vec<InstallClip>,
     banners: Vec<BannerAsset>,
     gmaiden_dir: Option<String>,
-    endpoint: Option<String>,
+    notify_gmaiden: Option<bool>,
 ) -> Result<PackInstallReport, String> {
     use base64::Engine;
     use serde_json::{json, Map, Value};
@@ -957,10 +1011,10 @@ async fn install_gmaiden_pack(
     .map_err(|e| format!("write manifest: {e}"))?;
 
     // tell G-Maiden to activate the pack (same file-write path as the UI action)
-    if let Some(ep) = &endpoint {
-        if !ep.is_empty() {
+    if notify_gmaiden.unwrap_or(false) {
+        if let Ok(active_endpoint) = current_gmaiden_endpoint("/announcer/install").await {
             let _ = reqwest::Client::new()
-                .post(ep)
+                .post(&active_endpoint)
                 .json(&json!({ "packId": id }))
                 .send()
                 .await;
@@ -997,7 +1051,7 @@ async fn install_library_pack(
     clips: Vec<LibPackClip>,
     banners: Vec<BannerAsset>,
     gmaiden_dir: Option<String>,
-    endpoint: Option<String>,
+    notify_gmaiden: Option<bool>,
 ) -> Result<PackInstallReport, String> {
     use base64::Engine;
     use serde_json::{json, Map, Value};
@@ -1083,10 +1137,10 @@ async fn install_library_pack(
     )
     .map_err(|e| format!("write manifest: {e}"))?;
 
-    if let Some(ep) = &endpoint {
-        if !ep.is_empty() {
+    if notify_gmaiden.unwrap_or(false) {
+        if let Ok(active_endpoint) = current_gmaiden_endpoint("/announcer/install").await {
             let _ = reqwest::Client::new()
-                .post(ep)
+                .post(&active_endpoint)
                 .json(&json!({ "packId": id }))
                 .send()
                 .await;
@@ -1266,8 +1320,9 @@ struct OverlayLayoutSyncReport {
 /// asset, or other settings field can cross this seam.
 #[tauri::command]
 async fn sync_overlay_layout(layout: serde_json::Value) -> Result<OverlayLayoutSyncReport, String> {
+    let endpoint = current_gmaiden_endpoint("/overlay/layout").await?;
     let response = reqwest::Client::new()
-        .post("http://127.0.0.1:3000/overlay/layout")
+        .post(&endpoint)
         .json(&serde_json::json!({ "schemaVersion": 1, "layout": layout }))
         .send()
         .await

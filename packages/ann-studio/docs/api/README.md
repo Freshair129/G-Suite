@@ -10,7 +10,7 @@ attributes:
 
 # G-AnnStudio API Index
 
-The documented cross-application contract in this slice is [Overlay layout sync](../g-overlay-lab.md): `POST http://127.0.0.1:3000/overlay/layout` with the versioned 19-module layout schema. The separate Supabase Data API/storage surface is defined by the approved [private cloud threat model](../gann-cloud-threat-model.md), not by the local loopback API.
+The documented cross-application contract in this slice is [Overlay layout sync](../g-overlay-lab.md): G-AnnStudio reads the active G-Maiden loopback port from `%LOCALAPPDATA%/G-Maiden/gsi-port.txt`, verifies `GET /health`, then POSTs `/overlay/layout` with the versioned 19-module layout schema. The separate Supabase Data API/storage surface is defined by the approved [private cloud threat model](../gann-cloud-threat-model.md), not by the local loopback API.
 
 Do not infer a G-Maiden runtime API from the cloud contract: cloud data is authoring-only and cannot write runtime state.
 

@@ -130,7 +130,7 @@ export async function sendToGMaiden(): Promise<string> {
       })),
       packName: "ann-pack",
       gmaidenDir: s.gmaidenPath || null,
-      endpoint: "http://localhost:3000/announcer/install",
+      notifyGmaiden: true,
     });
     const ev = Object.entries(r.per_event)
       .map(([k, v]) => `${k}×${v}`)

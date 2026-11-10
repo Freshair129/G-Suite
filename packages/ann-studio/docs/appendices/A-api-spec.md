@@ -16,7 +16,7 @@ attributes:
 | --- | --- |
 | Caller | G-AnnStudio Tauri command `sync_overlay_layout` |
 | Receiver | G-Maiden GSI server |
-| Transport | `POST http://127.0.0.1:3000/overlay/layout` |
+| Transport | `POST http://127.0.0.1:<selected-port>/overlay/layout`; discover through `%LOCALAPPDATA%/G-Maiden/gsi-port.txt` and verify `GET /health` |
 | Payload | [`gmaiden-overlay-layout.schema.json`](../../../../schemas/gmaiden-overlay-layout.schema.json) |
 | Side effect | G-Maiden updates only persisted `settings.layout` after validation |
 

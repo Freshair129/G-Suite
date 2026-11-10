@@ -4,12 +4,12 @@
   "description": "G-Suite — monorepo of developer tools for the G-Maiden ecosystem",
   "type": "module",
   "private": true,
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@11.25.0",
   "scripts": {
     "ann-studio:dev": "pnpm -C packages/ann-studio dev",
     "ann-studio:build": "pnpm -C packages/ann-studio build"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

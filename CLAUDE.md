@@ -108,8 +108,7 @@ this.** G-Ann installs a **manifest-based pack** (not the old per-event flat lay
    `manifest.json` (camelCase: `id/name/version/locale/author/coverImage/mappings{event:{text,thai,
    banner,bannerAsset,clips[]}}`). `install_gmaiden_pack` cuts from one source wav; `install_library_pack`
    copies already-cut library wavs.
-2. **Activate** — POST `http://localhost:3000/announcer/install {packId}` → G-Maiden `gsi.rs`
-   `announcer_install` (no auth; only activates a pack already on disk — never writes files).
+2. **Activate** — G-AnnStudio reads `%LOCALAPPDATA%\G-Maiden\gsi-port.txt`, verifies `GET /health`, then POSTs `/announcer/install {packId}` on that loopback port. G-Maiden defaults to `3000` and automatically selects a free port through `3010` when needed. The `announcer_install` handler has no auth and only activates a pack already on disk — it never writes files.
 
 **Path resolution is the tricky part.** G-Maiden reads packs from its own `voice_cache_dir()`:
 exe-adjacent `voice-cache/` (a built/installed run) wins over the dev-tree `assets/voice-cache/`.

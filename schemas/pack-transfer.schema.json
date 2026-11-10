@@ -5,7 +5,7 @@
   "description": "Contract between G-AnnStudio (sender) and G-Maiden (receiver) for announcer pack installation. Phase 1: local folder. Phase 2: HTTP + auth. Phase 3: cloud relay.",
   "x-phases": {
     "phase-1-local": {
-      "description": "Both apps on same machine. G-AnnStudio writes to a shared folder, then POSTs a notify to localhost:3000.",
+      "description": "Both apps on the same machine. G-AnnStudio writes to a shared folder, reads G-Maiden's selected loopback port from %LOCALAPPDATA%/G-Maiden/gsi-port.txt, verifies /health, then POSTs the install notification.",
       "transport": "filesystem + HTTP POST",
       "auth": "none (localhost trust)"
     },
